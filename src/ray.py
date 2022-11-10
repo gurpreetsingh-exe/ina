@@ -338,14 +338,19 @@ class Arg:
         self.name = name
         self.ty = ty
 
+class Variadic:
+    def __init__(self):
+        pass
+
 class Fn:
-    __match_args__ = ("name", "args", "ret_ty", "body", "is_extern")
-    def __init__(self, name, args, ret_ty, body, is_extern):
+    __match_args__ = ("name", "args", "ret_ty", "body", "is_extern", "abi")
+    def __init__(self, name, args, ret_ty, body, is_extern, abi):
         self.name = name
         self.args = args
         self.ret_ty = ret_ty
         self.body = body
         self.is_extern = is_extern
+        self.abi = abi
 
         self.alignment = ((self.local_count + 1) // 2) * 16
 
@@ -458,6 +463,9 @@ class Parser:
                 panic("unexpected type")
 
     def parse_arg(self):
+        if self.t.kind == TokenKind.DOT3:
+            self.advance()
+            return Variadic()
         ident = self.expect(TokenKind.Ident)
         ident = ident.raw(self.src)
         if self.t.kind != TokenKind.COLON:
@@ -480,7 +488,7 @@ class Parser:
     def parse_ret_ty(self):
         if self.t.kind == TokenKind.ARROW:
             self.advance()
-            return Ty(self.parse_ty())
+            return self.parse_ty()
 
     def compound(self, tok_list, callback):
         left = callback()
@@ -595,8 +603,7 @@ class Parser:
         self.expect(TokenKind.RCURLY)
         return Block(stmts)
 
-    def parse_fn(self):
-        is_extern = self.prev.kind == TokenKind.Extern
+    def parse_fn(self, is_extern=False, abi=None):
         self.advance()
         ident = self.expect(TokenKind.Ident).raw(self.src)
         args = list(self.parse_fn_args())
@@ -604,7 +611,7 @@ class Parser:
         body = None
         if self.t.kind == TokenKind.LCURLY:
             body = self.parse_block()
-        return Fn(ident, args, ret_ty, body, is_extern)
+        return Fn(ident, args, ret_ty, body, is_extern, abi)
 
     def parse(self):
         self.advance()
@@ -612,6 +619,11 @@ class Parser:
             match self.t.kind:
                 case TokenKind.Extern:
                     self.advance()
+                    abi = None
+                    if self.t.kind == TokenKind.Str:
+                        abi = self.t.raw(self.src)
+                        self.advance()
+                    yield self.parse_fn(is_extern=True, abi=abi)
                 case TokenKind.Fn:
                     yield self.parse_fn()
                 case _:
@@ -680,16 +692,22 @@ class TyCheck:
                         val = TyKind.Char
                     case _:
                         panic(f"unexpected literal {kind}")
-                return val
+                return Ty(val)
+            case Call(name, args):
+                if ty := self.check_call(name, args):
+                    return ty
+                else:
+                    panic("return type expected")
+            case Ident(name):
+                if not self.scope.search_local(name):
+                    panic(f"{name} is not defined")
             case _:
-                pp(expr)
                 assert False
 
     def check(self, expr, expected_ty):
         match expr:
             case Binary(op, left, right):
-                self.check(left, expected_ty)
-                self.check(right, expected_ty)
+                self.check_binary(expr, expected_ty)
             case Literal(kind, _):
                 val = None
                 match kind:
@@ -709,23 +727,46 @@ class TyCheck:
                 if ty != expected_ty:
                     panic(f"expected {expected_ty} but got {ty}")
             case Call(name, args):
-                defn = self.defs.get(name)
-                for arg, exp in zip(args, defn.data['args']):
-                    self.check(arg, exp.ty)
-                ty = defn.data['ret_ty']
-                if ty != expected_ty:
-                    panic(f"unexpected type: expected {expected_ty} found {ty}")
+                self.check_call(name, args, expected_ty)
             case _:
                 assert False
+
+    def check_call(self, name, args, expected_ty=None):
+        defn = self.defs.get(name)
+        variadic = False
+
+        for arg in defn.data['args']:
+            if type(arg) == Variadic:
+                variadic = True
+                break
+
+        found = len(args)
+        expected = len(defn.data['args'])
+
+        if not variadic and found != expected:
+            panic(f"expected {expected} args found {found}")
+
+        for arg, exp in zip(args, defn.data['args']):
+            if variadic:
+                self.infer(arg)
+            else:
+                self.check(arg, exp.ty)
+
+        ty = defn.data['ret_ty']
+        if expected_ty and ty != expected_ty:
+            panic(f"unexpected type: expected {expected_ty} found {ty}")
+        return ty
+
+    def check_binary(self, node, expected_ty=None):
+        self.check(node.left, expected_ty)
+        self.check(node.right, expected_ty)
 
     def analyze(self, nodes):
         self.scope.add()
         for i, node in enumerate(nodes):
             match node:
-                case Fn(name, args, ret_ty, body, is_extern):
-                    if ret_ty:
-                        ret_ty = ret_ty.ty
-                    fn_dict = { 'args': args, 'ret_ty': ret_ty }
+                case Fn(name, args, ret_ty, body, _, abi):
+                    fn_dict = { 'args': args, 'ret_ty': ret_ty, 'abi': abi }
                     self.defs[name] = Def(DefKind.Fn, fn_dict)
                     if body:
                         self.analyze(body.stmts)
@@ -737,11 +778,9 @@ class TyCheck:
                     else:
                         self.check(init, ty)
                 case Call(name, args):
-                    defn = self.defs.get(name)
-                    for arg, exp in zip(args, defn.data['args']):
-                        self.check(arg, exp.ty)
+                    self.check_call(name, args)
                 case Binary(op, left, right):
-                    pass
+                    self.check_binary(node)
                 case _:
                     assert False, f"{node}"
         self.scope.pop()
@@ -751,8 +790,8 @@ class Reg(Enum):
     rax = auto()
 
 
-regs = ["rax", "rbx", "rcx", "rdx", "rsi", "rdi"]
-fn_regs = ["rdi", "rsi", "rdx", "r10", "r8", "r9"]
+regs = ["rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"]
+fn_regs = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
 
 class Scope:
     def __init__(self):
@@ -771,8 +810,10 @@ class Scope:
                 size = 8
             case TyKind.Str:
                 size = 8
+            case TyKind.Raw:
+                size = 8
             case _:
-                assert False
+                assert False, "type not found"
 
         self.stack_offset += size
         self.scopes[-1].append({ 'name': name, 'off': self.stack_offset })
@@ -808,9 +849,13 @@ class Codegen:
 
     def binop_stack(self, binary):
         stack = []
-        self.append(binary.left, stack)
-        self.append(binary.right, stack)
-        stack.append(binary.op)
+        match binary:
+            case Binary(_):
+                self.append(binary.left, stack)
+                self.append(binary.right, stack)
+                stack.append(binary.op)
+            case _:
+                stack.append(binary)
         return stack
 
     def expr(self, expr, reg):
@@ -833,8 +878,21 @@ class Codegen:
                 self.buf += f"    mov {reg}, [rbp - {off}]\n"
             case Call(name, args):
                 defn = self.defs.get(name)
+                variadic = False
+                for arg in defn.data['args']:
+                    if type(arg) == Variadic:
+                        variadic = True
+                        break
+
                 for i, arg in enumerate(args):
                     self.expr(arg, fn_regs[i])
+                match abi := defn.data['abi'][1:-1], variadic:
+                    case "C", True:
+                        self.buf += "    xor rax, rax\n"
+                    case "C", False:
+                        pass
+                    case _:
+                        assert False, f"{abi} abi is not implemented"
                 self.buf += f"    call {name}\n"
                 if defn.data['ret_ty'] and reg != "rax":
                     self.buf += f"    mov {reg}, rax\n"
@@ -852,7 +910,7 @@ class Codegen:
         self.scopes.add()
         for node in nodes:
             match node:
-                case Fn(name, args, ret_ty, body, is_extern):
+                case Fn(name, args, ret_ty, body, is_extern, _):
                     if is_extern:
                         continue
                     self.buf += f"{name}:\n    push rbp\n    mov rbp, rsp\n"
@@ -876,6 +934,7 @@ class Codegen:
         self.scopes.pop()
 
     def emit_data(self):
+        self.buf += ".data\n"
         for i, string in enumerate(self.strings):
             self.buf += f"str{i}:\n"
             self.buf += f"    .string {string}\n"
