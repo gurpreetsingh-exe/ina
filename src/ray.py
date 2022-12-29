@@ -650,13 +650,19 @@ class TyScope:
     def search_local(self, name):
         return any([True for local in self.scopes[-1] if local['name'] == name])
 
+    def find_local(self, name):
+        for scope in reversed(self.scopes):
+            for var in scope:
+                if var['name'] == name:
+                    return var['ty']
+
     def def_local(self, name, ty, val=None):
         if self.search_local(name):
             panic(f"{name} is already defined")
         self.scopes[-1].append({ 'name': name, 'ty': ty, 'val': val })
 
-    def add(self):
-        self.scopes.append([])
+    def add(self, params = []):
+        self.scopes.append(params)
 
     def pop(self):
         self.scopes.pop()
@@ -666,7 +672,8 @@ class TyCheck:
         self.ast = ast
         self.defs = {}
         self.scope = TyScope()
-        self.analyze(self.ast)
+        self.fn_ctx = None
+        self.tychk()
 
     def infer(self, expr):
         match expr:
@@ -707,7 +714,8 @@ class TyCheck:
     def check(self, expr, expected_ty):
         match expr:
             case Binary(op, left, right):
-                self.check_binary(expr, expected_ty)
+                self.check(left, expected_ty)
+                self.check(right, expected_ty)
             case Literal(kind, _):
                 val = None
                 match kind:
@@ -728,11 +736,19 @@ class TyCheck:
                     panic(f"expected {expected_ty} but got {ty}")
             case Call(name, args):
                 self.check_call(name, args, expected_ty)
+            case Ident(name):
+                if ty := self.scope.find_local(name):
+                    if ty != expected_ty:
+                        panic(f"expected {expected_ty}, found {ty}")
+                else:
+                    panic(f"{name} is not defined")
             case _:
                 assert False
 
     def check_call(self, name, args, expected_ty=None):
         defn = self.defs.get(name)
+        if not defn:
+            panic(f"{name} is not defined")
         variadic = False
 
         for arg in defn.data['args']:
@@ -757,37 +773,44 @@ class TyCheck:
             panic(f"unexpected type: expected {expected_ty} found {ty}")
         return ty
 
-    def check_binary(self, node, expected_ty=None):
-        self.check(node.left, expected_ty)
-        self.check(node.right, expected_ty)
+    def check_stmt(self, stmt):
+        match stmt:
+            case Let(name, ty, init):
+                if not ty:
+                    ty = self.infer(init)
+                    stmt.ty = ty
+                    self.scope.def_local(name, ty)
+                else:
+                    self.check(init, ty)
+            case _:
+                self.check(stmt, None)
 
-    def analyze(self, nodes):
+    def check_block(self, block):
         self.scope.add()
-        for i, node in enumerate(nodes):
+        if self.fn_ctx:
+            deff = self.defs[self.fn_ctx]
+            assert deff.kind == DefKind.Fn
+            fn_dict = deff.data
+            for arg in fn_dict['args']:
+                if type(arg) == Variadic:
+                    continue
+                self.scope.def_local(arg.name, arg.ty)
+        self.fn_ctx = None
+        for stmt in block.stmts:
+            self.check_stmt(stmt)
+        self.scope.pop()
+
+    def tychk(self):
+        for node in self.ast:
             match node:
                 case Fn(name, args, ret_ty, body, _, abi):
                     fn_dict = { 'args': args, 'ret_ty': ret_ty, 'abi': abi }
                     self.defs[name] = Def(DefKind.Fn, fn_dict)
+                    self.fn_ctx = name
                     if body:
-                        self.analyze(body.stmts)
-                case Let(name, ty, init):
-                    if not ty:
-                        ty = self.infer(init)
-                        nodes[i].ty = ty
-                        self.scope.def_local(name, ty)
-                    else:
-                        self.check(init, ty)
-                case Call(name, args):
-                    self.check_call(name, args)
-                case Binary(op, left, right):
-                    self.check_binary(node)
+                        self.check_block(body)
                 case _:
                     assert False, f"{node}"
-        self.scope.pop()
-
-
-class Reg(Enum):
-    rax = auto()
 
 
 regs = ["rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"]
@@ -886,13 +909,14 @@ class Codegen:
 
                 for i, arg in enumerate(args):
                     self.expr(arg, fn_regs[i])
-                match abi := defn.data['abi'][1:-1], variadic:
-                    case "C", True:
-                        self.buf += "    xor rax, rax\n"
-                    case "C", False:
-                        pass
-                    case _:
-                        assert False, f"{abi} abi is not implemented"
+                if defn.data['abi']:
+                    match abi := defn.data['abi'][1:-1], variadic:
+                        case "C", True:
+                            self.buf += "    xor rax, rax\n"
+                        case "C", False:
+                            pass
+                        case _:
+                            assert False, f"{abi} abi is not implemented"
                 self.buf += f"    call {name}\n"
                 if defn.data['ret_ty'] and reg != "rax":
                     self.buf += f"    mov {reg}, rax\n"
@@ -917,11 +941,15 @@ class Codegen:
                     if node.alignment:
                         self.buf += f"    sub rsp, {node.alignment}\n"
                     for i, arg in enumerate(args):
+                        if type(arg) == Variadic:
+                            continue
                         off = self.scopes.def_local(arg.name, arg.ty)
                         self.buf += f"    mov [rbp - {off}], {fn_regs[i]}\n"
                     self.gen(body.stmts)
                     if node.alignment:
                         self.buf += f"    add rsp, {node.alignment}\n"
+                    if not ret_ty:
+                        self.buf += f"    xor rax, rax\n"
                     self.buf += "    pop rbp\n    ret\n"
                 case Let(name, ty, init):
                     self.expr(init, "rax")

@@ -1,17 +1,13 @@
 from .ray import *
 
-node_id = 0
 
 class Node:
-    def __init__(self):
-        global node_id
-        self.id = node_id
-        node_id += 1
+    pass
+
 
 class Func(Node):
     __match_args__ = ("name", "args", "ret_ty", "body", "is_extern")
     def __init__(self, name, args, ret_ty, body, is_extern):
-        super().__init__()
         self.name = name
         self.args = args
         self.ret_ty = ret_ty
@@ -20,23 +16,19 @@ class Func(Node):
 
 class BBlock(Node):
     def __init__(self, nodes):
-        super().__init__()
         self.nodes = nodes
 
 class Alloc(Node):
     def __init__(self, ty):
-        super().__init__()
         self.ty = ty
 
 class Store(Node):
     def __init__(self, node, value):
-        super().__init__()
         self.node = node
         self.value = value
 
 class BinOp(Node):
     def __init__(self, left, right):
-        super().__init__()
         self.left = left
         self.right = right
 
@@ -58,7 +50,6 @@ class Div(BinOp):
 
 class LiteralNode(Node):
     def __init__(self, val):
-        super().__init__()
         self.val = val
 
 class Int(LiteralNode):
