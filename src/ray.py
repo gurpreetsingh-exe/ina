@@ -153,6 +153,7 @@ def get_token_name(ty):
 
 
 class Token:
+    __match_args__ = ('kind', 'loc', )
     def __init__(self, kind, loc):
         self.kind = kind
         self.loc = loc
@@ -179,10 +180,12 @@ class Loc:
         return f"{self.fmt()}: {self.id}: {self.size}"
 
 def lexer_from_file(filepath):
-    program = ""
     with open(filepath, "r") as f:
         program = f.read()
-    return Lexer(program, filepath)
+        return lexer_from_src(program, filepath)
+
+def lexer_from_src(src, filepath):
+    return Lexer(src, filepath)
 
 class Lexer:
     def __init__(self, program, filepath):
@@ -307,9 +310,11 @@ def get_prim_ty(ty):
         case 'raw': return TyKind.Raw
         case _: panic("unexpected type")
 
+errors = []
+
 def panic(msg):
-    print(msg)
-    exit(1)
+    errors.append(msg + "\n")
+    assert False, msg
 
 class TyKind(Enum):
     Int   = auto()
@@ -888,10 +893,18 @@ class Codegen:
                 stack0 = []
                 for i, expr in enumerate(stack):
                     match expr:
-                        case Token():
+                        case Token(kind, _):
                             b = stack0.pop()
                             a = stack0.pop()
-                            self.buf += f"    add {a}, {b}\n"
+                            op = "add"
+                            match kind:
+                                case TokenKind.PLUS:
+                                    op = "add"
+                                case TokenKind.MINUS:
+                                    op = "sub"
+                                case _:
+                                    assert False, f"{kind} not implemented"
+                            self.buf += f"    {op} {a}, {b}\n"
                             stack0.append(a)
                         case _:
                             self.expr(expr, regs[i])
@@ -974,27 +987,84 @@ class Codegen:
         return self.buf
 
 
+def usage(arg0):
+    print(f"Usage: {arg0} [command] [options] input...")
+    print("\nCommands:")
+    print("    com          compile the file")
+    print("\nOptions:")
+    print("    -h, --help   print help information\n")
+    exit(1)
+
+class Command(Enum):
+    Nan = auto()
+    Compile = auto()
+
 def main(argv):
-    if len(argv) < 2:
-        print("Usage: ./ray filename")
-        exit(1)
+    filename = ""
+    arg0 = argv[0]
+    argv = argv[1:]
+    command = Command.Nan
+    while argv:
+        arg = argv[0]
+        if arg.startswith("-"):
+            if len(arg) < 2:
+                usage(arg0)
+            match arg[1]:
+                case '-':
+                    match arg:
+                        case "--help":
+                            usage(arg0)
+                        case _:
+                            print(f"Unknown option \"{arg}\"")
+                            usage(arg0)
+                case 'h':
+                    usage(arg0)
+                case _:
+                    print(f"Unknown option \"{arg}\"")
+                    usage(arg0)
+        elif command == Command.Nan:
+            match arg:
+                case "com":
+                    command = Command.Compile
+                case _:
+                    print(f"Unknown command \"{arg}\"")
+        else:
+            match command:
+                case Command.Nan:
+                    usage(arg0)
+                case _:
+                    if not filename:
+                        filename = arg
+                    else:
+                        usage(arg0)
+        argv = argv[1:]
 
-    filename = argv[1]
-    lexer = lexer_from_file(filename)
-    src = lexer.program
-    tokens = list(lexer.lexfile())
-    parser = Parser(src, tokens)
-    ast = list(parser.parse())
-    tychk = TyCheck(ast)
-    # gen = IRGen(ast)
-    # pp(ast, max_depth=10)
-    code = Codegen(ast, tychk.defs).emit()
-    with open("test.asm", "w") as f:
-        f.write(code)
+    match command:
+        case Command.Nan:
+            usage(arg0)
+        case _:
+            if not filename:
+                usage(arg0)
+            match command:
+                case Command.Compile:
+                    lexer = lexer_from_file(filename)
+                    src = lexer.program
+                    tokens = list(lexer.lexfile())
+                    parser = Parser(src, tokens)
+                    ast = list(parser.parse())
+                    tychk = TyCheck(ast)
+                    # gen = IRGen(ast)
+                    # pp(ast, max_depth=10)
+                    code = Codegen(ast, tychk.defs).emit()
+                    output = filename.split('.')[0]
+                    with open(f"{output}.asm", "w") as f:
+                        f.write(code)
 
-    from subprocess import call
-    call(['as', 'test.asm', '-o', 'test.o'])
-    call(['gcc', 'test.o', '-o', 'ray'])
+                    from subprocess import call
+                    call(["as", f"{output}.asm", "-o", f"{output}.o"])
+                    call(["gcc", f"{output}.o", "-o", output])
+                case _:
+                    assert False, "unreachable"
 
 
 if __name__ == "__main__":

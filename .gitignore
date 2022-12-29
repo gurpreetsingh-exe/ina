@@ -3,7 +3,7 @@
 !/**/
 /.**/
 Makefile
+__pycache__/
 *.o
 *.asm
 *.s
-*.ray

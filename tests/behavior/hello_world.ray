@@ -1,0 +1,9 @@
+extern "C" fn printf(format: str, ...)
+
+fn main() {
+    let x1 = 10 + 20;
+    let x2 = 20 - 30;
+    printf("%d %d\n", x1, x2);
+}
+\o
+30 -10
