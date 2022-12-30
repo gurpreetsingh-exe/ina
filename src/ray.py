@@ -381,6 +381,7 @@ class Binary:
         self.right = right
 
 class Unary:
+    __match_args__ = ("op", "expr", )
     def __init__(self, op, expr):
         self.op = op
         self.expr = expr
@@ -546,7 +547,7 @@ class Parser:
                 panic(f"unreachable {self.t.kind}")
 
     def parse_unary(self):
-        if self.t.kind in [TokenKind.MINUS, TokenKind.BANG]:
+        if self.t.kind in [TokenKind.MINUS, TokenKind.BANG, TokenKind.AMPERSAND]:
             op = self.t
             self.advance()
             right = self.parse_unary()
@@ -713,6 +714,21 @@ class TyCheck:
             case Ident(name):
                 if not self.scope.search_local(name):
                     panic(f"{name} is not defined")
+                return self.scope.find_local(name)
+            case Unary(op, expr):
+                match op.kind:
+                    case TokenKind.BANG:
+                        if (ty := self.infer(expr).ty) != TyKind.Bool:
+                            panic(f"expected bool but got {ty}")
+                    case TokenKind.MINUS:
+                        if (ty := self.infer(expr).ty) not in [TyKind.Int, TyKind.Float]:
+                            panic(f"expected number but got {ty}")
+                    case TokenKind.AMPERSAND:
+                        if type(expr) != Ident:
+                            panic(f"cannot use & on {expr.__class__.__name__}")
+                        return Ty(TyKind.Raw)
+                    case _:
+                        assert False, f"{op} unreachable"
             case _:
                 assert False
 
@@ -747,6 +763,23 @@ class TyCheck:
                         panic(f"expected {expected_ty}, found {ty}")
                 else:
                     panic(f"{name} is not defined")
+            case Unary(op, expr):
+                match op.kind:
+                    case TokenKind.BANG:
+                        if expected_ty.ty != TyKind.Bool:
+                            panic(f"expected {expected_ty} but got Bool")
+                        self.check(expr, expected_ty)
+                    case TokenKind.MINUS:
+                        if expected_ty.ty not in [TyKind.Int, TyKind.Float]:
+                            panic(f"expected {expected_ty} but got number")
+                        self.check(expr, expected_ty)
+                    case TokenKind.AMPERSAND:
+                        if type(expr) != Ident:
+                            panic(f"cannot use & on {expr.__class__.__name__}")
+                        if expected_ty.ty != TyKind.Raw:
+                            panic(f"expected {expected_ty} but got Raw")
+                    case _:
+                        assert False, f"{op} unreachable"
             case _:
                 assert False
 
@@ -784,9 +817,9 @@ class TyCheck:
                 if not ty:
                     ty = self.infer(init)
                     stmt.ty = ty
-                    self.scope.def_local(name, ty)
                 else:
                     self.check(init, ty)
+                self.scope.def_local(name, ty)
             case _:
                 self.check(stmt, None)
 
@@ -940,6 +973,9 @@ class Codegen:
                         self.strings.append(value)
                     case _:
                         self.buf += f"    mov {reg}, {value}\n"
+            case Unary(op, expr):
+                off = self.scopes.find_local(expr.name)
+                self.buf += f"    lea {reg}, [rbp - {off}]\n"
             case _:
                 assert False, f"{type(expr)} is not implemented"
 
