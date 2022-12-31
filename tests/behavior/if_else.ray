@@ -1,0 +1,32 @@
+extern "C" fn printf(format: str, ...)
+
+fn cond(c: bool, i: int) {
+    if c {
+        printf("%d\n", i);
+    }
+}
+
+fn main() {
+    let a = true;
+    let b = !a;
+    if !a {
+        printf("1\n");
+    } else {
+        if !b {
+            printf("2\n");
+            if a {
+                printf("3\n");
+                cond(a, 32);
+            } else {
+                printf("4\n");
+            }
+        }
+    }
+    cond(true, 10);
+}
+
+\o
+2
+3
+32
+10

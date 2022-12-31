@@ -19,6 +19,8 @@ class TokenKind(Enum):
     Let         = auto()
     Extern      = auto()
     Fn          = auto()
+    If          = auto()
+    Else        = auto()
 
     PLUS        = auto()  # `+`
     MINUS       = auto()  # `-`
@@ -65,6 +67,8 @@ Keywords = {
     "extern": TokenKind.Extern,
     "fn"    : TokenKind.Fn,
     "let"   : TokenKind.Let,
+    "if"    : TokenKind.If,
+    "else"  : TokenKind.Else,
 }
 
 Punctuators = {
@@ -117,6 +121,8 @@ def get_token_name(ty):
         case TokenKind.Mut: return "mut"
         case TokenKind.Imm: return "imm"
         case TokenKind.Let: return "let"
+        case TokenKind.If: return "if"
+        case TokenKind.Else: return "else"
         case TokenKind.PLUS: return "+"
         case TokenKind.MINUS: return "-"
         case TokenKind.STAR: return "*"
@@ -392,6 +398,16 @@ class Call:
         self.name = name
         self.args = args
 
+class If:
+    def __init__(self, cond, body, elze = None):
+        self.cond = cond
+        self.body = body
+        self.elze = elze
+
+class Else:
+    def __init__(self, body):
+        self.body = body
+
 class Let:
     __match_args__ = ("name", "ty", "init")
     def __init__(self, name, ty, init):
@@ -442,6 +458,12 @@ class Parser:
                 self.prev = self.tokens[self.id]
             self.id += 1
             self.t = self.tokens[self.id]
+
+    def eat_if_present(self, kind):
+        present = self.t.kind == kind
+        if present:
+            self.advance()
+        return present
 
     def peek(self):
         if self.check():
@@ -543,6 +565,15 @@ class Parser:
                 lit_kind = self.token_to_lit()
                 self.advance()
                 return Literal(lit_kind, value)
+            case TokenKind.If:
+                self.advance()
+                cond = self.parse_expr()
+                body = self.parse_block()
+                elze = None
+                if self.t.kind == TokenKind.Else:
+                    self.advance()
+                    elze = self.parse_block()
+                return If(cond, body, elze)
             case _:
                 panic(f"unreachable {self.t.kind}")
 
@@ -594,11 +625,13 @@ class Parser:
         match self.t.kind:
             case TokenKind.Let:
                 stmt = self.parse_let()
+                self.expect(TokenKind.SEMI)
             case TokenKind.LCURLY:
                 stmt = self.parse_block()
+                self.eat_if_present(TokenKind.SEMI)
             case _:
                 stmt = self.parse_expr()
-        self.expect(TokenKind.SEMI)
+                self.eat_if_present(TokenKind.SEMI)
         return stmt
 
     def parse_block(self):
@@ -687,6 +720,9 @@ class TyCheck:
                 lty = self.infer(left)
                 rty = self.infer(right)
                 if lty == rty:
+                    match op:
+                        case Token(TokenKind.LT | TokenKind.GT, _):
+                            return Ty(TyKind.Bool)
                     return lty
                 else:
                     panic(f"{op} is not implemented for {lty} and {rty}")
@@ -720,9 +756,11 @@ class TyCheck:
                     case TokenKind.BANG:
                         if (ty := self.infer(expr).ty) != TyKind.Bool:
                             panic(f"expected bool but got {ty}")
+                        return Ty(TyKind.Bool)
                     case TokenKind.MINUS:
                         if (ty := self.infer(expr).ty) not in [TyKind.Int, TyKind.Float]:
                             panic(f"expected number but got {ty}")
+                        return Ty(ty)
                     case TokenKind.AMPERSAND:
                         if type(expr) != Ident:
                             panic(f"cannot use & on {expr.__class__.__name__}")
@@ -735,8 +773,15 @@ class TyCheck:
     def check(self, expr, expected_ty):
         match expr:
             case Binary(op, left, right):
-                self.check(left, expected_ty)
-                self.check(right, expected_ty)
+                match op:
+                    case Token(TokenKind.LT | TokenKind.GT, _):
+                        if expected_ty.ty != TyKind.Bool:
+                            panic(f"expected {expected_ty.ty} but got bool")
+                        lty = self.infer(left)
+                        rty = self.infer(right)
+                    case _:
+                        self.check(left, expected_ty)
+                        self.check(right, expected_ty)
             case Literal(kind, _):
                 val = None
                 match kind:
@@ -780,6 +825,11 @@ class TyCheck:
                             panic(f"expected {expected_ty} but got Raw")
                     case _:
                         assert False, f"{op} unreachable"
+            case If():
+                self.check(expr.cond, Ty(TyKind.Bool))
+                self.check_block(expr.body)
+                if expr.elze:
+                    self.check_block(expr.elze)
             case _:
                 assert False
 
@@ -873,6 +923,8 @@ class Scope:
                 size = 8
             case TyKind.Raw:
                 size = 8
+            case TyKind.Bool:
+                size = 8
             case _:
                 assert False, "type not found"
 
@@ -900,6 +952,13 @@ class Codegen:
         self.scopes = Scope()
         self.strings = []
         self.defs = defs
+        self.label_id = 1
+
+    @property
+    def label(self):
+        i = self.label_id
+        self.label_id += 1
+        return i
 
     def append(self, expr, stack):
         match expr:
@@ -919,7 +978,7 @@ class Codegen:
                 stack.append(binary)
         return stack
 
-    def expr(self, expr, reg):
+    def expr(self, expr, reg, label = 0):
         match expr:
             case Binary():
                 stack = self.binop_stack(expr)
@@ -929,22 +988,36 @@ class Codegen:
                         case Token(kind, _):
                             b = stack0.pop()
                             a = stack0.pop()
-                            op = "add"
                             match kind:
                                 case TokenKind.PLUS:
-                                    op = "add"
+                                    self.buf += f"    add {a}, {b}\n"
                                 case TokenKind.MINUS:
-                                    op = "sub"
+                                    self.buf += f"    sub {a}, {b}\n"
+                                case TokenKind.LT | TokenKind.GT:
+                                    self.buf += f"    cmp {a}, {b}\n"
+                                    if reg:
+                                        setT = "setl" if kind == TokenKind.LT else "setg"
+                                        self.buf += f"    {setT} al\n"
+                                        if reg != "rax":
+                                            self.buf += f"    movzx {a}, al\n"
+                                    else:
+                                        if label:
+                                            jmp = "jge" if kind == TokenKind.LT else "jle"
+                                            self.buf += f"    {jmp} .L{label}\n"
                                 case _:
                                     assert False, f"{kind} not implemented"
-                            self.buf += f"    {op} {a}, {b}\n"
                             stack0.append(a)
                         case _:
                             self.expr(expr, regs[i])
                             stack0.append(regs[i])
+                if reg and reg != "rax":
+                    self.buf += f"    mov {reg}, rax\n"
             case Ident(name):
                 off = self.scopes.find_local(name)
-                self.buf += f"    mov {reg}, [rbp - {off}]\n"
+                if reg:
+                    self.buf += f"    mov {reg}, [rbp - {off}]\n"
+                else:
+                    self.buf += f"    mov rax, [rbp - {off}]\n"
             case Call(name, args):
                 defn = self.defs.get(name)
                 variadic = False
@@ -967,15 +1040,67 @@ class Codegen:
                 if defn.data['ret_ty'] and reg != "rax":
                     self.buf += f"    mov {reg}, rax\n"
             case Literal(kind, value):
+                if not reg:
+                    return
                 match kind:
                     case Lit.Str:
                         self.buf += f"    mov {reg}, OFFSET FLAT:str{len(self.strings)}\n"
                         self.strings.append(value)
+                    case Lit.Bool:
+                        self.buf += f"    mov {reg}, {1 if value == 'true' else 0}\n"
                     case _:
                         self.buf += f"    mov {reg}, {value}\n"
             case Unary(op, expr):
-                off = self.scopes.find_local(expr.name)
-                self.buf += f"    lea {reg}, [rbp - {off}]\n"
+                if not reg:
+                    match op.kind:
+                        case TokenKind.AMPERSAND:
+                            assert False
+                        case TokenKind.BANG:
+                            self.buf += f"    mov rax, 1\n"
+                            self.expr(expr, "rbx")
+                            self.buf += f"    sub rax, rbx\n"
+                        case TokenKind.MINUS:
+                            self.buf += f"    mov rax, 0\n"
+                            self.expr(expr, "rbx")
+                            self.buf += f"    sub rax, rbx\n"
+                        case _:
+                            assert False, "not implemented"
+                    return
+                match op.kind:
+                    case TokenKind.AMPERSAND:
+                        off = self.scopes.find_local(expr.name)
+                        self.buf += f"    lea {reg}, [rbp - {off}]\n"
+                    case TokenKind.BANG:
+                        self.buf += f"    mov rax, 1\n"
+                        self.expr(expr, "rbx")
+                        self.buf += f"    sub rax, rbx\n"
+                    case TokenKind.MINUS:
+                        self.buf += f"    mov rax, 0\n"
+                        self.expr(expr, "rbx")
+                        self.buf += f"    sub rax, rbx\n"
+                    case _:
+                        assert False, "not implemented"
+            case If():
+                has_else = bool(expr.elze)
+                label_false = self.label
+                label_end = None
+                if has_else:
+                    label_end = self.label
+                self.expr(expr.cond, None, label_false)
+                match expr.cond:
+                    case Literal():
+                        if expr.cond.value == 'false':
+                            self.buf += f"    jmp .L{label_false}\n"
+                    case _:
+                        self.buf += f"    cmp rax, 0\n"
+                        self.buf += f"    je .L{label_false}\n"
+                self.gen(expr.body.stmts)
+                if has_else:
+                    self.buf += f"    jmp .L{label_end}\n"
+                self.buf += f".L{label_false}:\n"
+                if has_else:
+                    self.gen(expr.elze.stmts)
+                    self.buf += f".L{label_end}:\n"
             case _:
                 assert False, f"{type(expr)} is not implemented"
 
@@ -1001,10 +1126,20 @@ class Codegen:
                         self.buf += f"    xor rax, rax\n"
                     self.buf += "    pop rbp\n    ret\n"
                 case Let(name, ty, init):
-                    self.expr(init, "rax")
                     off = self.scopes.def_local(name, ty)
-                    self.buf += f"    mov [rbp - {off}], rax\n"
-                case Binary() | Call():
+                    if type(init) == Literal:
+                        match init.kind:
+                            case Lit.Str:
+                                self.expr(init, "rax")
+                                self.buf += f"    mov [rbp - {off}], rax\n"
+                            case Lit.Int:
+                                self.buf += f"    mov QWORD PTR [rbp - {off}], {init.value}\n"
+                            case Lit.Bool:
+                                self.buf += f"    mov QWORD PTR [rbp - {off}], {1 if init.value == 'true' else 0}\n"
+                    else:
+                        self.expr(init, "rax")
+                        self.buf += f"    mov [rbp - {off}], rax\n"
+                case Binary() | Call() | Unary() | If():
                     self.expr(node, "rax")
                 case _:
                     assert False, f"{type(node)} is not implemented"
