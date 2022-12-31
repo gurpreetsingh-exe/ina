@@ -335,6 +335,19 @@ class Ty:
     def __init__(self, ty):
         self.ty = ty
 
+    def get_size(self):
+        match self.ty:
+            case TyKind.Int | TyKind.Float:
+                return 8
+            case TyKind.Str:
+                return 8
+            case TyKind.Raw:
+                return 8
+            case TyKind.Bool:
+                return 8
+            case _:
+                assert False, "type not found"
+
     def __eq__(self, __o: object) -> bool:
         return self.ty == __o.ty
 
@@ -364,6 +377,24 @@ class Fn:
         self.abi = abi
 
         self.alignment = ((self.local_count + 1) // 2) * 16
+
+    @property
+    def stack_offset(self):
+        stack_off = 0
+        for arg in self.args:
+            if type(arg) == Variadic:
+                continue
+            stack_off += arg.ty.get_size()
+        if not self.body:
+            return stack_off
+        for node in self.body.stmts:
+            if type(node) == Let:
+                stack_off += node.ty.get_size()
+        return stack_off
+
+    @property
+    def stack_alignment(self):
+        return (self.stack_offset + 15) & ~15
 
     @property
     def local_count(self):
@@ -767,6 +798,13 @@ class TyCheck:
                         return Ty(TyKind.Raw)
                     case _:
                         assert False, f"{op} unreachable"
+            case If():
+                self.check(expr.cond, Ty(TyKind.Bool))
+                if_ty = self.infer_block(expr.body)
+                else_ty = None
+                if expr.elze:
+                    else_ty = self.infer_block(expr.elze)
+                return if_ty
             case _:
                 assert False
 
@@ -798,7 +836,7 @@ class TyCheck:
                     case _:
                         panic(f"unexpected literal {kind}")
                 ty = Ty(val)
-                if ty != expected_ty:
+                if expected_ty and ty != expected_ty:
                     panic(f"expected {expected_ty} but got {ty}")
             case Call(name, args):
                 self.check_call(name, args, expected_ty)
@@ -861,7 +899,7 @@ class TyCheck:
             panic(f"unexpected type: expected {expected_ty} found {ty}")
         return ty
 
-    def check_stmt(self, stmt):
+    def check_stmt(self, stmt, expected_ty):
         match stmt:
             case Let(name, ty, init):
                 if not ty:
@@ -871,9 +909,38 @@ class TyCheck:
                     self.check(init, ty)
                 self.scope.def_local(name, ty)
             case _:
-                self.check(stmt, None)
+                self.check(stmt, expected_ty)
+
+    def infer_stmt(self, stmt):
+        match stmt:
+            case Let(name, ty, init):
+                if not ty:
+                    ty = self.infer(init)
+                    stmt.ty = ty
+                else:
+                    self.check(init, ty)
+                self.scope.def_local(name, ty)
+            case _:
+                return self.infer(stmt)
 
     def check_block(self, block):
+        self.scope.add()
+        ret_ty = None
+        if self.fn_ctx:
+            deff = self.defs[self.fn_ctx]
+            assert deff.kind == DefKind.Fn
+            fn_dict = deff.data
+            for arg in fn_dict['args']:
+                if type(arg) == Variadic:
+                    continue
+                self.scope.def_local(arg.name, arg.ty)
+            ret_ty = fn_dict['ret_ty']
+        self.fn_ctx = None
+        for stmt in block.stmts:
+            self.check_stmt(stmt, ret_ty)
+        self.scope.pop()
+
+    def infer_block(self, block):
         self.scope.add()
         if self.fn_ctx:
             deff = self.defs[self.fn_ctx]
@@ -884,9 +951,12 @@ class TyCheck:
                     continue
                 self.scope.def_local(arg.name, arg.ty)
         self.fn_ctx = None
+        tys = []
         for stmt in block.stmts:
-            self.check_stmt(stmt)
+            tys.append(self.infer_stmt(stmt))
         self.scope.pop()
+        if tys:
+            return tys[-1]
 
     def tychk(self):
         for node in self.ast:
@@ -916,17 +986,7 @@ class Scope:
         if self.search_local(name):
             panic(f"{name} is already defined")
         size = 0
-        match ty.ty:
-            case TyKind.Int | TyKind.Float:
-                size = 8
-            case TyKind.Str:
-                size = 8
-            case TyKind.Raw:
-                size = 8
-            case TyKind.Bool:
-                size = 8
-            case _:
-                assert False, "type not found"
+        size = ty.get_size()
 
         self.stack_offset += size
         self.scopes[-1].append({ 'name': name, 'off': self.stack_offset })
@@ -1037,7 +1097,7 @@ class Codegen:
                         case _:
                             assert False, f"{abi} abi is not implemented"
                 self.buf += f"    call {name}\n"
-                if defn.data['ret_ty'] and reg != "rax":
+                if defn.data['ret_ty'] and reg and reg != "rax":
                     self.buf += f"    mov {reg}, rax\n"
             case Literal(kind, value):
                 if not reg:
@@ -1056,13 +1116,15 @@ class Codegen:
                         case TokenKind.AMPERSAND:
                             assert False
                         case TokenKind.BANG:
-                            self.buf += f"    mov rax, 1\n"
-                            self.expr(expr, "rbx")
-                            self.buf += f"    sub rax, rbx\n"
+                            self.buf += f"    mov rbx, 1\n"
+                            self.expr(expr, None)
+                            self.buf += f"    sub rbx, rax\n"
+                            self.buf += f"    mov rax, rbx\n"
                         case TokenKind.MINUS:
-                            self.buf += f"    mov rax, 0\n"
-                            self.expr(expr, "rbx")
-                            self.buf += f"    sub rax, rbx\n"
+                            self.buf += f"    mov rbx, 0\n"
+                            self.expr(expr, None)
+                            self.buf += f"    sub rbx, rax\n"
+                            self.buf += f"    mov rax, rbx\n"
                         case _:
                             assert False, "not implemented"
                     return
@@ -1072,8 +1134,8 @@ class Codegen:
                         self.buf += f"    lea {reg}, [rbp - {off}]\n"
                     case TokenKind.BANG:
                         self.buf += f"    mov rax, 1\n"
-                        self.expr(expr, "rbx")
-                        self.buf += f"    sub rax, rbx\n"
+                        self.expr(expr, reg)
+                        self.buf += f"    sub {reg}, rbx\n"
                     case TokenKind.MINUS:
                         self.buf += f"    mov rax, 0\n"
                         self.expr(expr, "rbx")
@@ -1081,6 +1143,7 @@ class Codegen:
                     case _:
                         assert False, "not implemented"
             case If():
+                self.buf += f"    # {expr.cond.name}\n"
                 has_else = bool(expr.elze)
                 label_false = self.label
                 label_end = None
@@ -1091,7 +1154,7 @@ class Codegen:
                     case Literal():
                         if expr.cond.value == 'false':
                             self.buf += f"    jmp .L{label_false}\n"
-                    case _:
+                    case Ident() | Unary() | Call():
                         self.buf += f"    cmp rax, 0\n"
                         self.buf += f"    je .L{label_false}\n"
                 self.gen(expr.body.stmts)
@@ -1101,6 +1164,8 @@ class Codegen:
                 if has_else:
                     self.gen(expr.elze.stmts)
                     self.buf += f".L{label_end}:\n"
+                if reg and reg != "rax":
+                    self.buf += f"    mov {reg}, rax\n"
             case _:
                 assert False, f"{type(expr)} is not implemented"
 
@@ -1112,16 +1177,17 @@ class Codegen:
                     if is_extern:
                         continue
                     self.buf += f"{name}:\n    push rbp\n    mov rbp, rsp\n"
-                    if node.alignment:
-                        self.buf += f"    sub rsp, {node.alignment}\n"
+                    alignment = node.stack_alignment
+                    if alignment:
+                        self.buf += f"    sub rsp, {alignment}\n"
                     for i, arg in enumerate(args):
                         if type(arg) == Variadic:
                             continue
                         off = self.scopes.def_local(arg.name, arg.ty)
                         self.buf += f"    mov [rbp - {off}], {fn_regs[i]}\n"
                     self.gen(body.stmts)
-                    if node.alignment:
-                        self.buf += f"    add rsp, {node.alignment}\n"
+                    if alignment:
+                        self.buf += f"    add rsp, {alignment}\n"
                     if not ret_ty:
                         self.buf += f"    xor rax, rax\n"
                     self.buf += "    pop rbp\n    ret\n"
@@ -1139,7 +1205,7 @@ class Codegen:
                     else:
                         self.expr(init, "rax")
                         self.buf += f"    mov [rbp - {off}], rax\n"
-                case Binary() | Call() | Unary() | If():
+                case Binary() | Call() | Unary() | If() | Literal():
                     self.expr(node, "rax")
                 case _:
                     assert False, f"{type(node)} is not implemented"
