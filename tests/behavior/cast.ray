@@ -1,0 +1,15 @@
+extern "C" fn printf(format: str, ...)
+
+fn helper() -> int {
+    25
+}
+
+fn main() {
+    let a = 10.0 as int;
+    let b = 10 as float;
+    // this will not work
+    // printf("%d %.2f %.3f\n", a, b, helper() as float);
+    printf("%d %.2f\n", a, b);
+}
+\o
+10 10.00

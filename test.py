@@ -50,7 +50,7 @@ def test_behavior(filepath):
     proc.communicate()
     failed = False
     if proc.returncode or lines != stdout:
-        print(lines)
+        print(filepath, lines)
         failed = True
     subprocess.call(['rm', "-f", output, f"{output}.asm", f"{output}.o"])
     return failed

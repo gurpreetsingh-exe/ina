@@ -737,7 +737,12 @@ class TyScope:
         self.scopes[-1]
 
     def search_local(self, name):
-        return any([True for local in self.scopes[-1] if local['name'] == name])
+        for scope in reversed(self.scopes):
+            for var in scope:
+                if var['name'] == name:
+                    return True
+        return False
+        # return any([True for local in self.scopes[-1] if local['name'] == name])
 
     def find_local(self, name):
         for scope in reversed(self.scopes):
@@ -1207,7 +1212,7 @@ class Codegen:
                         off = self.scopes.find_local(expr.name)
                         self.buf += f"    lea {reg}, [rbp - {off}]\n"
                     case TokenKind.BANG:
-                        self.buf += f"    mov rax, 1\n"
+                        self.buf += f"    mov rbx, 1\n"
                         self.expr(expr, reg)
                         self.buf += f"    sub {reg}, rbx\n"
                     case TokenKind.MINUS:
@@ -1217,7 +1222,6 @@ class Codegen:
                     case _:
                         assert False, "not implemented"
             case If():
-                self.buf += f"    # {expr.cond.name}\n"
                 has_else = bool(expr.elze)
                 label_false = self.label
                 label_end = None
