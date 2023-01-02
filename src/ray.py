@@ -21,6 +21,7 @@ class TokenKind(Enum):
     Fn          = auto()
     If          = auto()
     Else        = auto()
+    As          = auto()
 
     PLUS        = auto()  # `+`
     MINUS       = auto()  # `-`
@@ -69,6 +70,7 @@ Keywords = {
     "let"   : TokenKind.Let,
     "if"    : TokenKind.If,
     "else"  : TokenKind.Else,
+    "as"    : TokenKind.As,
 }
 
 Punctuators = {
@@ -123,6 +125,7 @@ def get_token_name(ty):
         case TokenKind.Let: return "let"
         case TokenKind.If: return "if"
         case TokenKind.Else: return "else"
+        case TokenKind.As: return "as"
         case TokenKind.PLUS: return "+"
         case TokenKind.MINUS: return "-"
         case TokenKind.STAR: return "*"
@@ -416,24 +419,28 @@ class Binary:
         self.op = op
         self.left = left
         self.right = right
+        self.ty = None
 
 class Unary:
     __match_args__ = ("op", "expr", )
     def __init__(self, op, expr):
         self.op = op
         self.expr = expr
+        self.ty = None
 
 class Call:
     __match_args__ = ("name", "args")
     def __init__(self, name, args):
         self.name = name
         self.args = args
+        self.ty = None
 
 class If:
     def __init__(self, cond, body, elze = None):
         self.cond = cond
         self.body = body
         self.elze = elze
+        self.ty = None
 
 class Else:
     def __init__(self, body):
@@ -455,6 +462,14 @@ class Ident:
     __match_args__ = ("name", )
     def __init__(self, name):
         self.name = name
+        self.ty = None
+
+class Cast:
+    __match_args__ = ("expr", "ty", )
+    def __init__(self, expr, ty):
+        self.expr = expr
+        self.ty = ty
+
 
 class Lit(Enum):
     Int   = auto()
@@ -468,8 +483,7 @@ class Literal:
     def __init__(self, kind, value):
         self.kind = kind
         self.value = value
-
-
+        self.ty = None
 
 
 class Parser:
@@ -618,7 +632,12 @@ class Parser:
         return self.parse_primary()
 
     def parse_factor(self):
-        return self.compound([TokenKind.STAR, TokenKind.SLASH], self.parse_unary)
+        prim = self.compound([TokenKind.STAR, TokenKind.SLASH], self.parse_unary)
+        if self.t.kind == TokenKind.As:
+            self.advance()
+            ty = self.parse_ty()
+            prim = Cast(prim, ty)
+        return prim
 
     def parse_term(self):
         return self.compound([TokenKind.PLUS, TokenKind.MINUS], self.parse_factor)
@@ -731,8 +750,8 @@ class TyScope:
             panic(f"{name} is already defined")
         self.scopes[-1].append({ 'name': name, 'ty': ty, 'val': val })
 
-    def add(self, params = []):
-        self.scopes.append(params)
+    def add(self):
+        self.scopes.append([])
 
     def pop(self):
         self.scopes.pop()
@@ -772,7 +791,9 @@ class TyCheck:
                         val = TyKind.Char
                     case _:
                         panic(f"unexpected literal {kind}")
-                return Ty(val)
+                ty = Ty(val)
+                expr.ty = ty
+                return ty
             case Call(name, args):
                 if ty := self.check_call(name, args):
                     return ty
@@ -781,7 +802,9 @@ class TyCheck:
             case Ident(name):
                 if not self.scope.search_local(name):
                     panic(f"{name} is not defined")
-                return self.scope.find_local(name)
+                ty = self.scope.find_local(name)
+                expr.ty = ty
+                return ty
             case Unary(op, expr):
                 match op.kind:
                     case TokenKind.BANG:
@@ -805,6 +828,9 @@ class TyCheck:
                 if expr.elze:
                     else_ty = self.infer_block(expr.elze)
                 return if_ty
+            case Cast(expr, ty):
+                expr.ty = self.infer(expr)
+                return ty
             case _:
                 assert False
 
@@ -868,6 +894,9 @@ class TyCheck:
                 self.check_block(expr.body)
                 if expr.elze:
                     self.check_block(expr.elze)
+            case Cast(expr, ty):
+                expr.ty = self.infer(expr)
+                return ty
             case _:
                 assert False
 
@@ -875,12 +904,14 @@ class TyCheck:
         defn = self.defs.get(name)
         if not defn:
             panic(f"{name} is not defined")
-        variadic = False
 
+        variadic = False
+        starts_at = 0
         for arg in defn.data['args']:
             if type(arg) == Variadic:
                 variadic = True
                 break
+            starts_at += 1
 
         found = len(args)
         expected = len(defn.data['args'])
@@ -888,11 +919,18 @@ class TyCheck:
         if not variadic and found != expected:
             panic(f"expected {expected} args found {found}")
 
-        for arg, exp in zip(args, defn.data['args']):
-            if variadic:
-                self.infer(arg)
-            else:
+        if variadic:
+            exp = defn.data['args']
+            for i, arg in enumerate(args):
+                if i >= starts_at:
+                    arg.ty = self.infer(arg)
+                else:
+                    self.check(arg, exp[i].ty)
+                    arg.ty = exp[i].ty
+        else:
+            for arg, exp in zip(args, defn.data['args']):
                 self.check(arg, exp.ty)
+                arg.ty = exp.ty
 
         ty = defn.data['ret_ty']
         if expected_ty and ty != expected_ty:
@@ -905,11 +943,15 @@ class TyCheck:
                 if not ty:
                     ty = self.infer(init)
                     stmt.ty = ty
+                    init.ty = ty
                 else:
                     self.check(init, ty)
+                    init.ty = ty
                 self.scope.def_local(name, ty)
             case _:
                 self.check(stmt, expected_ty)
+                stmt.ty = expected_ty
+                return expected_ty
 
     def infer_stmt(self, stmt):
         match stmt:
@@ -917,11 +959,15 @@ class TyCheck:
                 if not ty:
                     ty = self.infer(init)
                     stmt.ty = ty
+                    init.ty = ty
                 else:
                     self.check(init, ty)
+                    init.ty = ty
                 self.scope.def_local(name, ty)
             case _:
-                return self.infer(stmt)
+                ty = self.infer(stmt)
+                stmt.ty = ty
+                return ty
 
     def check_block(self, block):
         self.scope.add()
@@ -972,7 +1018,10 @@ class TyCheck:
 
 
 regs = ["rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"]
-fn_regs = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
+fn_regs = [
+    ["rdi", "rsi", "rdx", "rcx", "r8", "r9"],
+    ["xmm0", "xmm1"]
+]
 
 class Scope:
     def __init__(self):
@@ -1011,6 +1060,7 @@ class Codegen:
         self.buf = ""
         self.scopes = Scope()
         self.strings = []
+        self.floats = []
         self.defs = defs
         self.label_id = 1
 
@@ -1075,7 +1125,11 @@ class Codegen:
             case Ident(name):
                 off = self.scopes.find_local(name)
                 if reg:
-                    self.buf += f"    mov {reg}, [rbp - {off}]\n"
+                    if reg in fn_regs[1]:
+                        self.buf += f"    mov rax, [rbp - {off}]\n"
+                        self.buf += f"    movq {reg}, rax\n"
+                    else:
+                        self.buf += f"    mov {reg}, [rbp - {off}]\n"
                 else:
                     self.buf += f"    mov rax, [rbp - {off}]\n"
             case Call(name, args):
@@ -1086,12 +1140,28 @@ class Codegen:
                         variadic = True
                         break
 
-                for i, arg in enumerate(args):
-                    self.expr(arg, fn_regs[i])
+                i = 0
+                for arg in args:
+                    if arg.ty.ty == TyKind.Float:
+                        continue
+                    self.expr(arg, fn_regs[0][i])
+                    i += 1
+
+                flt_args = 0
+                i = 0
+                for arg in args:
+                    if is_float := arg.ty.ty == TyKind.Float:
+                        flt_args += is_float
+                        self.expr(arg, fn_regs[1][i])
+                        i += 1
+
                 if defn.data['abi']:
                     match abi := defn.data['abi'][1:-1], variadic:
                         case "C", True:
-                            self.buf += "    xor rax, rax\n"
+                            if flt_args:
+                                self.buf += f"    mov rax, {flt_args}\n"
+                            else:
+                                self.buf += "    xor rax, rax\n"
                         case "C", False:
                             pass
                         case _:
@@ -1108,6 +1178,10 @@ class Codegen:
                         self.strings.append(value)
                     case Lit.Bool:
                         self.buf += f"    mov {reg}, {1 if value == 'true' else 0}\n"
+                    case Lit.Float:
+                        label = self.label
+                        self.buf += f"    movsd {reg}, QWORD PTR .L{label}[rip]\n"
+                        self.floats.append((label, value))
                     case _:
                         self.buf += f"    mov {reg}, {value}\n"
             case Unary(op, expr):
@@ -1166,6 +1240,20 @@ class Codegen:
                     self.buf += f".L{label_end}:\n"
                 if reg and reg != "rax":
                     self.buf += f"    mov {reg}, rax\n"
+            case Cast(expr, ty):
+                if expr.ty == ty:
+                    self.expr(expr, reg)
+                    return
+                match ty.ty:
+                    case TyKind.Float:
+                        self.expr(expr, reg)
+                        self.buf += f"    cvtsi2sd xmm0, {reg}\n"
+                        self.buf += f"    movq {reg}, xmm0\n"
+                    case TyKind.Int:
+                        self.expr(expr, "xmm0")
+                        self.buf += f"    cvttsd2si {reg}, xmm0\n"
+                    case _:
+                        assert False
             case _:
                 assert False, f"{type(expr)} is not implemented"
 
@@ -1184,7 +1272,8 @@ class Codegen:
                         if type(arg) == Variadic:
                             continue
                         off = self.scopes.def_local(arg.name, arg.ty)
-                        self.buf += f"    mov [rbp - {off}], {fn_regs[i]}\n"
+                        is_float = arg.ty.ty == TyKind.Float
+                        self.buf += f"    mov [rbp - {off}], {fn_regs[is_float][i]}\n"
                     self.gen(body.stmts)
                     if alignment:
                         self.buf += f"    add rsp, {alignment}\n"
@@ -1202,6 +1291,11 @@ class Codegen:
                                 self.buf += f"    mov QWORD PTR [rbp - {off}], {init.value}\n"
                             case Lit.Bool:
                                 self.buf += f"    mov QWORD PTR [rbp - {off}], {1 if init.value == 'true' else 0}\n"
+                            case Lit.Float:
+                                self.expr(init, "xmm0")
+                                self.buf += f"    movsd [rbp - {off}], xmm0\n"
+                            case _:
+                                assert False
                     else:
                         self.expr(init, "rax")
                         self.buf += f"    mov [rbp - {off}], rax\n"
@@ -1212,10 +1306,17 @@ class Codegen:
         self.scopes.pop()
 
     def emit_data(self):
+        import struct
         self.buf += ".data\n"
         for i, string in enumerate(self.strings):
             self.buf += f"str{i}:\n"
             self.buf += f"    .string {string}\n"
+        for i, flt in self.floats:
+            self.buf += f".L{i}:\n"
+            flt = struct.pack('d', float(flt))
+            hi = int.from_bytes(flt[:4], 'little')
+            lo = int.from_bytes(flt[4:], 'little')
+            self.buf += f"    .long {hi}\n    .long {lo}\n"
 
     def emit(self):
         self.buf += ".intel_syntax noprefix\n.text\n.globl main\n"
