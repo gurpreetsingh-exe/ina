@@ -3,7 +3,7 @@
 import os
 import pathlib
 import subprocess
-from src.ray import *
+from ray import *
 
 
 def split_file(filepath):
@@ -57,7 +57,7 @@ def test_behavior(filepath):
 
 
 def run_tests():
-    root = pathlib.Path(__file__).parent
+    root = pathlib.Path(__file__).parent.parent
     tests_dir = os.path.join(root, "tests")
     comp_fail = os.path.join(tests_dir, "compile_fail")
     behavior = os.path.join(tests_dir, "behavior")

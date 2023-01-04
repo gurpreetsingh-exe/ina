@@ -1,0 +1,18 @@
+extern "C" fn printf(format: str, ...)
+
+fn main() {
+    // TODO: implement float math
+    let a = 10 + 20 + 30 + 40 - 50;
+    let b = a + a + a + a + a + a + a + a + a + a + a - a;
+    let c = a < b;
+    let d = b > b;
+    printf("%d %d %d %d %d\n", a, b, c, d, a > b);
+
+    // TODO: register allocation
+    // let x = 255;
+    // if x < 255 + 1 {
+    //     printf("#\n");
+    // }
+}
+\o
+50 500 1 0 0

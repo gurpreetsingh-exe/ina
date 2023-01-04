@@ -1,0 +1,15 @@
+extern "C" fn printf(format: str, ...)
+extern "C" fn memset(dest: raw, value: int, size: int)
+
+fn main() {
+    let a = true;
+    let b = !a;
+    let c = 48932 < 48932;
+    let d = !c;
+    let e = 2048;
+    let f = -e;
+    memset(&a, 0, 1);
+    printf("%d %d %d %d %d\n", a, b, c, d, f);
+}
+\o
+0 0 0 1 -2048

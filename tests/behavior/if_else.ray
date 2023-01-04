@@ -14,7 +14,7 @@ fn main() {
     } else {
         if !b {
             printf("2\n");
-            if a {
+            if 20 > 19 {
                 printf("3\n");
                 cond(a, 32);
             } else {

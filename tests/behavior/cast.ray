@@ -7,7 +7,7 @@ fn helper() -> int {
 fn main() {
     let a = 10.0 as int;
     let b = 10 as float;
-    // this will not work
+    // register allocation needed ig
     // printf("%d %.2f %.3f\n", a, b, helper() as float);
     printf("%d %.2f\n", a, b);
 }
