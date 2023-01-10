@@ -1,6 +1,6 @@
 extern "C" fn printf(format: str, ...)
 
-fn cond(c: bool, i: int) {
+fn cond(c: bool, i: i64) {
     if c {
         printf("%d\n", i);
     }

@@ -1,9 +1,20 @@
 from __future__ import annotations
-from typing import Callable, Generator, List
+from copy import deepcopy
+from typing import Generator, List
 
 from Ast import *
 from Token import *
 from utils import panic
+
+
+def spanned(func):
+    def _(self, *args, **kwargs):
+        start = deepcopy(self.t.loc)
+        node = func(self, *args, **kwargs)
+        node.span = Span(start, deepcopy(self.prev.loc))
+        return node
+    return _
+
 
 class Parser:
     def __init__(self, src: str, tokens: List[Token]):
@@ -46,20 +57,23 @@ class Parser:
             self.advance()
             return curr
         else:
-            panic(f"expected `{kind}` got `{self.t.kind}` ({self.t.raw(self.src)})")
+            panic(
+                f"expected `{kind}` got `{self.t.kind}` ({self.t.raw(self.src)})")
 
+    @spanned
     def parse_ty(self) -> Ty:
         assert self.t != None
         match self.t.kind:
             case TokenKind.Ident:
                 ty = self.expect(TokenKind.Ident).raw(self.src)
-                if prim_ty := get_prim_ty(ty):
-                    return Ty(prim_ty)
+                if prim_ty := get_ty(ty):
+                    return PrimTy(prim_ty)
                 else:
-                    return Ty(ty)
+                    panic("custom types are not implemented")
             case _:
                 panic("unexpected type")
 
+    @spanned
     def parse_arg(self) -> FnArg:
         assert self.t != None
         if self.t.kind == TokenKind.DOT3:
@@ -85,22 +99,13 @@ class Parser:
 
         self.expect(TokenKind.RPAREN)
 
-    def parse_ret_ty(self) -> Ty | None:
+    @spanned
+    def parse_ret_ty(self) -> Ty:
         assert self.t != None
         if self.t.kind == TokenKind.ARROW:
             self.advance()
             return self.parse_ty()
-
-    def compound(self, tok_list, callback: Callable[[], Expr]) -> Expr:
-        assert self.t != None
-        left = callback()
-        while self.check() and self.t.kind in tok_list:
-            op = self.t
-            self.advance()
-            right = callback()
-            left = Expr(Binary(op, left, right))
-
-        return left
+        return PrimTy(PrimTyKind.Unit)
 
     def token_to_lit(self) -> Lit:
         assert self.t != None
@@ -116,6 +121,7 @@ class Parser:
             case _:
                 panic("unexpected literal")
 
+    @spanned
     def parse_call(self) -> Call:
         assert self.t != None
         name = self.expect(TokenKind.Ident).raw(self.src)
@@ -128,6 +134,11 @@ class Parser:
         self.expect(TokenKind.RPAREN)
         return Call(name, args)
 
+    @spanned
+    def parse_ident(self) -> Ident:
+        return Ident(self.expect(TokenKind.Ident).raw(self.src))
+
+    @spanned
     def parse_primary(self) -> Expr:
         assert self.t != None
         match self.t.kind:
@@ -136,7 +147,7 @@ class Parser:
                 if next_.kind == TokenKind.LPAREN:
                     return Expr(self.parse_call())
                 else:
-                    return Expr(Ident(self.expect(TokenKind.Ident).raw(self.src)))
+                    return Expr(self.parse_ident())
             case TokenKind.Int | TokenKind.Float | TokenKind.Bool | TokenKind.Str:
                 value = self.t.raw(self.src)
                 lit_kind = self.token_to_lit()
@@ -154,33 +165,56 @@ class Parser:
             case _:
                 panic(f"unreachable {self.t.kind}")
 
+    @spanned
     def parse_unary(self) -> Expr:
         assert self.t != None
         if self.t.kind in [TokenKind.MINUS, TokenKind.BANG, TokenKind.AMPERSAND]:
-            op = self.t
+            kind = unary_kind_from_token(self.t.kind)
             self.advance()
             right = self.parse_unary()
-            return Expr(Unary(op, right))
+            return Expr(Unary(kind, right))
 
         return self.parse_primary()
 
+    @spanned
     def parse_factor(self) -> Expr:
         assert self.t != None
-        prim = self.compound([TokenKind.STAR, TokenKind.SLASH], self.parse_unary)
+        left = self.parse_unary()
+        while self.check() and self.t.kind in [TokenKind.STAR, TokenKind.SLASH]:
+            kind = binary_kind_from_token(self.t.kind)
+            self.advance()
+            right = self.parse_factor()
+            left = Expr(Binary(kind, left, right))
+
         if self.t.kind == TokenKind.As:
             self.advance()
             ty = self.parse_ty()
-            prim = Expr(Cast(prim, ty))
-        return prim
+            left = Expr(Cast(left, ty))
+        return left
 
+    @spanned
     def parse_term(self) -> Expr:
         assert self.t != None
-        return self.compound([TokenKind.PLUS, TokenKind.MINUS], self.parse_factor)
+        left = self.parse_factor()
+        while self.check() and self.t.kind in [TokenKind.PLUS, TokenKind.MINUS]:
+            kind = binary_kind_from_token(self.t.kind)
+            self.advance()
+            right = self.parse_term()
+            left = Expr(Binary(kind, left, right))
+        return left
 
+    @spanned
     def parse_comparison(self) -> Expr:
         assert self.t != None
-        return self.compound([TokenKind.LT, TokenKind.GT], self.parse_term)
+        left = self.parse_term()
+        while self.check() and self.t.kind in [TokenKind.LT, TokenKind.GT]:
+            kind = binary_kind_from_token(self.t.kind)
+            self.advance()
+            right = self.parse_comparison()
+            left = Expr(Binary(kind, left, right))
+        return left
 
+    @spanned
     def parse_assign(self) -> Expr:
         assert self.t != None
         left = self.parse_comparison()
@@ -190,13 +224,22 @@ class Parser:
             if isinstance(left, Ident):
                 return Expr(Assign(left.name, init))
             else:
-                panic(f"Assignment expression expected `Ident` but got `{left}`")
+                panic(
+                    f"Assignment expression expected `Ident` but got `{left}`")
         return left
 
+    @spanned
     def parse_expr(self) -> Expr:
         assert self.t != None
-        return self.compound([TokenKind.BANGEQ, TokenKind.EQ2], self.parse_assign)
+        left = self.parse_assign()
+        while self.check() and self.t.kind in [TokenKind.BANGEQ, TokenKind.EQ2]:
+            kind = binary_kind_from_token(self.t.kind)
+            self.advance()
+            right = self.parse_expr()
+            left = Expr(Binary(kind, left, right))
+        return left
 
+    @spanned
     def parse_let(self) -> Let:
         assert self.t != None
         self.expect(TokenKind.Let)
@@ -209,6 +252,7 @@ class Parser:
         init = self.parse_expr()
         return Let(name, ty, init)
 
+    @spanned
     def parse_stmt(self) -> Stmt:
         assert self.t != None
         stmt = None
@@ -224,6 +268,7 @@ class Parser:
                 self.eat_if_present(TokenKind.SEMI)
         return Stmt(stmt)
 
+    @spanned
     def parse_block(self) -> Block:
         assert self.t != None
         self.expect(TokenKind.LCURLY)
@@ -260,5 +305,3 @@ class Parser:
                     yield self.parse_fn()
                 case _:
                     panic(f"{self.t.kind} not implemented")
-
-

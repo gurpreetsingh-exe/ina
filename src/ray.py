@@ -1,10 +1,7 @@
 #!/usr/bin/python
 
-# TODO: refactor primitive types and create
-#       i8..i64 ints and f16..f64 floats.
-#       before that refactor the Ast nodes
-
 import sys
+from typing import Any, Dict, Tuple
 from beeprint import pp
 
 from Lexer import *
@@ -19,6 +16,53 @@ fn_regs = [
     ["xmm0", "xmm1"]
 ]
 
+reg_ = {
+    "rax": {
+        1: "al",
+        2: "ax",
+        4: "eax",
+        8: "rax",
+    },
+    "rbx": {
+        1: "bl",
+        2: "bx",
+        4: "ebx",
+        8: "rbx",
+    },
+    "rcx": {
+        1: "cl",
+        2: "cx",
+        4: "ecx",
+        8: "rcx",
+    },
+    "rdx": {
+        1: "dl",
+        2: "dx",
+        4: "edx",
+        8: "rdx",
+    },
+    "rdi": {
+        1: "dil",
+        2: "di",
+        4: "edi",
+        8: "rdi",
+    },
+    "rsi": {
+        1: "sil",
+        2: "si",
+        4: "esi",
+        8: "rsi",
+    },
+}
+
+for reg in regs[6:]:
+    reg_[reg] = {
+        1: f"{reg}b",
+        2: f"{reg}w",
+        4: f"{reg}d",
+        8: reg,
+    }
+
 class Scope:
     def __init__(self):
         self.scopes = []
@@ -31,21 +75,21 @@ class Scope:
                     return True
         return False
 
-    def def_local(self, name, ty):
+    def def_local(self, name, ty) -> Tuple[int, int]:
         if self.search_local(name):
             panic(f"{name} is already defined")
-        size = 0
+
         size = ty.get_size()
+        self.stack_offset = (self.stack_offset + size * 2 - 1) & ~(size - 1)
+        self.scopes[-1].append({ 'name': name, 'off': self.stack_offset, 'size': size })
+        return self.stack_offset, size
 
-        self.stack_offset += size
-        self.scopes[-1].append({ 'name': name, 'off': self.stack_offset })
-        return self.stack_offset
-
-    def find_local(self, name):
+    def find_local(self, name) -> Dict[str, Any]:
         for scope in reversed(self.scopes):
             for var in scope:
                 if var['name'] == name:
-                    return var['off']
+                    return var
+        assert False
 
     def add(self):
         self.scopes.append([])
@@ -64,7 +108,7 @@ class Codegen:
         self.defs = defs
         self.label_id = 1
         self.fn_ctx: Fn | None = None
-        self.debug_messages = True
+        self.debug_messages = 0
 
     @property
     def label(self):
@@ -76,23 +120,59 @@ class Codegen:
         if self.debug_messages:
             self.buf += f"{msg}\n"
 
-    def append(self, expr: Expr, stack: List[Expr]):
-        match expr:
-            case Binary(_, left, _):
-                stack += self.binop_stack(left.kind)
+    def append(self, expr: Expr, stack: List[Expr | BinaryKind]):
+        match expr.kind:
+            case Binary():
+                stack += self.binop_stack(expr.kind)
             case _:
                 stack.append(expr)
 
-    def binop_stack(self, binary: Binary) -> List[Expr]:
-        stack: List[Expr] = []
+    def binop_stack(self, binary: Binary) -> List[Expr | BinaryKind]:
+        stack: List[Expr | BinaryKind] = []
         match binary:
-            case Binary(_):
-                self.append(binary.left, stack)
-                self.append(binary.right, stack)
-                stack.append(binary.op)
+            case Binary(kind, left, right):
+                self.append(left, stack)
+                self.append(right, stack)
+                stack.append(kind)
             case _:
                 stack.append(binary)
         return stack
+
+    def reg_from_sz(self, reg: str, sz: int) -> Tuple[str, str]:
+        ptr = ""
+        match sz:
+            case 1:
+                ptr = "BYTE"
+            case 2:
+                ptr = "WORD"
+            case 4:
+                ptr = "DWORD"
+            case 8:
+                ptr = "QWORD"
+        if sz != 8:
+            reg = reg_[reg][sz]
+        return f"{ptr} PTR", reg
+
+    def load_var(self, name, reg):
+        var = self.scopes.find_local(name)
+        off = var['off']
+        sz = var['size']
+        ptr, __reg = self.reg_from_sz(reg, sz)
+        self.dbg(f"    # load {name}")
+        if reg:
+            if reg in fn_regs[1]:
+                self.buf += f"    mov rax, {ptr} [rbp - {off}]\n"
+                self.buf += f"    movq {reg}, rax\n"
+            else:
+                if sz in [1, 2]:
+                    self.buf += f"    movzx {reg}, {ptr} [rbp - {off}]\n"
+                else:
+                    self.buf += f"    mov {__reg}, {ptr} [rbp - {off}]\n"
+        else:
+            if sz in [1, 2]:
+                self.buf += f"    movzx al, {ptr} [rbp - {off}]\n"
+            else:
+                self.buf += f"    mov rax, {ptr} [rbp - {off}]\n"
 
     def expr(self, expr: Expr, reg, label = 0):
         match expr.kind:
@@ -100,45 +180,40 @@ class Codegen:
                 self.dbg(f"    # binary")
                 stack = self.binop_stack(expr.kind)
                 stack0 = []
-                for i, expr in enumerate(stack):
-                    match expr:
-                        case Token(kind, _):
+                for i, _expr in enumerate(stack):
+                    match _expr:
+                        case BinaryKind():
+                            kind = _expr
                             b = stack0.pop()
                             a = stack0.pop()
                             match kind:
-                                case TokenKind.PLUS:
+                                case BinaryKind.Add:
                                     self.buf += f"    add {a}, {b}\n"
-                                case TokenKind.MINUS:
+                                case BinaryKind.Sub:
                                     self.buf += f"    sub {a}, {b}\n"
-                                case TokenKind.LT | TokenKind.GT:
+                                case BinaryKind.Lt | BinaryKind.Gt:
                                     self.buf += f"    cmp {a}, {b}\n"
                                     if reg:
-                                        setT = "setl" if kind == TokenKind.LT else "setg"
+                                        setT = "setl" if kind == BinaryKind.Lt else "setg"
                                         self.buf += f"    {setT} al\n"
                                         self.buf += f"    movzx {a}, al\n"
                                     else:
                                         if label:
-                                            jmp = "jge" if kind == TokenKind.LT else "jle"
+                                            jmp = "jge" if kind == BinaryKind.Lt else "jle"
                                             self.buf += f"    {jmp} .L{label}\n"
                                 case _:
                                     assert False, f"{kind} not implemented"
                             stack0.append(a)
                         case _:
-                            self.expr(expr, regs[i])
+                            self.expr(_expr, regs[i])
                             stack0.append(regs[i])
                 if reg and reg != "rax":
                     self.buf += f"    mov {reg}, rax\n"
             case Ident(name):
-                off = self.scopes.find_local(name)
-                self.dbg(f"    # load {name}")
-                if reg:
-                    if reg in fn_regs[1]:
-                        self.buf += f"    mov rax, [rbp - {off}]\n"
-                        self.buf += f"    movq {reg}, rax\n"
-                    else:
-                        self.buf += f"    mov {reg}, [rbp - {off}]\n"
+                if not reg:
+                    self.load_var(name, "rax")
                 else:
-                    self.buf += f"    mov rax, [rbp - {off}]\n"
+                    self.load_var(name, reg)
             case Call(name, args):
                 self.dbg(f"    # function call {name}")
                 defn = self.defs.get(name)
@@ -150,18 +225,22 @@ class Codegen:
 
                 i = 0
                 for arg in args:
-                    if arg.ty.ty == TyKind.Float:
-                        continue
+                    match arg.ty:
+                        case PrimTy(kind):
+                            if kind.is_float():
+                                continue
                     self.expr(arg, fn_regs[0][i])
                     i += 1
 
                 flt_args = 0
                 i = 0
                 for arg in args:
-                    if is_float := arg.ty.ty == TyKind.Float:
-                        flt_args += is_float
-                        self.expr(arg, fn_regs[1][i])
-                        i += 1
+                    match arg.ty:
+                        case PrimTy(kind):
+                            if kind.is_float():
+                                self.expr(arg, fn_regs[1][i])
+                                flt_args += 1
+                                i += 1
 
                 if defn.data['abi']:
                     match abi := defn.data['abi'][1:-1], variadic:
@@ -175,7 +254,7 @@ class Codegen:
                         case _:
                             assert False, f"{abi} abi is not implemented"
                 self.buf += f"    call {name}\n"
-                if defn.data['ret_ty'] and reg and reg != "rax":
+                if defn.data['ret_ty'].kind != PrimTyKind.Unit and reg and reg != "rax":
                     self.dbg(f"    # return")
                     self.buf += f"    mov {reg}, rax\n"
             case Literal(kind, value):
@@ -194,18 +273,20 @@ class Codegen:
                         self.floats.append((label, value))
                     case _:
                         self.buf += f"    mov {reg}, {value}\n"
-            case Unary(op, expr):
-                self.dbg(f"    # unary {get_token_name(op.kind)}")
+            case Unary(kind, expr):
+                self.dbg(f"    # unary {kind}")
                 if not reg:
-                    match op.kind:
-                        case TokenKind.AMPERSAND:
+                    match kind:
+                        case UnaryKind.AddrOf:
                             assert False
-                        case TokenKind.BANG:
-                            self.buf += f"    mov rbx, 1\n"
+                        case UnaryKind.Not:
                             self.expr(expr, None)
-                            self.buf += f"    sub rbx, rax\n"
-                            self.buf += f"    mov rax, rbx\n"
-                        case TokenKind.MINUS:
+                            match expr.ty:
+                                case PrimTy(PrimTyKind.Bool):
+                                    self.buf += f"    xor rax, 1\n"
+                                case _:
+                                    self.buf += f"    not rax\n"
+                        case UnaryKind.Neg:
                             self.buf += f"    mov rbx, 0\n"
                             self.expr(expr, None)
                             self.buf += f"    sub rbx, rax\n"
@@ -213,15 +294,19 @@ class Codegen:
                         case _:
                             assert False, "not implemented"
                     return
-                match op.kind:
-                    case TokenKind.AMPERSAND:
+                match kind:
+                    case UnaryKind.AddrOf:
                         assert type(expr.kind) == Ident
-                        off = self.scopes.find_local(expr.kind.name)
+                        off = self.scopes.find_local(expr.kind.name)['off']
                         self.buf += f"    lea {reg}, [rbp - {off}]\n"
-                    case TokenKind.BANG:
+                    case UnaryKind.Not:
                         self.expr(expr, reg)
-                        self.buf += f"    xor {reg}, 1\n"
-                    case TokenKind.MINUS:
+                        match expr.ty:
+                            case PrimTy(PrimTyKind.Bool):
+                                self.buf += f"    xor {reg}, 1\n"
+                            case _:
+                                self.buf += f"    not {reg}\n"
+                    case UnaryKind.Neg:
                         self.expr(expr, reg)
                         self.buf += f"    neg {reg}\n"
                     case _:
@@ -259,12 +344,12 @@ class Codegen:
                 if expr.ty == ty:
                     self.expr(expr, reg)
                     return
-                match ty.ty:
-                    case TyKind.Float:
+                match ty.kind:
+                    case PrimTyKind.F64:
                         self.expr(expr, reg)
                         self.buf += f"    cvtsi2sd xmm0, {reg}\n"
                         self.buf += f"    movq {reg}, xmm0\n"
-                    case TyKind.Int:
+                    case PrimTyKind.I64:
                         self.expr(expr, "xmm0")
                         self.buf += f"    cvttsd2si {reg}, xmm0\n"
                     case _:
@@ -275,25 +360,27 @@ class Codegen:
     def stmt(self, stmt: Stmt):
         match stmt.kind:
             case Let(name, ty, init):
-                off = self.scopes.def_local(name, ty)
+                off, sz = self.scopes.def_local(name, ty)
                 self.dbg(f"    # let {name}: {ty}")
-                if type(init) == Literal:
-                    match init.kind:
-                        case Lit.Str:
-                            self.expr(init, "rax")
-                            self.buf += f"    mov [rbp - {off}], rax\n"
-                        case Lit.Int:
-                            self.buf += f"    mov QWORD PTR [rbp - {off}], {init.value}\n"
-                        case Lit.Bool:
-                            self.buf += f"    mov QWORD PTR [rbp - {off}], {1 if init.value == 'true' else 0}\n"
-                        case Lit.Float:
-                            self.expr(init, "xmm0")
-                            self.buf += f"    movsd [rbp - {off}], xmm0\n"
-                        case _:
-                            assert False
-                else:
-                    self.expr(init, "rax")
-                    self.buf += f"    mov [rbp - {off}], rax\n"
+                match init:
+                    case Expr(Literal(kind, value)):
+                        match kind:
+                            case Lit.Str:
+                                self.expr(init, "rax")
+                                self.buf += f"    mov [rbp - {off}], rax\n"
+                            case Lit.Int:
+                                self.buf += f"    mov QWORD PTR [rbp - {off}], {value}\n"
+                            case Lit.Bool:
+                                self.buf += f"    mov BYTE PTR [rbp - {off}], {1 if value == 'true' else 0}\n"
+                            case Lit.Float:
+                                self.expr(init, "xmm0")
+                                self.buf += f"    movsd [rbp - {off}], xmm0\n"
+                            case _:
+                                assert False
+                    case _:
+                        self.expr(init, "rax")
+                        ptr, reg = self.reg_from_sz("rax", sz)
+                        self.buf += f"    mov {ptr} [rbp - {off}], {reg}\n"
             case _:
                 self.expr(stmt.kind, "rax")
 
@@ -304,8 +391,8 @@ class Codegen:
             for i, arg in enumerate(args):
                 match arg:
                     case Arg(name, ty):
-                        off = self.scopes.def_local(name, ty)
-                        is_float = arg.ty.ty == TyKind.Float
+                        off, sz = self.scopes.def_local(name, ty)
+                        is_float = arg.ty.is_float()
                         self.dbg(f"    # {name}: {ty}")
                         self.buf += f"    mov [rbp - {off}], {fn_regs[is_float][i]}\n"
                     case Variadic():
@@ -335,9 +422,10 @@ class Codegen:
                     if alignment:
                         self.dbg("    # stack alignment")
                         self.buf += f"    add rsp, {alignment}\n"
-                    if not ret_ty:
-                        self.dbg(f"    # return {name}")
-                        self.buf += f"    xor rax, rax\n"
+                    match ret_ty:
+                        case PrimTy(PrimTyKind.Unit):
+                            self.dbg(f"    # return {name}")
+                            self.buf += f"    xor rax, rax\n"
                     self.buf += "    pop rbp\n    ret\n"
                 case _:
                     assert False, f"{node} is not implemented"
@@ -424,10 +512,15 @@ def main(argv):
                 case Command.Compile:
                     lexer = lexer_from_file(filename)
                     src = lexer.program
+                    file = File(filename, src)
                     tokens = list(lexer.lexfile())
                     parser = Parser(src, tokens)
                     ast = list(parser.parse())
                     tychk = TyCheck(ast)
+                    if tychk.errors:
+                        for err in tychk.errors:
+                            err.emit(file)
+                        exit(1)
                     # gen = IRGen(ast)
                     # pp(ast, max_depth=10)
                     code = Codegen(ast, tychk.defs).emit()

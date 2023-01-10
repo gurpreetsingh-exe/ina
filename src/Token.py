@@ -162,22 +162,27 @@ class Token:
 
     def raw(self, src):
         loc = self.loc
-        return src[loc.id:loc.id + loc.size]
+        return src[loc.offset:loc.offset + loc.len]
 
     def __repr__(self):
         return f"{str(self.kind).ljust(16)}\t=> `{str(self.loc)}`"
 
 class Loc:
-    def __init__(self, id, size, file=""):
-        self.id = id
+    def __init__(self, offset, len, file=""):
+        self.offset = offset
         self.line = 0
         self.col = 0
-        self.size = size
+        self.len = len
         self.file = file
 
     def fmt(self):
-        return f"{self.line + 1}:{self.col + 1}"
+        return f"{self.file}:{self.line + 1}:{self.col + 1}"
 
     def __repr__(self) -> str:
-        return f"{self.fmt()}: {self.id}: {self.size}"
+        return self.fmt()
+
+class Span:
+    def __init__(self, start, end):
+        self.start = start
+        self.end = end
 

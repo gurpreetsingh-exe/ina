@@ -1,5 +1,4 @@
 fn main() {
     let a = b;
 }
-\o
-b is not defined
+

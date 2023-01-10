@@ -14,20 +14,18 @@ def split_file(filepath):
 
 
 def test_comp_fail(filepath):
-    src, stdout = split_file(filepath)
+    src = ""
+    with open(filepath, 'r') as f:
+        src = f.read()
     passed = True
-    try:
-        lexer = lexer_from_src(src, filepath)
-        src = lexer.program
-        tokens = list(lexer.lexfile())
-        parser = Parser(src, tokens)
-        ast = list(parser.parse())
-        TyCheck(ast)
-    except AssertionError:
+    lexer = lexer_from_src(src, filepath)
+    src = lexer.program
+    tokens = list(lexer.lexfile())
+    parser = Parser(src, tokens)
+    ast = list(parser.parse())
+    errors = TyCheck(ast).errors
+    if errors:
         passed = False
-        if errors[0] != stdout:
-            print(f"test failed {filepath}")
-        errors.pop()
     return passed
 
 

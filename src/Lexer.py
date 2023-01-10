@@ -15,16 +15,16 @@ class Lexer:
     def __init__(self, program: str, filepath: str):
         self.program = program
         self.loc = Loc(0, 0, filepath)
-        self.curr_char = self.program[self.loc.id]
+        self.curr_char = self.program[self.loc.offset]
 
     def advance(self):
-        self.loc.id += 1
+        self.loc.offset += 1
         if self.curr_char == '\n':
             self.loc.col = 0
             self.loc.line += 1
         else:
             self.loc.col += 1
-        self.curr_char = self.program[self.loc.id] if self.loc.id < len(self.program) else None
+        self.curr_char = self.program[self.loc.offset] if self.loc.offset < len(self.program) else None
 
     def lex_word(self, method) -> str:
         buffer = ''
@@ -49,7 +49,7 @@ class Lexer:
 
             elif self.curr_char.isdigit():
                 word = self.lex_word(lambda self: self.curr_char.isdigit() or self.curr_char == ".")
-                loc.size = self.loc.id - loc.id
+                loc.len = self.loc.offset - loc.offset
                 try:
                     int(word)
                     typ = TokenKind.Int
@@ -66,12 +66,12 @@ class Lexer:
                     buf += self.curr_char
                     self.advance()
                 self.advance()
-                loc.size = self.loc.id - loc.id
+                loc.len = self.loc.offset - loc.offset
                 yield Token(TokenKind.Str, loc)
 
             elif self.curr_char.isalpha() or self.curr_char == "_":
                 word = self.lex_word(lambda self: self.curr_char.isalnum() or self.curr_char == "_")
-                loc.size = self.loc.id - loc.id
+                loc.len = self.loc.offset - loc.offset
 
                 if word in Keywords:
                     yield Token(Keywords[word], loc)
@@ -92,17 +92,17 @@ class Lexer:
                 elif compound == "..":
                     self.advance()
                     if self.curr_char == ".":
-                        loc.size = self.loc.id - loc.id
+                        loc.len = self.loc.offset - loc.offset
                         yield Token(Punctuators["..."], loc)
                         self.advance()
                     else:
                         assert False, "Unexpected token"
                 elif compound in Punctuators:
-                    loc.size = self.loc.id - loc.id
+                    loc.len = self.loc.offset - loc.offset
                     yield Token(Punctuators[compound], loc)
                     self.advance()
                 else:
-                    loc.size = self.loc.id - loc.id
+                    loc.len = self.loc.offset - loc.offset
                     yield Token(Punctuators[prev], loc)
 
             else:

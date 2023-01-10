@@ -1,14 +1,14 @@
 extern "C" fn printf(format: str, ...)
 
-fn helper() -> int {
+fn helper() -> i64 {
     25
 }
 
 fn main() {
-    let a = 10.0 as int;
-    let b = 10 as float;
+    let a = 10.0 as i64;
+    let b = 10 as f64;
     // register allocation needed ig
-    // printf("%d %.2f %.3f\n", a, b, helper() as float);
+    // printf("%d %.2f %.3f\n", a, b, helper() as f64);
     printf("%d %.2f\n", a, b);
 }
 \o

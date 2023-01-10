@@ -1,5 +1,4 @@
 fn main() {
     not_defined();
 }
-\o
-not_defined is not defined
+
