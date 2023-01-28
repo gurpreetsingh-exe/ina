@@ -10,10 +10,10 @@ class Instruction:
 
     def has_ret_ty(self) -> bool:
         match self.kind:
-            case FnCall() | Alloc() | Load():
-                return True
-            case _:
+            case Store():
                 return False
+            case _:
+                return True
 
     def __repr__(self) -> str:
         global inst_id
@@ -58,6 +58,58 @@ class Load:
 
     def __repr__(self) -> str:
         return f"load {self.ptr}"
+
+
+class BinaryInst:
+    def __init__(self, left: Value, right: Value, name: str) -> None:
+        self.left = left
+        self.right = right
+        self.name = name
+
+    def __repr__(self) -> str:
+        return f"{self.name} {self.left}, {self.right}"
+
+
+class Add(BinaryInst):
+    def __init__(self, left: Value, right: Value) -> None:
+        super().__init__(left, right, "add")
+
+
+class Sub(BinaryInst):
+    def __init__(self, left: Value, right: Value) -> None:
+        super().__init__(left, right, "sub")
+
+
+class CmpKind(Enum):
+    Lt = auto()
+    Gt = auto()
+
+    @staticmethod
+    def from_binary(kind: BinaryKind):
+        match kind:
+            case BinaryKind.Lt:
+                return CmpKind.Lt
+            case BinaryKind.Gt:
+                return CmpKind.Gt
+            case _:
+                assert False
+
+    def __repr__(self) -> str:
+        match self:
+            case CmpKind.Lt:
+                return "lt"
+            case CmpKind.Gt:
+                return "gt"
+
+
+class Cmp:
+    def __init__(self, left: Value, right: Value, kind: CmpKind) -> None:
+        self.left = left
+        self.right = right
+        self.kind = kind
+
+    def __repr__(self) -> str:
+        return f"cmp {repr(self.kind)}, {self.left}, {self.right}"
 
 
 class BasicBlock:

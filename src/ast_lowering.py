@@ -66,6 +66,21 @@ class IRGen:
             case Call(name, args):
                 args = [self.lower_expr(arg) for arg in args]
                 return self.ctx.mk_inst(FnCall(name, args))
+            case Binary(kind, left, right):
+                l = self.lower_expr(left)
+                r = self.lower_expr(right)
+                cls = None
+                match kind:
+                    case BinaryKind.Add:
+                        cls = Add
+                    case BinaryKind.Sub:
+                        cls = Sub
+                    case BinaryKind.Lt | BinaryKind.Gt:
+                        return self.ctx.mk_inst(Cmp(l, r, CmpKind.from_binary(kind)))
+                    case _:
+                        assert False, f"{kind}"
+                assert cls != None
+                return self.ctx.mk_inst(cls(l, r))
             case Literal(kind, value):
                 assert expr.ty != None
                 match kind:
