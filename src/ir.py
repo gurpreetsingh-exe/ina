@@ -1,137 +1,120 @@
-from .ray import *
+from __future__ import annotations
+from Ast import *
+
+inst_id = 0
 
 
-class Node:
-    pass
+class Instruction:
+    def __init__(self, kind) -> None:
+        self.kind = kind
+
+    def has_ret_ty(self) -> bool:
+        match self.kind:
+            case FnCall() | Alloc():
+                return True
+            case _:
+                return False
+
+    def __repr__(self) -> str:
+        global inst_id
+        _ = "    "
+        if self.has_ret_ty():
+            _ += f"%{inst_id} = "
+            inst_id += 1
+
+        return _ + repr(self.kind)
 
 
-class Func(Node):
-    __match_args__ = ("name", "args", "ret_ty", "body", "is_extern")
-    def __init__(self, name, args, ret_ty, body, is_extern):
+class FnCall:
+    def __init__(self, name: str, args: List[Value]) -> None:
         self.name = name
         self.args = args
-        self.ret_ty = ret_ty
-        self.body = body
-        self.is_extern = is_extern
 
-class BBlock(Node):
-    def __init__(self, nodes):
-        self.nodes = nodes
+    def __repr__(self) -> str:
+        _ = f"call @{self.name}"
+        _ += "(" + ", ".join(map(repr, self.args)) + ")"
+        return _
 
-class Alloc(Node):
-    def __init__(self, ty):
+
+class Alloc:
+    def __init__(self, ty: Ty) -> None:
         self.ty = ty
 
-class Store(Node):
-    def __init__(self, node, value):
-        self.node = node
-        self.value = value
-
-class BinOp(Node):
-    def __init__(self, left, right):
-        self.left = left
-        self.right = right
-
-class Add(BinOp):
-    def __init__(self, left, right):
-        super().__init__(left, right)
-
-class Sub(BinOp):
-    def __init__(self, left, right):
-        super().__init__(left, right)
-
-class Mul(BinOp):
-    def __init__(self, left, right):
-        super().__init__(left, right)
-
-class Div(BinOp):
-    def __init__(self, left, right):
-        super().__init__(left, right)
-
-class LiteralNode(Node):
-    def __init__(self, val):
-        self.val = val
-
-class Int(LiteralNode):
-    def __init__(self, val):
-        super().__init__(val)
-
-class Float(LiteralNode):
-    def __init__(self, val):
-        super().__init__(val)
-
-class Str(LiteralNode):
-    def __init__(self, val):
-        super().__init__(val)
-
-class Bool(LiteralNode):
-    def __init__(self, val):
-        super().__init__(val)
-
-class Char(LiteralNode):
-    def __init__(self, val):
-        super().__init__(val)
+    def __repr__(self) -> str:
+        return f"alloc {self.ty}"
 
 
-class IRGen:
-    def __init__(self, typed_ast):
-        self.typed_ast = typed_ast
-        self.ir = self.gen(self.typed_ast)
+class Store:
+    def __init__(self, dst: Value, src: Value) -> None:
+        self.dst = dst
+        self.src = src
 
-    def expr(self, expr):
-        ir = []
-        match expr:
-            case Binary(op, left, right):
-                lhs = self.expr(left)
-                ir.append(lhs)
-                l = lhs.id
+    def __repr__(self) -> str:
+        return f"store {self.dst}, {self.src}"
 
-                rhs = self.expr(right)
-                ir.append(rhs)
-                r = rhs.id
 
-                match op.kind:
-                    case TokenKind.PLUS:
-                        return Add(l, r)
-                    case TokenKind.MINUS:
-                        return Sub(l, r)
-                    case TokenKind.STAR:
-                        return Mul(l, r)
-                    case TokenKind.SLASH:
-                        return Div(l, r)
-                    case _:
-                        panic(f"{op}")
-            case Literal(kind, value):
-                val = None
-                match kind:
-                    case Lit.Int:
-                        val = Int(value)
-                    case Lit.Float:
-                        val = Float(value)
-                    case Lit.Bool:
-                        val = Bool(value)
-                    case Lit.Str:
-                        val = Str(value)
-                    case Lit.Char:
-                        val = Char(value)
-                    case _:
-                        panic(f"unexpected literal {kind}")
-                ir.append(val)
-        return ir
+class BasicBlock:
+    def __init__(self, instructions: List[Instruction], parent: int | None) -> None:
+        self.instructions = instructions
+        self.parent = parent
 
-    def gen(self, nodes):
-        ir = []
-        for node in nodes:
-            match node:
-                case Fn(name, args, ret_ty, body, is_extern):
-                    body = self.gen(body.stmts)
-                    ir.append(Func(name, args, ret_ty, body, is_extern))
-                case Let(name, ty, init):
-                    alloc = Alloc(ty.ty)
-                    ir.append(alloc)
-                    expr = self.expr(init)
-                    ir.append(expr)
-                    ir.append(Store(alloc.id, expr.id))
-                case _:
-                    panic(f"{node} is not implemented")
-        return ir
+    def __repr__(self) -> str:
+        return "\n".join(map(repr, self.instructions))
+
+
+class ValueKind(Enum):
+    SymbolId = auto()
+    InstId = auto()
+    Imm = auto()
+
+
+class Value:
+    def __init__(self, kind: ValueKind, data) -> None:
+        self.kind = kind
+        self.data = data
+
+    def __repr__(self) -> str:
+        match self.kind:
+            case ValueKind.SymbolId:
+                return f"@{self.data}"
+            case ValueKind.InstId:
+                return f"%{self.data}"
+
+        return repr(self.kind)
+
+
+class FnDef:
+    def __init__(self,
+                 name: str,
+                 params: List[Value],
+                 ret_ty: Ty | None,
+                 blocks: List[BasicBlock]) -> None:
+        self.name = name
+        self.params = params
+        self.ret_ty = ret_ty
+        self.blocks = blocks
+
+    def __repr__(self) -> str:
+        _ = f"def @{self.name}"
+        _ += ", ".join(map(repr, self.params))
+        if self.ret_ty:
+            _ += f" -> {self.ret_ty} "
+        _ += "{\n" + "\n".join(map(repr, self.blocks)) + "\n}"
+        return _
+
+
+class FnDecl:
+    def __init__(self,
+                 name: str,
+                 params: List[Value],
+                 ret_ty: Ty | None) -> None:
+        self.name = name
+        self.params = params
+        self.ret_ty = ret_ty
+
+    def __repr__(self) -> str:
+        _ = f"def @{self.name}"
+        _ += ", ".join(map(repr, self.params))
+        if self.ret_ty:
+            _ += f" -> {self.ret_ty}"
+        return _

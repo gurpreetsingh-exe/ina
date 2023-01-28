@@ -4,6 +4,7 @@ from enum import Enum, auto
 from utils import *
 from Token import TokenKind, Span
 
+
 def get_ty(name) -> PrimTyKind | None:
     match name:
         case "u8": return PrimTyKind.U8
@@ -27,6 +28,7 @@ def get_ty(name) -> PrimTyKind | None:
 
 class Ty:
     pass
+
 
 class PrimTyKind(Enum):
     U8 = auto()
@@ -112,8 +114,10 @@ class PrimTyKind(Enum):
             case PrimTyKind.Raw: return "raw"
             case PrimTyKind.Unit: return "()"
 
+
 class PrimTy(Ty):
     __match_args__ = ("kind", )
+
     def __init__(self, kind: PrimTyKind):
         self.kind = kind
         self.span: Span | None = None
@@ -140,21 +144,27 @@ class PrimTy(Ty):
     def __repr__(self) -> str:
         return repr(self.kind)
 
+
 class FnArg:
     pass
 
+
 class Arg(FnArg):
     __match_args__ = ("name", "ty", )
+
     def __init__(self, name, ty):
         self.name = name
         self.ty = ty
         self.span: Span | None = None
 
+
 class Variadic(FnArg):
     pass
 
+
 class Fn:
     __match_args__ = ("name", "args", "ret_ty", "body", "is_extern", "abi", )
+
     def __init__(
         self,
         name: str,
@@ -208,18 +218,23 @@ class Fn:
                 local_count_ += 1
         return local_count_
 
+
 class Block:
     __match_args__ = ("stmts", )
+
     def __init__(self, stmts: List[Stmt]):
         self.stmts = stmts
         self.span: Span | None = None
 
+
 class Expr:
     __match_args__ = ("kind", )
+
     def __init__(self, kind) -> None:
         self.kind = kind
         self.ty: Ty | None = None
         self.span: Span | None = None
+
 
 class BinaryKind(Enum):
     Add = auto()
@@ -228,6 +243,7 @@ class BinaryKind(Enum):
     Div = auto()
     Lt = auto()
     Gt = auto()
+
 
 def binary_kind_from_token(kind: TokenKind) -> BinaryKind:
     match kind:
@@ -239,8 +255,10 @@ def binary_kind_from_token(kind: TokenKind) -> BinaryKind:
         case TokenKind.LT: return BinaryKind.Lt
         case _: assert False
 
+
 class Binary:
     __match_args__ = ("kind", "left", "right")
+
     def __init__(self, kind: BinaryKind, left: Expr, right: Expr):
         self.kind = kind
         self.left = left
@@ -248,10 +266,12 @@ class Binary:
         self.ty = None
         self.span: Span | None = None
 
+
 class UnaryKind(Enum):
     Neg = auto()
     Not = auto()
     AddrOf = auto()
+
 
 def unary_kind_from_token(kind: TokenKind) -> UnaryKind:
     match kind:
@@ -260,83 +280,102 @@ def unary_kind_from_token(kind: TokenKind) -> UnaryKind:
         case TokenKind.AMPERSAND: return UnaryKind.AddrOf
         case _: assert False
 
+
 class Unary:
     __match_args__ = ("kind", "expr", )
+
     def __init__(self, kind: UnaryKind, expr: Expr):
         self.kind = kind
         self.expr = expr
         self.ty = None
         self.span: Span | None = None
 
+
 class Call:
     __match_args__ = ("name", "args", )
+
     def __init__(self, name, args: List[Expr]):
         self.name = name
         self.args = args
         self.ty = None
         self.span: Span | None = None
 
+
 class If:
     __match_args__ = ("cond", "body", "elze", )
-    def __init__(self, cond, body, elze = None):
+
+    def __init__(self, cond, body, elze=None):
         self.cond = cond
         self.body = body
         self.elze = elze
         self.ty = None
         self.span: Span | None = None
 
+
 class Else:
     __match_args__ = ("body", )
+
     def __init__(self, body):
         self.body = body
         self.span: Span | None = None
+
 
 class Stmt:
     def __init__(self, kind) -> None:
         self.kind = kind
         self.span: Span | None = None
 
+
 class Let:
     __match_args__ = ("name", "ty", "init")
+
     def __init__(self, name, ty, init):
         self.name = name
         self.ty = ty
         self.init = init
         self.span: Span | None = None
 
+
 class Assign:
     __match_args__ = ("name", "init", )
+
     def __init__(self, name, init):
         self.name = name
         self.init = init
         self.span: Span | None = None
 
+
 class Ident:
     __match_args__ = ("name", )
+
     def __init__(self, name):
         self.name = name
         self.ty = None
         self.span: Span | None = None
 
+
 class Cast:
     __match_args__ = ("expr", "ty", )
+
     def __init__(self, expr, ty):
         self.expr = expr
         self.ty = ty
         self.span: Span | None = None
 
+
 class Lit(Enum):
-    Int   = auto()
+    Int = auto()
     Float = auto()
-    Bool  = auto()
-    Str   = auto()
-    Char  = auto()
+    Bool = auto()
+    Str = auto()
+    Char = auto()
+
 
 class Literal:
     __match_args__ = ("kind", "value", )
+
     def __init__(self, kind, value):
         self.kind = kind
         self.value = value
         self.ty = None
         self.span: Span | None = None
-

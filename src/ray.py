@@ -9,8 +9,10 @@ from Ast import *
 from utils import *
 from Parser import Parser
 from tychk import TyCheck
+from ast_lowering import IRGen, LoweringContext
 
-regs = ["rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"]
+regs = ["rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8",
+        "r9", "r10", "r11", "r12", "r13", "r14", "r15"]
 fn_regs = [
     ["rdi", "rsi", "rdx", "rcx", "r8", "r9"],
     ["xmm0", "xmm1"]
@@ -63,6 +65,7 @@ for reg in regs[6:]:
         8: reg,
     }
 
+
 class Scope:
     def __init__(self):
         self.scopes = []
@@ -81,7 +84,8 @@ class Scope:
 
         size = ty.get_size()
         self.stack_offset = (self.stack_offset + size * 2 - 1) & ~(size - 1)
-        self.scopes[-1].append({ 'name': name, 'off': self.stack_offset, 'size': size })
+        self.scopes[-1].append({'name': name,
+                               'off': self.stack_offset, 'size': size})
         return self.stack_offset, size
 
     def find_local(self, name) -> Dict[str, Any]:
@@ -97,6 +101,7 @@ class Scope:
     def pop(self):
         self.scopes.pop()
         self.stack_offset = 0
+
 
 class Codegen:
     def __init__(self, ast, defs):
@@ -174,7 +179,7 @@ class Codegen:
             else:
                 self.buf += f"    mov rax, {ptr} [rbp - {off}]\n"
 
-    def expr(self, expr: Expr, reg, label = 0):
+    def expr(self, expr: Expr, reg, label=0):
         match expr.kind:
             case Binary():
                 self.dbg(f"    # binary")
@@ -458,9 +463,11 @@ def usage(arg0):
     print("    -h, --help   print help information\n")
     exit(1)
 
+
 class Command(Enum):
     Nan = auto()
     Compile = auto()
+
 
 def main(argv):
     filename = ""
@@ -523,6 +530,10 @@ def main(argv):
                         exit(1)
                     # gen = IRGen(ast)
                     # pp(ast, max_depth=10)
+                    ctx = LoweringContext(ast)
+                    IRGen(ctx)
+                    for fn in ctx.lowered_ast:
+                        print(fn)
                     code = Codegen(ast, tychk.defs).emit()
                     output = filename.split('.')[0]
                     with open(f"{output}.asm", "w") as f:
