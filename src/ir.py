@@ -1,16 +1,16 @@
 from __future__ import annotations
 from Ast import *
-
-inst_id = 0
+from typing import Dict
 
 
 class Instruction:
-    def __init__(self, kind) -> None:
+    def __init__(self, kind, inst_id) -> None:
         self.kind = kind
+        self.inst_id = inst_id
 
     def has_ret_ty(self) -> bool:
         match self.kind:
-            case FnCall() | Alloc():
+            case FnCall() | Alloc() | Load():
                 return True
             case _:
                 return False
@@ -19,8 +19,7 @@ class Instruction:
         global inst_id
         _ = "    "
         if self.has_ret_ty():
-            _ += f"%{inst_id} = "
-            inst_id += 1
+            _ += f"%{self.inst_id} = "
 
         return _ + repr(self.kind)
 
@@ -53,10 +52,19 @@ class Store:
         return f"store {self.dst}, {self.src}"
 
 
+class Load:
+    def __init__(self, ptr: Value) -> None:
+        self.ptr = ptr
+
+    def __repr__(self) -> str:
+        return f"load {self.ptr}"
+
+
 class BasicBlock:
     def __init__(self, instructions: List[Instruction], parent: int | None) -> None:
         self.instructions = instructions
         self.parent = parent
+        self.locals: Dict[str, Value] = {}
 
     def __repr__(self) -> str:
         return "\n".join(map(repr, self.instructions))
@@ -79,8 +87,8 @@ class Value:
                 return f"@{self.data}"
             case ValueKind.InstId:
                 return f"%{self.data}"
-
-        return repr(self.kind)
+            case ValueKind.Imm:
+                return f"{self.data}"
 
 
 class FnDef:
@@ -113,7 +121,7 @@ class FnDecl:
         self.ret_ty = ret_ty
 
     def __repr__(self) -> str:
-        _ = f"def @{self.name}"
+        _ = f"decl @{self.name}"
         _ += ", ".join(map(repr, self.params))
         if self.ret_ty:
             _ += f" -> {self.ret_ty}"

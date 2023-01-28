@@ -23,7 +23,8 @@ class LoweringContext:
     def mk_inst(self, inst) -> Value:
         assert self.bb != None
         val = Value(ValueKind.InstId, self.inst_id)
-        self.bb.instructions.append(Instruction(inst))
+        self.bb.instructions.append(
+            Instruction(inst, len(self.bb.instructions)))
         self.inst_id += 1
         return val
 
@@ -32,6 +33,14 @@ class LoweringContext:
         self.bb = BasicBlock([], parent_bb)
         self.inst_id = 0
         self.bb_id += 1
+
+    def store_var(self, name: str, val: Value):
+        assert self.bb != None
+        self.bb.locals[name] = val
+
+    def get_var(self, name) -> Value:
+        assert self.bb != None
+        return self.bb.locals[name]
 
     def append_bb(self):
         assert self.bb != None
@@ -61,12 +70,15 @@ class IRGen:
                 assert expr.ty != None
                 match kind:
                     case Lit.Str:
-                        ptr = self.ctx.mk_inst(Alloc(expr.ty))
                         src = self.ctx.alloc_str(value)
-                        self.ctx.mk_inst(Store(ptr, src))
-                        return ptr
+                        return src
+                    case Lit.Int:
+                        return Value(ValueKind.Imm, value)
                     case _:
                         assert False
+            case Ident(name):
+                ptr = self.ctx.get_var(name)
+                return self.ctx.mk_inst(Load(ptr))
             case _:
                 assert False, f"{expr.kind}"
 
@@ -76,6 +88,13 @@ class IRGen:
             match stmt.kind:
                 case Expr():
                     self.lower_expr(stmt.kind)
+                case Let(name, ty, init):
+                    val = self.lower_expr(init)
+                    ptr = self.ctx.mk_inst(Alloc(ty))
+                    self.ctx.store_var(name, ptr)
+                    self.ctx.mk_inst(Store(ptr, val))
+                case _:
+                    assert False, f"{stmt.kind}"
         self.ctx.append_bb()
         return self.ctx.blocks
 
