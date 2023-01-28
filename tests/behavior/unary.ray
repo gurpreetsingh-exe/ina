@@ -11,5 +11,5 @@ fn main() {
     memset(&a, 0, 1);
     printf("%d %d %d %d %d\n", a, b, c, d, f);
 }
-\o
-0 0 0 1 -2048
+
+// STDOUT: 0 0 0 1 -2048

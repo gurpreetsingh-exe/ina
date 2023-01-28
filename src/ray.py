@@ -458,15 +458,17 @@ class Codegen:
 def usage(arg0):
     print(f"Usage: {arg0} [command] [options] input...")
     print("\nCommands:")
-    print("    com          compile the file")
+    print("    build            compile the file")
     print("\nOptions:")
-    print("    -h, --help   print help information\n")
+    print("    --emit-ir        print IR")
+    print("    --skip-codegen   skip code-genration")
+    print("    -h, --help       print help information\n")
     exit(1)
 
 
 class Command(Enum):
     Nan = auto()
-    Compile = auto()
+    Build = auto()
 
 
 def main(argv):
@@ -474,6 +476,8 @@ def main(argv):
     arg0 = argv[0]
     argv = argv[1:]
     command = Command.Nan
+    emit_ir = False
+    skip_codegen = False
     while argv:
         arg = argv[0]
         if arg.startswith("-"):
@@ -484,6 +488,10 @@ def main(argv):
                     match arg:
                         case "--help":
                             usage(arg0)
+                        case "--emit-ir":
+                            emit_ir = True
+                        case "--skip-codegen":
+                            skip_codegen = True
                         case _:
                             print(f"Unknown option \"{arg}\"")
                             usage(arg0)
@@ -494,8 +502,8 @@ def main(argv):
                     usage(arg0)
         elif command == Command.Nan:
             match arg:
-                case "com":
-                    command = Command.Compile
+                case "build":
+                    command = Command.Build
                 case _:
                     print(f"Unknown command \"{arg}\"")
         else:
@@ -516,7 +524,7 @@ def main(argv):
             if not filename:
                 usage(arg0)
             match command:
-                case Command.Compile:
+                case Command.Build:
                     lexer = lexer_from_file(filename)
                     src = lexer.program
                     file = File(filename, src)
@@ -532,8 +540,13 @@ def main(argv):
                     # pp(ast, max_depth=10)
                     ctx = LoweringContext(ast)
                     IRGen(ctx)
-                    for fn in ctx.lowered_ast:
-                        print(fn)
+                    if emit_ir:
+                        for i, string in enumerate(ctx.strings):
+                            print(f"@{i} = {string}")
+                        for fn in ctx.lowered_ast:
+                            print(fn)
+                    if skip_codegen:
+                        return
                     code = Codegen(ast, tychk.defs).emit()
                     output = filename.split('.')[0]
                     with open(f"{output}.asm", "w") as f:

@@ -11,5 +11,5 @@ fn main() {
     // printf("%d %.2f %.3f\n", a, b, helper() as f64);
     printf("%d %.2f\n", a, b);
 }
-\o
-10 10.00
+
+// STDOUT: 10 10.00

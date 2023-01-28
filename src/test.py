@@ -10,7 +10,7 @@ def split_file(filepath):
     inp = ""
     with open(filepath, 'r') as f:
         inp = f.read()
-    return inp.split("\\o\n")
+    return inp.split("// STDOUT: ")
 
 
 def test_comp_fail(filepath):
@@ -31,6 +31,7 @@ def test_comp_fail(filepath):
 
 def test_behavior(filepath):
     src, stdout = split_file(filepath)
+    stdout = stdout.replace("// ", "")
     lexer = lexer_from_src(src, filepath)
     src = lexer.program
     tokens = list(lexer.lexfile())
@@ -43,7 +44,8 @@ def test_behavior(filepath):
         f.write(code)
     subprocess.call(["as", f"{output}.asm", "-o", f"{output}.o"])
     subprocess.call(["gcc", f"{output}.o", "-o", output])
-    proc = subprocess.Popen([f"./{output}"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    proc = subprocess.Popen(
+        [f"./{output}"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     lines = "".join([i.decode('utf-8') for i in proc.stdout.readlines()])
     proc.communicate()
     failed = False
@@ -70,6 +72,6 @@ def run_tests():
     else:
         print("  All tests passed")
 
+
 if __name__ == "__main__":
     run_tests()
-

@@ -3,5 +3,5 @@ extern "C" fn printf(format: str, ...)
 fn main() {
     printf("Hello World\n");
 }
-\o
-Hello World
+
+// STDOUT: Hello World

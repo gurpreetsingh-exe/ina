@@ -3,13 +3,16 @@ from copy import deepcopy
 from typing import Generator
 from Token import *
 
+
 def lexer_from_file(filepath: str) -> Lexer:
     with open(filepath, "r") as f:
         program = f.read()
         return lexer_from_src(program, filepath)
 
+
 def lexer_from_src(src: str, filepath: str) -> Lexer:
     return Lexer(src, filepath)
+
 
 class Lexer:
     def __init__(self, program: str, filepath: str):
@@ -24,7 +27,8 @@ class Lexer:
             self.loc.line += 1
         else:
             self.loc.col += 1
-        self.curr_char = self.program[self.loc.offset] if self.loc.offset < len(self.program) else None
+        self.curr_char = self.program[self.loc.offset] if self.loc.offset < len(
+            self.program) else None
 
     def lex_word(self, method) -> str:
         buffer = ''
@@ -48,7 +52,8 @@ class Lexer:
                 continue
 
             elif self.curr_char.isdigit():
-                word = self.lex_word(lambda self: self.curr_char.isdigit() or self.curr_char == ".")
+                word = self.lex_word(
+                    lambda self: self.curr_char.isdigit() or self.curr_char == ".")
                 loc.len = self.loc.offset - loc.offset
                 try:
                     int(word)
@@ -70,7 +75,8 @@ class Lexer:
                 yield Token(TokenKind.Str, loc)
 
             elif self.curr_char.isalpha() or self.curr_char == "_":
-                word = self.lex_word(lambda self: self.curr_char.isalnum() or self.curr_char == "_")
+                word = self.lex_word(
+                    lambda self: self.curr_char.isalnum() or self.curr_char == "_")
                 loc.len = self.loc.offset - loc.offset
 
                 if word in Keywords:
@@ -106,5 +112,4 @@ class Lexer:
                     yield Token(Punctuators[prev], loc)
 
             else:
-                assert False, "unreachable"
-
+                assert False, f"unreachable {self.curr_char}"
