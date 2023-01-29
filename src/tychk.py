@@ -3,15 +3,19 @@ from Ast import *
 from Token import *
 from utils import panic
 from Errors import *
+from beeprint import pp
+
 
 class DefKind(Enum):
     Fn = auto()
     Struct = auto()
 
+
 class Def:
     def __init__(self, kind, data):
         self.kind = kind
         self.data = data
+
 
 class TyScope:
     def __init__(self):
@@ -37,13 +41,14 @@ class TyScope:
     def def_local(self, name, ty, val=None):
         if self.search_local(name):
             panic(f"{name} is already defined")
-        self.scopes[-1].append({ 'name': name, 'ty': ty, 'val': val })
+        self.scopes[-1].append({'name': name, 'ty': ty, 'val': val})
 
     def add(self):
         self.scopes.append([])
 
     def pop(self):
         self.scopes.pop()
+
 
 class TyCheck:
     def __init__(self, ast):
@@ -67,7 +72,7 @@ class TyCheck:
         err.span = span
         self.errors.append(err)
 
-    def infer(self, expr: Expr) -> Ty | None:
+    def infer(self, expr: Expr) -> Ty:
         span = expr.span
         match expr.kind:
             case Binary(kind, left, right):
@@ -79,7 +84,8 @@ class TyCheck:
                             return self.mk_bool()
                     return lty
                 else:
-                    self.add_err(TypesMismatchError(f"cannot {kind} `{lty}` and `{rty}`"), span)
+                    self.add_err(TypesMismatchError(
+                        f"cannot {kind} `{lty}` and `{rty}`"), span)
                     return self.mk_unit()
             case Literal(kind, _):
                 val = None
@@ -122,10 +128,14 @@ class TyCheck:
                                     return ty
                                 else:
                                     panic(f"expected number but got {ty}")
+                            case _:
+                                assert False
                     case UnaryKind.AddrOf:
                         if type(expr.kind) != Ident:
-                            panic(f"cannot use & on {expr.kind.__class__.__name__}")
-                        return self.mk_prim_ty(PrimTyKind.Raw)
+                            panic(
+                                f"cannot use & on {expr.kind.__class__.__name__}")
+                        ty = self.infer(expr)
+                        return RefTy(ty)
                     case _:
                         assert False, f"{kind} unreachable"
             case If(cond, body, elze):
@@ -149,11 +159,13 @@ class TyCheck:
                 match kind:
                     case BinaryKind.Lt | BinaryKind.Gt:
                         if expected_ty != self.mk_bool():
-                            self.add_err(TypesMismatchError(f"expected `bool`, found `{expected_ty}`"), span)
+                            self.add_err(TypesMismatchError(
+                                f"expected `bool`, found `{expected_ty}`"), span)
                         lty = self.infer(left)
                         rty = self.infer(right)
                         if lty != rty:
-                            self.add_err(TypesMismatchError(f"cannot {kind} `{lty}` and `{rty}`"), span)
+                            self.add_err(TypesMismatchError(
+                                f"cannot {kind} `{lty}` and `{rty}`"), span)
                     case _:
                         self.check(left, expected_ty)
                         self.check(right, expected_ty)
@@ -174,13 +186,15 @@ class TyCheck:
                         panic(f"unexpected literal {kind}")
                 ty = PrimTy(val)
                 if expected_ty and ty != expected_ty:
-                    self.add_err(TypesMismatchError(f"expected `{expected_ty}`, found `{ty}`"), span)
+                    self.add_err(TypesMismatchError(
+                        f"expected `{expected_ty}`, found `{ty}`"), span)
             case Call(name, args):
                 self.check_call(name, args, span, expected_ty)
             case Ident(name):
                 if ty := self.scope.find_local(name):
                     if ty != expected_ty:
-                        self.add_err(TypesMismatchError(f"expected `{expected_ty}`, found `{ty}`"), span)
+                        self.add_err(TypesMismatchError(
+                            f"expected `{expected_ty}`, found `{ty}`"), span)
                     expr.ty = ty
                 else:
                     panic(f"{name} is not defined")
@@ -194,12 +208,17 @@ class TyCheck:
                                 if kind.is_number():
                                     self.check(expr, expected_ty)
                                 else:
-                                    self.add_err(TypesMismatchError(f"expected `{expected_ty}`, found number"), span)
+                                    self.add_err(TypesMismatchError(
+                                        f"expected `{expected_ty}`, found number"), span)
                     case UnaryKind.AddrOf:
                         if type(expr.kind) != Ident:
-                            panic(f"cannot use & on {expr.kind.__class__.__name__}")
-                        if expected_ty.kind != PrimTyKind.Raw:
-                            panic(f"expected {expected_ty} but got Raw")
+                            panic(
+                                f"cannot use & on {expr.kind.__class__.__name__}")
+                        match expected_ty:
+                            case RefTy(ty):
+                                self.check(expr, ty)
+                            case _:
+                                panic(f"expected {expected_ty} but got Raw")
                     case _:
                         assert False, f"{op} unreachable"
             case If(cond, body, elze):
@@ -207,9 +226,22 @@ class TyCheck:
                 self.check_block(body)
                 if elze:
                     self.check_block(elze)
-            case Cast(expr, ty):
-                expr.ty = self.infer(expr)
-                return ty
+            case Cast(cast_expr, ty):
+                cast_expr.ty = self.infer(cast_expr)
+                match cast_expr.ty, ty:
+                    case RefTy(_) | PrimTy(PrimTyKind.Raw), PrimTy(PrimTyKind.Raw):
+                        expr.ty = ty
+                    case PrimTy(_), PrimTy(PrimTyKind.Raw):
+                        self.add_err(CastError(
+                            f"invalid cast of `{cast_expr.ty}`"), span)
+                    case PrimTy(p), RefTy(_) if p != PrimTyKind.Raw:
+                        self.add_err(CastError(
+                            f"invalid cast of `{cast_expr.ty}`"), span)
+                    case _, _:
+                        assert False, "cast"
+                if ty != expected_ty:
+                    self.add_err(TypesMismatchError(
+                        f"expected `{expected_ty}`, found `{ty}`"), span)
             case _:
                 assert False
 
@@ -266,7 +298,7 @@ class TyCheck:
             ret_ty = fn_dict['ret_ty']
         self.fn_ctx = None
         for stmt in block.stmts:
-            self.check_stmt(stmt, ret_ty)
+            self.visit_stmt(stmt)
         self.scope.pop()
 
     def infer_block(self, block):
@@ -302,7 +334,7 @@ class TyCheck:
                 if self.scope.search_local(name):
                     self.add_err(Redefinition(f"{name} is not defined"), span)
                 if ty:
-                    ty = self.check(init, ty)
+                    self.check(init, ty)
                 else:
                     ty = self.infer(init)
                     stmt.kind.ty = ty
@@ -332,7 +364,7 @@ class TyCheck:
         abi = fn.abi
         body = fn.body
 
-        fn_dict = { 'args': args, 'ret_ty': ret_ty, 'abi': abi }
+        fn_dict = {'args': args, 'ret_ty': ret_ty, 'abi': abi}
         self.defs[name] = Def(DefKind.Fn, fn_dict)
         if fn.is_extern:
             return
@@ -347,5 +379,3 @@ class TyCheck:
                     self.visit_fn(node)
                 case _:
                     assert False, f"{node}"
-
-

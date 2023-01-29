@@ -64,6 +64,9 @@ class Parser:
     def parse_ty(self) -> Ty:
         assert self.t != None
         match self.t.kind:
+            case TokenKind.AMPERSAND:
+                self.advance()
+                return RefTy(self.parse_ty())
             case TokenKind.Ident:
                 ty = self.expect(TokenKind.Ident).raw(self.src)
                 if prim_ty := get_ty(ty):

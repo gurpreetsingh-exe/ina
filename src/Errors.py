@@ -2,6 +2,7 @@ from sys import stderr
 from Token import Span
 from utils import File
 
+
 class Error:
     def __init__(self, msg: str) -> None:
         self.msg = msg
@@ -9,6 +10,7 @@ class Error:
 
     def emit(self, _: File):
         raise NotImplemented()
+
 
 def emit(self, file: File, msg):
     assert self.span.start != None
@@ -34,6 +36,7 @@ def emit(self, file: File, msg):
     stderr.write(ok("^" * span_len))
     stderr.write(err(f" {self.msg}\n\n"))
 
+
 class Redefinition(Error):
     def __init__(self, msg: str) -> None:
         super().__init__(msg)
@@ -41,12 +44,14 @@ class Redefinition(Error):
     def emit(self, file: File):
         emit(self, file, ": variable redefinition\n")
 
+
 class TypesMismatchError(Error):
     def __init__(self, msg: str) -> None:
         super().__init__(msg)
 
     def emit(self, file: File):
         emit(self, file, ": types mismatch\n")
+
 
 class NotFound(Error):
     def __init__(self, name: str, msg: str) -> None:
@@ -56,15 +61,26 @@ class NotFound(Error):
     def emit(self, file: File):
         emit(self, file, f": {self.name} not found\n")
 
+
+class CastError(Error):
+    def __init__(self, msg: str) -> None:
+        super().__init__(msg)
+
+    def emit(self, file: File):
+        emit(self, file, f": cast error\n")
+
+
 def c(format: str) -> str:
     return f"\033[30;1m{format}\033[0m"
+
 
 def b(format: str) -> str:
     return f"\033[1m{format}\033[0m"
 
+
 def err(format: str) -> str:
     return f"\033[1;31m{format}\033[0m"
 
+
 def ok(format: str) -> str:
     return f"\033[1;32m{format}\033[0m"
-

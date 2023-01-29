@@ -357,6 +357,8 @@ class Codegen:
                     case PrimTyKind.I64:
                         self.expr(expr, "xmm0")
                         self.buf += f"    cvttsd2si {reg}, xmm0\n"
+                    case PrimTyKind.Raw:
+                        self.expr(expr, reg)
                     case _:
                         assert False
             case _:
@@ -538,6 +540,7 @@ def main(argv):
                         exit(1)
                     # gen = IRGen(ast)
                     # pp(ast, max_depth=10)
+                    """
                     ctx = LoweringContext(ast)
                     IRGen(ctx)
                     if emit_ir:
@@ -545,6 +548,7 @@ def main(argv):
                             print(f"@{i} = {string}")
                         for fn in ctx.lowered_ast:
                             print(fn)
+                    """
                     if skip_codegen:
                         return
                     code = Codegen(ast, tychk.defs).emit()

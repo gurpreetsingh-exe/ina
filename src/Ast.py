@@ -145,6 +145,30 @@ class PrimTy(Ty):
         return repr(self.kind)
 
 
+class RefTy(Ty):
+    __match_args__ = ("ref", )
+
+    def __init__(self, ref: Ty):
+        self.ref = ref
+        self.span = None
+
+    def get_size(self) -> int:
+        return 8
+
+    def __eq__(self, __o: Ty) -> bool:
+        match __o:
+            case RefTy(ref):
+                return ref == self.ref
+            case _:
+                return False
+
+    def __ne__(self, __o: Ty) -> bool:
+        return not self.__eq__(__o)
+
+    def __repr__(self) -> str:
+        return f"&{repr(self.ref)}"
+
+
 class FnArg:
     pass
 

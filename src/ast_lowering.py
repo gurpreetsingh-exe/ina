@@ -87,10 +87,10 @@ class IRGen:
                     case Lit.Str:
                         src = self.ctx.alloc_str(value)
                         return src
-                    case Lit.Int:
+                    case Lit.Int | Lit.Bool | Lit.Float:
                         return Value(ValueKind.Imm, value)
                     case _:
-                        assert False
+                        assert False, kind
             case Ident(name):
                 ptr = self.ctx.get_var(name)
                 return self.ctx.mk_inst(Load(ptr))
