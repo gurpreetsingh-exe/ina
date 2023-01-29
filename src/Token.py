@@ -19,6 +19,7 @@ class TokenKind(Enum):
     Else = auto()
     As = auto()
     Loop = auto()
+    Break = auto()
 
     PLUS = auto()  # `+`
     MINUS = auto()  # `-`
@@ -70,6 +71,7 @@ Keywords = {
     "else": TokenKind.Else,
     "as": TokenKind.As,
     "loop": TokenKind.Loop,
+    "break": TokenKind.Break,
 }
 
 Punctuators = {

@@ -349,6 +349,12 @@ class Loop:
 
     def __init__(self, body: Block) -> None:
         self.body = body
+        self.span: Span | None = None
+
+
+class Break:
+    def __init__(self) -> None:
+        self.label = 0
 
 
 class Stmt:

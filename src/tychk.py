@@ -343,6 +343,8 @@ class TyCheck:
                 match stmt.kind:
                     case Let():
                         assert False, "expected expression"
+                    case Break():
+                        pass
                     case _:
                         ty = self.infer(stmt.kind)
         self.scope.pop()
@@ -361,6 +363,8 @@ class TyCheck:
                     ty = self.infer(init)
                     stmt.kind.ty = ty
                 self.scope.def_local(name, ty)
+            case Break():
+                pass
             case _:
                 self.infer(stmt.kind)
 

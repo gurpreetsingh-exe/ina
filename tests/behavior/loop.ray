@@ -1,0 +1,19 @@
+extern "C" fn printf(format: str, ...)
+
+fn main() {
+    let a = 0;
+    loop {
+        if a < 5 {
+            printf("%d\n", a);
+            a = a + 1;
+        } else {
+            break;
+        }
+    }
+}
+
+// STDOUT: 0
+// 1
+// 2
+// 3
+// 4

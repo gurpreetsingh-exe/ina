@@ -112,6 +112,7 @@ class Codegen:
         self.floats = []
         self.defs = defs
         self.label_id = 1
+        self.breaks = []
         self.fn_ctx: Fn | None = None
         self.debug_messages = 0
 
@@ -338,9 +339,11 @@ class Codegen:
                     case Literal():
                         if cond.kind.value == 'false':
                             self.buf += f"    jmp .L{label_false}\n"
-                    case Ident() | Unary() | Call() | Binary():
+                    case Ident() | Unary() | Call():
                         self.buf += f"    cmp rax, 0\n"
                         self.buf += f"    je .L{label_false}\n"
+                    case Binary():
+                        pass
                     case _:
                         assert False, f"{cond.kind}"
                 self.dbg(f"    # if body")
@@ -376,6 +379,9 @@ class Codegen:
                 self.buf += f".L{label_start}:\n"
                 self.gen_block(body)
                 self.buf += f"    jmp .L{label_start}\n"
+                for brk in self.breaks:
+                    self.buf += f".L{brk}:\n"
+                self.breaks = []
             case _:
                 assert False, f"{expr} is not implemented"
 
@@ -403,6 +409,11 @@ class Codegen:
                         self.expr(init, "rax")
                         ptr, reg = self.reg_from_sz("rax", sz)
                         self.buf += f"    mov {ptr} [rbp - {off}], {reg}\n"
+            case Break():
+                break_label = self.label
+                self.buf += f"    jmp .L{break_label}\n"
+                stmt.kind.label = break_label
+                self.breaks.append(break_label)
             case _:
                 self.expr(stmt.kind, "rax")
 

@@ -270,6 +270,10 @@ class Parser:
             case TokenKind.LCURLY:
                 stmt = self.parse_block()
                 self.eat_if_present(TokenKind.SEMI)
+            case TokenKind.Break:
+                self.advance()
+                self.eat_if_present(TokenKind.SEMI)
+                stmt = Break()
             case _:
                 stmt = self.parse_expr()
                 self.eat_if_present(TokenKind.SEMI)
