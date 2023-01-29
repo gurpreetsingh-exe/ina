@@ -75,6 +75,17 @@ class TyCheck:
     def infer(self, expr: Expr) -> Ty:
         span = expr.span
         match expr.kind:
+            case Assign(Ident(name), init):
+                if not self.scope.search_local(name):
+                    self.add_err(NotFound(name, ""), span)
+                ty = self.scope.find_local(name)
+                expr.ty = ty
+                inf_ty = self.infer(init)
+                if inf_ty != ty:
+                    self.add_err(TypesMismatchError(
+                        f"expected `{ty}`, found `{inf_ty}`"), span)
+                else:
+                    return ty
             case Binary(kind, left, right):
                 lty = self.infer(left)
                 rty = self.infer(right)
@@ -146,15 +157,24 @@ class TyCheck:
                 if elze:
                     else_ty = self.infer_block(elze)
                 return if_ty
+            case Loop(body):
+                self.infer_block(body)
+                return self.mk_unit()
             case Cast(expr, ty):
                 expr.ty = self.infer(expr)
                 return ty
             case _:
-                assert False
+                assert False, f"{expr.kind}"
 
     def check(self, expr: Expr, expected_ty: Ty):
         span = expr.span
         match expr.kind:
+            case Assign(Ident(name), init):
+                if not self.scope.search_local(name):
+                    self.add_err(NotFound(name, ""), span)
+                ty = self.scope.find_local(name)
+                expr.ty = ty
+                self.check(init, expected_ty)
             case Binary(kind, left, right):
                 match kind:
                     case BinaryKind.Lt | BinaryKind.Gt:
@@ -226,6 +246,8 @@ class TyCheck:
                 self.check_block(body)
                 if elze:
                     self.check_block(elze)
+            case Loop(body):
+                self.check_block(body)
             case Cast(cast_expr, ty):
                 cast_expr.ty = self.infer(cast_expr)
                 match cast_expr.ty, ty:

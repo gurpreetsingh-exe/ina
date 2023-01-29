@@ -181,6 +181,16 @@ class Codegen:
 
     def expr(self, expr: Expr, reg, label=0):
         match expr.kind:
+            case Assign(Ident(name), expr):
+                self.dbg(f"    # assign")
+                var = self.scopes.find_local(name)
+                off = var["off"]
+                if reg:
+                    self.expr(expr, reg)
+                    self.buf += f"    mov [rbp - {off}], {reg}\n"
+                else:
+                    self.expr(expr, "rax")
+                    self.buf += f"    mov [rbp - {off}], rax\n"
             case Binary():
                 self.dbg(f"    # binary")
                 stack = self.binop_stack(expr.kind)
@@ -361,6 +371,11 @@ class Codegen:
                         self.expr(expr, reg)
                     case _:
                         assert False
+            case Loop(body):
+                label_start = self.label
+                self.buf += f".L{label_start}:\n"
+                self.gen_block(body)
+                self.buf += f"    jmp .L{label_start}\n"
             case _:
                 assert False, f"{expr} is not implemented"
 

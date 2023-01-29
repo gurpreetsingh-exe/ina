@@ -165,6 +165,10 @@ class Parser:
                     self.advance()
                     elze = self.parse_block()
                 return Expr(If(cond, body, elze))
+            case TokenKind.Loop:
+                self.advance()
+                block = self.parse_block()
+                return Expr(Loop(block))
             case _:
                 panic(f"unreachable {self.t.kind}")
 
@@ -224,8 +228,8 @@ class Parser:
         while self.t.kind == TokenKind.EQ:
             self.advance()
             init = self.parse_assign()
-            if isinstance(left, Ident):
-                return Expr(Assign(left.name, init))
+            if isinstance(left.kind, Ident):
+                return Expr(Assign(left.kind, init))
             else:
                 panic(
                     f"Assignment expression expected `Ident` but got `{left}`")

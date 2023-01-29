@@ -344,6 +344,13 @@ class Else:
         self.span: Span | None = None
 
 
+class Loop:
+    __match_args__ = ("body", )
+
+    def __init__(self, body: Block) -> None:
+        self.body = body
+
+
 class Stmt:
     def __init__(self, kind) -> None:
         self.kind = kind

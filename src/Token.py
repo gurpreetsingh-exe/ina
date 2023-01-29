@@ -1,99 +1,103 @@
 from enum import Enum, auto
 
+
 class TokenKind(Enum):
     Int = auto()
     Float = auto()
     Bool = auto()
-    Str  = auto()
+    Str = auto()
 
-    Intrinsic   = auto()
-    Ident       = auto()
+    Intrinsic = auto()
+    Ident = auto()
 
-    Mut         = auto()
-    Imm         = auto()
-    Let         = auto()
-    Extern      = auto()
-    Fn          = auto()
-    If          = auto()
-    Else        = auto()
-    As          = auto()
+    Mut = auto()
+    Imm = auto()
+    Let = auto()
+    Extern = auto()
+    Fn = auto()
+    If = auto()
+    Else = auto()
+    As = auto()
+    Loop = auto()
 
-    PLUS        = auto()  # `+`
-    MINUS       = auto()  # `-`
-    STAR        = auto()  # `*`
-    SLASH       = auto()  # `/`
-    EQ          = auto()  # `=`
-    SEMI        = auto()  # `;`
-    LT          = auto()  # `<`
-    GT          = auto()  # `>`
-    COLON       = auto()  # `:`
-    LPAREN      = auto()  # `(`
-    RPAREN      = auto()  # `)`
-    LCURLY      = auto()  # `{`
-    RCURLY      = auto()  # `}`
-    LBRACKET    = auto()  # `[`
-    RBRACKET    = auto()  # `]`
-    COMMA       = auto()  # `,`
+    PLUS = auto()  # `+`
+    MINUS = auto()  # `-`
+    STAR = auto()  # `*`
+    SLASH = auto()  # `/`
+    EQ = auto()  # `=`
+    SEMI = auto()  # `;`
+    LT = auto()  # `<`
+    GT = auto()  # `>`
+    COLON = auto()  # `:`
+    LPAREN = auto()  # `(`
+    RPAREN = auto()  # `)`
+    LCURLY = auto()  # `{`
+    RCURLY = auto()  # `}`
+    LBRACKET = auto()  # `[`
+    RBRACKET = auto()  # `]`
+    COMMA = auto()  # `,`
     DOUBLEQUOTE = auto()  # `"`
-    POUND       = auto()  # `#`
-    AT          = auto()  # `@`
-    AMPERSAND   = auto()  # `&`
-    PIPE        = auto()  # `|`
-    TILDE       = auto()  # `~`
-    BANG        = auto()  # `!`
-    PERCENT     = auto()  # `%`
-    DOT         = auto()  # `.`
+    POUND = auto()  # `#`
+    AT = auto()  # `@`
+    AMPERSAND = auto()  # `&`
+    PIPE = auto()  # `|`
+    TILDE = auto()  # `~`
+    BANG = auto()  # `!`
+    PERCENT = auto()  # `%`
+    DOT = auto()  # `.`
 
-    LT2         = auto()  # `<<`
-    GT2         = auto()  # `>>`
-    PIPE2       = auto()  # `||`
-    AMPERSAND2  = auto()  # `&&`
-    EQ2         = auto()  # `==`
-    BANGEQ      = auto()  # `!=`
-    ARROW       = auto()  # `->`
+    LT2 = auto()  # `<<`
+    GT2 = auto()  # `>>`
+    PIPE2 = auto()  # `||`
+    AMPERSAND2 = auto()  # `&&`
+    EQ2 = auto()  # `==`
+    BANGEQ = auto()  # `!=`
+    ARROW = auto()  # `->`
 
-    DOT3        = auto()  # `...`
+    DOT3 = auto()  # `...`
 
-    EOF         = auto()
-    UNDEFINED   = auto()
+    EOF = auto()
+    UNDEFINED = auto()
+
 
 Keywords = {
-    "mut"   : TokenKind.Mut,
-    "imm"   : TokenKind.Imm,
+    "mut": TokenKind.Mut,
+    "imm": TokenKind.Imm,
     "extern": TokenKind.Extern,
-    "fn"    : TokenKind.Fn,
-    "let"   : TokenKind.Let,
-    "if"    : TokenKind.If,
-    "else"  : TokenKind.Else,
-    "as"    : TokenKind.As,
+    "fn": TokenKind.Fn,
+    "let": TokenKind.Let,
+    "if": TokenKind.If,
+    "else": TokenKind.Else,
+    "as": TokenKind.As,
+    "loop": TokenKind.Loop,
 }
 
 Punctuators = {
-    '+' : TokenKind.PLUS,
-    '-' : TokenKind.MINUS,
-    '*' : TokenKind.STAR,
-    '/' : TokenKind.SLASH,
-    '=' : TokenKind.EQ,
-    ';' : TokenKind.SEMI,
-    '<' : TokenKind.LT,
-    '>' : TokenKind.GT,
-    ':' : TokenKind.COLON,
-    '(' : TokenKind.LPAREN,
-    ')' : TokenKind.RPAREN,
-    '{' : TokenKind.LCURLY,
-    '}' : TokenKind.RCURLY,
-    '[' : TokenKind.LBRACKET,
-    ']' : TokenKind.RBRACKET,
-    ',' : TokenKind.COMMA,
-    '"' : TokenKind.DOUBLEQUOTE,
-    '#' : TokenKind.POUND,
-    '@' : TokenKind.AT,
-    '&' : TokenKind.AMPERSAND,
-    '|' : TokenKind.PIPE,
-    '~' : TokenKind.TILDE,
-    '!' : TokenKind.BANG,
-    '%' : TokenKind.PERCENT,
-    '.' : TokenKind.DOT,
+    '+': TokenKind.PLUS,
+    '-': TokenKind.MINUS,
+    '*': TokenKind.STAR,
+    '/': TokenKind.SLASH,
+    '=': TokenKind.EQ,
+    ';': TokenKind.SEMI,
+    '<': TokenKind.LT,
+    '>': TokenKind.GT,
+    ':': TokenKind.COLON,
+    '(': TokenKind.LPAREN,
+    ')': TokenKind.RPAREN,
+    '{': TokenKind.LCURLY,
+    '}': TokenKind.RCURLY,
+    '[': TokenKind.LBRACKET,
+    ']': TokenKind.RBRACKET,
+    ',': TokenKind.COMMA,
+    '"': TokenKind.DOUBLEQUOTE,
+    '#': TokenKind.POUND,
+    '@': TokenKind.AT,
+    '&': TokenKind.AMPERSAND,
+    '|': TokenKind.PIPE,
+    '~': TokenKind.TILDE,
+    '!': TokenKind.BANG,
+    '%': TokenKind.PERCENT,
+    '.': TokenKind.DOT,
     '<<': TokenKind.LT2,
     '>>': TokenKind.GT2,
     '&&': TokenKind.AMPERSAND2,
@@ -103,6 +107,7 @@ Punctuators = {
     '->': TokenKind.ARROW,
     '...': TokenKind.DOT3,
 }
+
 
 def get_token_name(ty):
     match ty:
@@ -154,8 +159,10 @@ def get_token_name(ty):
         case TokenKind.ARROW: return "->"
         case TokenKind.DOT3: return "..."
 
+
 class Token:
     __match_args__ = ('kind', 'loc', )
+
     def __init__(self, kind, loc):
         self.kind = kind
         self.loc = loc
@@ -166,6 +173,7 @@ class Token:
 
     def __repr__(self):
         return f"{str(self.kind).ljust(16)}\t=> `{str(self.loc)}`"
+
 
 class Loc:
     def __init__(self, offset, len, file=""):
@@ -181,8 +189,8 @@ class Loc:
     def __repr__(self) -> str:
         return self.fmt()
 
+
 class Span:
     def __init__(self, start, end):
         self.start = start
         self.end = end
-
