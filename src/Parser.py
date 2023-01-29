@@ -187,7 +187,7 @@ class Parser:
     def parse_factor(self) -> Expr:
         assert self.t != None
         left = self.parse_unary()
-        while self.check() and self.t.kind in [TokenKind.STAR, TokenKind.SLASH]:
+        while self.check() and self.t.kind in [TokenKind.STAR, TokenKind.SLASH, TokenKind.PERCENT]:
             kind = binary_kind_from_token(self.t.kind)
             self.advance()
             right = self.parse_factor()

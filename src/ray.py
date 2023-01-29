@@ -114,7 +114,7 @@ class Codegen:
         self.label_id = 1
         self.breaks = []
         self.fn_ctx: Fn | None = None
-        self.debug_messages = 0
+        self.debug_messages = 1
 
     @property
     def label(self):
@@ -217,6 +217,11 @@ class Codegen:
                                         if label:
                                             jmp = "jge" if kind == BinaryKind.Lt else "jle"
                                             self.buf += f"    {jmp} .L{label}\n"
+                                case BinaryKind.Mod:
+                                    self.buf += f"    mov rax, {a}\n"
+                                    self.buf += f"    mov rcx, {b}\n"
+                                    self.buf += f"    cdq\n    idiv rcx\n"
+                                    self.buf += f"    mov {a}, rdx\n"
                                 case _:
                                     assert False, f"{kind} not implemented"
                             stack0.append(a)

@@ -6,7 +6,9 @@ fn main() {
     let b = a + a + a + a + a + a + a + a + a + a + a - a;
     let c = a < b;
     let d = b > b;
-    printf("%d %d %d %d %d\n", a, b, c, d, a > b);
+    let e = b % 45;
+    printf("%d %d %d %d %d ", a, b, c, d, a > b);
+    printf("%d\n", e);
 
     // TODO: register allocation
     // let x = 255;
@@ -15,4 +17,4 @@ fn main() {
     // }
 }
 
-// STDOUT: 50 500 1 0 0
+// STDOUT: 50 500 1 0 0 5
