@@ -10,7 +10,7 @@ class Instruction:
 
     def has_ret_ty(self) -> bool:
         match self.kind:
-            case Store():
+            case Store() | Jmp() | Br():
                 return False
             case _:
                 return True
@@ -80,6 +80,11 @@ class Sub(BinaryInst):
         super().__init__(left, right, "sub")
 
 
+class Mod(BinaryInst):
+    def __init__(self, left: Value, right: Value) -> None:
+        super().__init__(left, right, "mod")
+
+
 class CmpKind(Enum):
     Lt = auto()
     Gt = auto()
@@ -109,17 +114,43 @@ class Cmp:
         self.kind = kind
 
     def __repr__(self) -> str:
-        return f"cmp {repr(self.kind)}, {self.left}, {self.right}"
+        return f"cmp {repr(self.kind)} {self.left}, {self.right}"
+
+
+class Br:
+    def __init__(self, cond: Value, btrue: int, bfalse: int) -> None:
+        self.cond = cond
+        self.btrue = btrue
+        self.bfalse = bfalse
+
+    def __repr__(self) -> str:
+        return f"br {self.cond}, %bb{self.btrue}, %bb{self.bfalse}"
+
+
+class Jmp:
+    def __init__(self, br_id: int) -> None:
+        self.br_id = br_id
+
+    def __repr__(self) -> str:
+        return f"jmp %bb{self.br_id}"
 
 
 class BasicBlock:
-    def __init__(self, instructions: List[Instruction], parent: int | None) -> None:
+    def __init__(self, instructions: List[Instruction], parent: int | None, block_id) -> None:
         self.instructions = instructions
         self.parent = parent
         self.locals: Dict[str, Value] = {}
+        self.block_id = block_id
 
     def __repr__(self) -> str:
-        return "\n".join(map(repr, self.instructions))
+        if self.instructions:
+            return f"bb{self.block_id}:\n" + "\n".join(map(repr, self.instructions)) + "\n"
+        else:
+            return f"bb{self.block_id}:\n"
+
+    def get_var(self, name: str) -> Value | None:
+        if name in self.locals:
+            return self.locals[name]
 
 
 class ValueKind(Enum):
@@ -159,7 +190,7 @@ class FnDef:
         _ += ", ".join(map(repr, self.params))
         if self.ret_ty:
             _ += f" -> {self.ret_ty} "
-        _ += "{\n" + "\n".join(map(repr, self.blocks)) + "\n}"
+        _ += "{\n" + "".join(map(repr, self.blocks)) + "\n}"
         return _
 
 
