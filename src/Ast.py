@@ -221,11 +221,8 @@ class Fn:
                     stack_off = self.aligned_add(stack_off, size)
         if not self.body:
             return stack_off
-        for node in self.body.stmts:
-            match node.kind:
-                case Let(_, ty, _):
-                    size = ty.get_size()
-                    stack_off = self.aligned_add(stack_off, size)
+
+        stack_off += self.body.calc_stack()
         return stack_off
 
     @property
@@ -249,6 +246,23 @@ class Block:
     def __init__(self, stmts: List[Stmt]):
         self.stmts = stmts
         self.span: Span | None = None
+
+    def calc_stack(self) -> int:
+        off = 0
+        for stmt in self.stmts:
+            match stmt.kind:
+                case Let(_, ty, _):
+                    size = ty.get_size()
+                    off += size
+                case Expr(kind):
+                    match kind:
+                        case Loop(block):
+                            off += block.calc_stack()
+                        case If(_, if_block, else_block):
+                            off += if_block.calc_stack()
+                            if else_block:
+                                off += else_block.calc_stack()
+        return off
 
 
 class Expr:

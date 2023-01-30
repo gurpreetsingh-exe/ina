@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+from __future__ import annotations
 import sys
 from typing import Any, Dict, Tuple
 from beeprint import pp
@@ -66,17 +67,22 @@ for reg in regs[6:]:
     }
 
 
-class Scope:
-    def __init__(self):
-        self.scopes = []
-        self.stack_offset = 0
+class Env:
+    def __init__(self, parent: Env | None = None):
+        self.parent = parent
+        self.bindings = []
+        self.stack_offset = self.parent.stack_offset if self.parent else 0
 
     def search_local(self, name):
-        for scope in reversed(self.scopes):
-            for var in scope:
-                if var['name'] == name:
-                    return True
-        return False
+        found = False
+        for var in self.bindings:
+            if var['name'] == name:
+                found = True
+        if found:
+            return True
+        if not self.parent:
+            return False
+        return self.parent.search_local(name)
 
     def def_local(self, name, ty) -> Tuple[int, int]:
         if self.search_local(name):
@@ -84,30 +90,24 @@ class Scope:
 
         size = ty.get_size()
         self.stack_offset = (self.stack_offset + size * 2 - 1) & ~(size - 1)
-        self.scopes[-1].append({'name': name,
-                               'off': self.stack_offset, 'size': size})
+        self.bindings.append({'name': name,
+                              'off': self.stack_offset, 'size': size})
         return self.stack_offset, size
 
     def find_local(self, name) -> Dict[str, Any]:
-        for scope in reversed(self.scopes):
-            for var in scope:
-                if var['name'] == name:
-                    return var
-        assert False
-
-    def add(self):
-        self.scopes.append([])
-
-    def pop(self):
-        self.scopes.pop()
-        self.stack_offset = 0
+        for var in self.bindings:
+            if var['name'] == name:
+                return var
+        if not self.parent:
+            assert False
+        return self.parent.find_local(name)
 
 
 class Codegen:
     def __init__(self, ast, defs):
         self.ast = ast
         self.buf = ""
-        self.scopes = Scope()
+        self.env: Env = Env()
         self.strings = []
         self.floats = []
         self.defs = defs
@@ -160,7 +160,7 @@ class Codegen:
         return f"{ptr} PTR", reg
 
     def load_var(self, name, reg):
-        var = self.scopes.find_local(name)
+        var = self.env.find_local(name)
         off = var['off']
         sz = var['size']
         ptr, __reg = self.reg_from_sz(reg, sz)
@@ -184,7 +184,7 @@ class Codegen:
         match expr.kind:
             case Assign(Ident(name), expr):
                 self.dbg(f"    # assign")
-                var = self.scopes.find_local(name)
+                var = self.env.find_local(name)
                 off = var["off"]
                 if reg:
                     self.expr(expr, reg)
@@ -318,7 +318,7 @@ class Codegen:
                 match kind:
                     case UnaryKind.AddrOf:
                         assert type(expr.kind) == Ident
-                        off = self.scopes.find_local(expr.kind.name)['off']
+                        off = self.env.find_local(expr.kind.name)['off']
                         self.buf += f"    lea {reg}, [rbp - {off}]\n"
                     case UnaryKind.Not:
                         self.expr(expr, reg)
@@ -393,7 +393,7 @@ class Codegen:
     def stmt(self, stmt: Stmt):
         match stmt.kind:
             case Let(name, ty, init):
-                off, sz = self.scopes.def_local(name, ty)
+                off, sz = self.env.def_local(name, ty)
                 self.dbg(f"    # let {name}: {ty}")
                 match init:
                     case Expr(Literal(kind, value)):
@@ -423,13 +423,15 @@ class Codegen:
                 self.expr(stmt.kind, "rax")
 
     def gen_block(self, block: Block):
-        self.scopes.add()
+        tmp_env = self.env
+        self.env = Env(tmp_env)
+
         if self.fn_ctx:
             args = self.fn_ctx.args
             for i, arg in enumerate(args):
                 match arg:
                     case Arg(name, ty):
-                        off, sz = self.scopes.def_local(name, ty)
+                        off, sz = self.env.def_local(name, ty)
                         is_float = arg.ty.is_float()
                         self.dbg(f"    # {name}: {ty}")
                         self.buf += f"    mov [rbp - {off}], {fn_regs[is_float][i]}\n"
@@ -440,7 +442,7 @@ class Codegen:
         self.fn_ctx = None
         for stmt in block.stmts:
             self.stmt(stmt)
-        self.scopes.pop()
+        self.env = tmp_env
 
     def gen(self, nodes):
         for node in nodes:
