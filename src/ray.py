@@ -114,7 +114,7 @@ class Codegen:
         self.label_id = 1
         self.breaks = []
         self.fn_ctx: Fn | None = None
-        self.debug_messages = 1
+        self.debug_messages = 0
 
     @property
     def label(self):
@@ -573,7 +573,6 @@ def main(argv):
                         exit(1)
                     # gen = IRGen(ast)
                     # pp(ast, max_depth=10)
-                    """
                     ctx = LoweringContext(ast)
                     IRGen(ctx)
                     if emit_ir:
@@ -581,7 +580,6 @@ def main(argv):
                             print(f"@{i} = {string}")
                         for fn in ctx.lowered_ast:
                             print(fn)
-                    """
                     if skip_codegen:
                         return
                     code = Codegen(ast, tychk.defs).emit()

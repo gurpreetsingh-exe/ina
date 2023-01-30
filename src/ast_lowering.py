@@ -63,6 +63,11 @@ class IRGen:
 
     def lower_expr(self, expr: Expr) -> Value:
         match expr.kind:
+            case Assign(Ident(name), init):
+                ptr = self.ctx.get_var(name)
+                val = self.lower_expr(init)
+                self.ctx.store_var(name, val)
+                return self.ctx.mk_inst(Store(ptr, val))
             case Call(name, args):
                 args = [self.lower_expr(arg) for arg in args]
                 return self.ctx.mk_inst(FnCall(name, args))

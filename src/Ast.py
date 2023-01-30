@@ -204,12 +204,7 @@ class Fn:
         self.body = body
         self.is_extern = is_extern
         self.abi = abi
-        self.alignment = ((self.local_count + 1) // 2) * 16
         self.span: Span | None = None
-
-    def aligned_add(self, off, size):
-        off += size
-        return off
 
     @property
     def stack_offset(self):
@@ -217,8 +212,7 @@ class Fn:
         for arg in self.args:
             match arg:
                 case Arg(_, ty):
-                    size = ty.get_size()
-                    stack_off = self.aligned_add(stack_off, size)
+                    stack_off += ty.get_size()
         if not self.body:
             return stack_off
 
@@ -228,16 +222,6 @@ class Fn:
     @property
     def stack_alignment(self):
         return (self.stack_offset + 15) & ~15
-
-    @property
-    def local_count(self):
-        local_count_ = len(self.args)
-        if not self.body:
-            return local_count_
-        for node in self.body.stmts:
-            if type(node) == Let:
-                local_count_ += 1
-        return local_count_
 
 
 class Block:
@@ -252,8 +236,7 @@ class Block:
         for stmt in self.stmts:
             match stmt.kind:
                 case Let(_, ty, _):
-                    size = ty.get_size()
-                    off += size
+                    off += ty.get_size()
                 case Expr(kind):
                     match kind:
                         case Loop(block):
