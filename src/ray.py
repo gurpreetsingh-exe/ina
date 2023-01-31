@@ -11,6 +11,8 @@ from utils import *
 from Parser import Parser
 from tychk import TyCheck
 from ast_lowering import IRGen, LoweringContext
+# from codegen.gen_x86_64 import x86_64_gas
+from codegen import CodegenContext, x86_64_gas
 
 regs = ["rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8",
         "r9", "r10", "r11", "r12", "r13", "r14", "r15"]
@@ -584,14 +586,19 @@ def main(argv):
                             print()
                     if skip_codegen:
                         return
-                    code = Codegen(ast, tychk.defs).emit()
                     output = filename.split('.')[0]
-                    with open(f"{output}.asm", "w") as f:
-                        f.write(code)
+                    if 1:
+                        x86_64_gas(CodegenContext(
+                            filename, output), ctx)
+                    else:
+                        code = Codegen(ast, tychk.defs).emit()
+                        output = filename.split('.')[0]
+                        with open(f"{output}.asm", "w") as f:
+                            f.write(code)
 
-                    from subprocess import call
-                    call(["as", f"{output}.asm", "-o", f"{output}.o"])
-                    call(["gcc", f"{output}.o", "-o", output])
+                        from subprocess import call
+                        call(["as", f"{output}.asm", "-o", f"{output}.o"])
+                        call(["gcc", f"{output}.o", "-o", output])
                 case _:
                     assert False, "unreachable"
 

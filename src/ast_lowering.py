@@ -14,6 +14,7 @@ class LoweringContext:
         self.inst_id: int = 0
         self.str_id: int = 0
         self.strings = []
+        self.fns: Dict[str, Fn] = {}
 
     def reset(self):
         self.fn: Fn | None = None
@@ -95,8 +96,13 @@ class IRGen:
                 val = self.lower_expr(init)
                 return self.ctx.mk_inst(Store(ptr, val))
             case Call(name, args):
+                fn = self.ctx.fns[name]
                 args = [self.lower_expr(arg) for arg in args]
-                return self.ctx.mk_inst(FnCall(name, args))
+                if fn.is_variadic:
+                    va_args = len(args) - len(fn.args) + 1
+                else:
+                    va_args = 0
+                return self.ctx.mk_inst(FnCall(name, args, va_args))
             case Binary(kind, left, right):
                 l = self.lower_expr(left)
                 r = self.lower_expr(right)
@@ -186,6 +192,7 @@ class IRGen:
         match fn:
             case Fn(name, args, ret_ty, body, is_extern, abi):
                 self.ctx.fn = fn
+                self.ctx.fns[name] = fn
                 ir_args = []
                 for arg in args:
                     match arg:

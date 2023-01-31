@@ -223,6 +223,14 @@ class Fn:
     def stack_alignment(self):
         return (self.stack_offset + 15) & ~15
 
+    @property
+    def is_variadic(self) -> bool:
+        for arg in self.args:
+            match arg:
+                case Variadic():
+                    return True
+        return False
+
 
 class Block:
     __match_args__ = ("stmts", )

@@ -25,17 +25,34 @@ class Instruction:
 
 
 class FnCall:
-    def __init__(self, name: str, args: List[Value]) -> None:
+    __match_args__ = ('name', 'args', 'va_args', )
+
+    def __init__(self, name: str, args: List[Value], va_args: int) -> None:
         self.name = name
         self.args = args
+        self.va_args = va_args
 
     def __repr__(self) -> str:
         _ = f"call @{self.name}"
         _ += "(" + ", ".join(map(repr, self.args)) + ")"
         return _
 
+    @property
+    def float_args(self) -> int:
+        n = 0
+        for arg in self.args:
+            match arg.kind:
+                case ValueKind.Imm:
+                    # TODO: add float literals
+                    pass
+                case _:
+                    pass
+        return n
+
 
 class Alloc:
+    __match_args__ = ('ty', )
+
     def __init__(self, ty: Ty) -> None:
         self.ty = ty
 
@@ -196,6 +213,8 @@ class Param:
 
 
 class FnDef:
+    __match_args__ = ('name', 'params', 'ret_ty', 'blocks', )
+
     def __init__(self,
                  name: str,
                  params: List[Value],
@@ -205,6 +224,16 @@ class FnDef:
         self.params = params
         self.ret_ty = ret_ty
         self.blocks = blocks
+
+    @property
+    def stack_alignment(self) -> int:
+        off = 0
+        for block in self.blocks:
+            for inst in block.instructions:
+                match inst.kind:
+                    case Alloc(ty):
+                        off += ty.get_size()
+        return (off + 15) & ~15
 
     def __repr__(self) -> str:
         _ = f"def @{self.name}"
@@ -216,6 +245,8 @@ class FnDef:
 
 
 class FnDecl:
+    __match_args__ = ('name', 'params', 'ret_ty', )
+
     def __init__(self,
                  name: str,
                  params: List[Value],
