@@ -135,6 +135,15 @@ class Jmp:
         return f"jmp %bb{self.br_id}"
 
 
+class Phi:
+    def __init__(self, true_br: int, false_br: int) -> None:
+        self.true_br = true_br
+        self.false_br = false_br
+
+    def __repr__(self) -> str:
+        return f"phi [%bb{self.true_br}, %bb{self.false_br}]"
+
+
 class BasicBlock:
     def __init__(self, instructions: List[Instruction], parent: int | None, block_id) -> None:
         self.instructions = instructions
@@ -174,6 +183,18 @@ class Value:
                 return f"{self.data}"
 
 
+class Param:
+    def __init__(self, name: str = "", ty: Ty | None = None) -> None:
+        self.name = name
+        self.ty = ty
+        self.variadic = False
+
+    def __repr__(self) -> str:
+        if self.variadic:
+            return "..."
+        return f"%{self.name}: {self.ty}"
+
+
 class FnDef:
     def __init__(self,
                  name: str,
@@ -187,10 +208,10 @@ class FnDef:
 
     def __repr__(self) -> str:
         _ = f"def @{self.name}"
-        _ += ", ".join(map(repr, self.params))
+        _ += "(" + ", ".join(map(repr, self.params)) + ")"
         if self.ret_ty:
             _ += f" -> {self.ret_ty} "
-        _ += "{\n" + "".join(map(repr, self.blocks)) + "\n}"
+        _ += "{\n" + "".join(map(repr, self.blocks)) + "}"
         return _
 
 
@@ -205,7 +226,7 @@ class FnDecl:
 
     def __repr__(self) -> str:
         _ = f"decl @{self.name}"
-        _ += ", ".join(map(repr, self.params))
+        _ += "(" + ", ".join(map(repr, self.params)) + ")"
         if self.ret_ty:
             _ += f" -> {self.ret_ty}"
         return _

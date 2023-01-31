@@ -25,7 +25,7 @@ class LoweringContext:
     def alloc_str(self, val: str) -> Value:
         self.strings.append(val)
         self.str_id += 1
-        return Value(ValueKind.SymbolId, self.str_id)
+        return Value(ValueKind.SymbolId, self.str_id - 1)
 
     def mk_inst(self, inst) -> Value:
         assert self.bb != None
@@ -128,23 +128,22 @@ class IRGen:
                 ptr = self.ctx.get_var(name)
                 return self.ctx.mk_inst(Load(ptr))
             case If(cond, true_block, false_block):
+                assert self.ctx.bb != None
+                # scuffed kekw
                 c = self.lower_expr(cond)
                 btrue = self.ctx.bb_id + 1
-                end = self.ctx.bb_id + 2
-                bfalse = 0
-                if false_block:
-                    bfalse = self.ctx.bb_id + 2
-                    end = self.ctx.bb_id + 3
-                else:
-                    bfalse = self.ctx.bb_id + 2
+                bfalse = self.ctx.bb_id + 2
                 self.ctx.mk_inst(Br(c, btrue, bfalse))
-                self.ctx.append_bb()
+                # br = self.ctx.bb.instructions[-1]
                 self.lower_block(true_block)
                 if false_block:
-                    self.ctx.mk_inst(Jmp(end))
+                    self.ctx.mk_inst(Jmp(0))
+                    jmp = self.ctx.bb.instructions[-1]
                     self.lower_block(false_block)
+                    jmp.kind.br_id = len(self.ctx.blocks)
                 self.ctx.mk_basic_block()
-                return c
+                self.ctx.append_bb()
+                # return self.ctx.mk_inst(Phi(br.kind.btrue, br.kind.bfalse))
             case Unary(kind, expr):
                 inst_id = self.lower_expr(expr)
                 match kind:
@@ -161,10 +160,12 @@ class IRGen:
             match arg:
                 case Arg(name, ty):
                     ptr = self.ctx.mk_inst(Alloc(ty))
+                    self.ctx.mk_inst(Store(ptr, Value(ValueKind.InstId, name)))
                     self.ctx.alloc_var(name, ptr)
 
     def lower_block(self, block: Block):
         self.ctx.mk_basic_block()
+        self.ctx.append_bb()
         if self.ctx.fn:
             self.lower_args()
             self.ctx.fn = None
@@ -180,13 +181,21 @@ class IRGen:
                     self.ctx.mk_inst(Store(ptr, val))
                 case _:
                     assert False, f"{stmt.kind}"
-        self.ctx.append_bb()
 
     def lower_fn(self, fn: Fn) -> FnDecl | FnDef:
         match fn:
-            case Fn(name, _, ret_ty, body, is_extern, abi):
+            case Fn(name, args, ret_ty, body, is_extern, abi):
                 self.ctx.fn = fn
                 ir_args = []
+                for arg in args:
+                    match arg:
+                        case Arg(param, ty):
+                            ir_args.append(Param(param, ty))
+                        case Variadic():
+                            p = Param()
+                            p.variadic = True
+                            ir_args.append(p)
+
                 ret = ret_ty if ret_ty else PrimTy(PrimTyKind.Unit)
                 if is_extern:
                     return FnDecl(name, ir_args, ret)

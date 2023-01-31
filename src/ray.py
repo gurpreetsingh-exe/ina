@@ -578,8 +578,10 @@ def main(argv):
                     if emit_ir:
                         for i, string in enumerate(ctx.strings):
                             print(f"@{i} = {string}")
+                        print()
                         for fn in ctx.lowered_ast:
                             print(fn)
+                            print()
                     if skip_codegen:
                         return
                     code = Codegen(ast, tychk.defs).emit()
