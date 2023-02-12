@@ -214,7 +214,7 @@ class Parser:
     def parse_comparison(self) -> Expr:
         assert self.t != None
         left = self.parse_term()
-        while self.check() and self.t.kind in [TokenKind.LT, TokenKind.GT]:
+        while self.check() and self.t.kind in [TokenKind.LT, TokenKind.GT, TokenKind.EQ2]:
             kind = binary_kind_from_token(self.t.kind)
             self.advance()
             right = self.parse_comparison()

@@ -22,6 +22,26 @@ fn_regs = [
 ]
 
 
+def cast_i64_f64(self, expr, reg):
+    self.expr(expr, "rax")
+    self.buf += f"    cvtsi2sd {reg}, rax\n"
+
+
+def cast_f64_i64(self, expr, reg):
+    self.expr(expr, "xmm0")
+    self.buf += f"    cvttsd2si {reg}, xmm0\n"
+
+
+cast_map = {
+    PrimTyKind.I64: {
+        PrimTyKind.F64: cast_i64_f64,
+    },
+    PrimTyKind.F64: {
+        PrimTyKind.I64: cast_f64_i64,
+    },
+}
+
+
 class RegisterKind(Enum):
     Al = auto()
     Ax = auto()
@@ -272,14 +292,16 @@ class Codegen:
         ptr, __reg = self.reg_from_sz(reg, sz)
         self.dbg(f"    # load {name}")
         if reg:
-            if reg in fn_regs[0]:
+            if reg in fn_regs[0] + regs:
                 if sz in [1, 2]:
                     self.buf += f"    movzx {reg}, {ptr} [rbp - {off}]\n"
                 else:
                     self.buf += f"    mov {__reg}, {ptr} [rbp - {off}]\n"
             else:
-                self.buf += f"    mov rax, [rbp - {off}]\n"
-                self.buf += f"    movq {reg}, rax\n"
+                if sz == 8:
+                    self.buf += f"    movsd {reg}, [rbp - {off}]\n"
+                elif sz == 4:
+                    self.buf += f"    movss {reg}, [rbp - {off}]\n"
         else:
             if sz in [1, 2]:
                 self.buf += f"    movzx al, {ptr} [rbp - {off}]\n"
@@ -323,6 +345,16 @@ class Codegen:
                                         if label:
                                             jmp = "jge" if kind == BinaryKind.Lt else "jle"
                                             self.buf += f"    {jmp} .L{label}\n"
+                                case BinaryKind.Eq | BinaryKind.NotEq:
+                                    self.buf += f"    cmp {a}, {b}\n"
+                                    if reg:
+                                        setT = "sete" if kind == BinaryKind.Eq else "setne"
+                                        self.buf += f"    {setT} al\n    and al, 1\n"
+                                        self.buf += f"    movzx {a}, al\n"
+                                    else:
+                                        if label:
+                                            jmp = "jne" if kind == BinaryKind.Eq else "je"
+                                            self.buf += f"    {jmp} .L{label}\n"
                                 case BinaryKind.Mod:
                                     self.buf += f"    mov rax, {a}\n"
                                     self.buf += f"    mov rcx, {b}\n"
@@ -338,7 +370,7 @@ class Codegen:
                     self.buf += f"    mov {reg}, rax\n"
             case Ident(name):
                 if not reg:
-                    self.load_var(name, "rax")
+                    self.load_var(name, None)
                 else:
                     self.load_var(name, reg)
             case Call(name, args):
@@ -390,13 +422,20 @@ class Codegen:
                 self.dbg(f"    # {kind}: {value}")
                 match kind:
                     case Lit.Str:
-                        self.buf += f"    mov {reg}, OFFSET FLAT:str{len(self.strings)}\n"
+                        self.buf += f"    lea {reg}, [rip + .L__unnamed_{len(self.strings)}]\n"
+                        # self.buf += f"    mov {reg}, OFFSET FLAT:str{len(self.strings)}\n"
                         self.strings.append(value)
                     case Lit.Bool:
                         self.buf += f"    mov {reg}, {1 if value == 'true' else 0}\n"
                     case Lit.Float:
                         label = self.label
-                        self.buf += f"    movsd {reg}, QWORD PTR .L{label}[rip]\n"
+                        match expr.ty.kind:
+                            case PrimTyKind.F64:
+                                self.buf += f"    movsd {reg}, QWORD PTR .L{label}[rip]\n"
+                            case PrimTyKind.F32:
+                                self.buf += f"    movss {reg}, DWORD PTR .L{label}[rip]\n"
+                            case _:
+                                assert False
                         self.floats.append((label, value))
                     case _:
                         self.buf += f"    mov {reg}, {value}\n"
@@ -469,19 +508,26 @@ class Codegen:
                 if reg and reg != "rax":
                     self.buf += f"    mov {reg}, rax\n"
             case Cast(expr, ty):
+                assert isinstance(expr.ty, PrimTy)
                 self.dbg(f"    # cast {ty}")
                 if expr.ty == ty:
                     self.expr(expr, reg)
                     return
-                if (expr.ty.is_int() and ty.is_int()) or (expr.ty.is_float() and expr.ty.is_float()):
+                cast_map[expr.ty.kind][ty.kind](self, expr, reg)
+                """
+                if (expr.ty.is_int() and ty.is_int()):
                     self.expr(expr, reg)
+                    return
+                if (expr.ty.is_float() and expr.ty.is_float()):
+                    self.expr(expr, "xmm0")
+                    self.buf += f"    movq {reg}, xmm0\n"
                     return
                 match ty.kind:
                     case PrimTyKind.F64:
-                        self.expr(expr, "rax")
+                        self.expr(expr, None)
                         self.buf += f"    cvtsi2sd {reg}, rax\n"
                     case PrimTyKind.F32:
-                        self.expr(expr, "rax")
+                        self.expr(expr, None)
                         self.buf += f"    cvtsi2ss {reg}, rax\n"
                     case PrimTyKind.I64:
                         self.expr(expr, "xmm0")
@@ -490,6 +536,7 @@ class Codegen:
                         self.expr(expr, reg)
                     case _:
                         assert False
+                """
             case Loop(body):
                 label_start = self.label
                 self.buf += f".L{label_start}:\n"
@@ -522,9 +569,19 @@ class Codegen:
                             case _:
                                 assert False
                     case _:
-                        self.expr(init, "rax")
-                        ptr, reg = self.reg_from_sz("rax", sz)
-                        self.buf += f"    mov {ptr} [rbp - {off}], {reg}\n"
+                        if ty.is_int():
+                            self.expr(init, "rax")
+                            ptr, reg = self.reg_from_sz("rax", sz)
+                            self.buf += f"    mov {ptr} [rbp - {off}], {reg}\n"
+                        else:
+                            self.expr(init, "xmm0")
+                            ptr, reg = self.reg_from_sz("xmm0", sz)
+                            if sz == 4:
+                                self.buf += f"    movss {ptr} [rbp - {off}], {reg}\n"
+                            elif sz == 8:
+                                self.buf += f"    movsd {ptr} [rbp - {off}], {reg}\n"
+                            else:
+                                assert False
             case Break():
                 break_label = self.label
                 self.buf += f"    jmp .L{break_label}\n"
@@ -547,7 +604,7 @@ class Codegen:
                         ptr, reg = self.reg_from_sz(fn_regs[is_float][i], sz)
                         self.dbg(f"    # {name}: {ty}")
                         if is_float:
-                            self.buf += f"    movss [rbp - {off}], {reg}\n"
+                            self.buf += f"    movsd [rbp - {off}], {reg}\n"
                         else:
                             self.buf += f"    mov {ptr} [rbp - {off}], {reg}\n"
                     case Variadic():
@@ -566,7 +623,7 @@ class Codegen:
                     if is_extern:
                         continue
                     self.dbg(f"# function {name}")
-                    self.buf += f"{name}:\n    push rbp\n    mov rbp, rsp\n"
+                    self.buf += f"\n{name}:\n    push rbp\n    mov rbp, rsp\n"
                     alignment = node.stack_alignment
                     if alignment:
                         self.dbg("    # stack alignment")
@@ -587,9 +644,9 @@ class Codegen:
 
     def emit_data(self):
         import struct
-        self.buf += ".data\n"
+        # self.buf += ".data\n"
         for i, string in enumerate(self.strings):
-            self.buf += f"str{i}:\n"
+            self.buf += f"\n.L__unnamed_{i}:\n"
             self.buf += f"    .string {string}\n"
         for i, flt in self.floats:
             self.buf += f".L{i}:\n"

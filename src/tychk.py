@@ -91,7 +91,7 @@ class TyCheck:
                 rty = self.infer(right)
                 if lty == rty:
                     match kind:
-                        case BinaryKind.Lt | BinaryKind.Gt:
+                        case BinaryKind.Lt | BinaryKind.Gt | BinaryKind.Eq | BinaryKind.NotEq:
                             return self.mk_bool()
                     return lty
                 else:
@@ -177,7 +177,7 @@ class TyCheck:
                 self.check(init, expected_ty)
             case Binary(kind, left, right):
                 match kind:
-                    case BinaryKind.Lt | BinaryKind.Gt:
+                    case BinaryKind.Lt | BinaryKind.Gt | BinaryKind.Eq | BinaryKind.NotEq:
                         if expected_ty != self.mk_bool():
                             self.add_err(TypesMismatchError(
                                 f"expected `bool`, found `{expected_ty}`"), span)

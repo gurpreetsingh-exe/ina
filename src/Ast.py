@@ -273,6 +273,8 @@ class BinaryKind(Enum):
     Lt = auto()
     Gt = auto()
     Mod = auto()
+    Eq = auto()
+    NotEq = auto()
 
 
 def binary_kind_from_token(kind: TokenKind) -> BinaryKind:
@@ -284,6 +286,8 @@ def binary_kind_from_token(kind: TokenKind) -> BinaryKind:
         case TokenKind.GT: return BinaryKind.Gt
         case TokenKind.LT: return BinaryKind.Lt
         case TokenKind.PERCENT: return BinaryKind.Mod
+        case TokenKind.EQ2: return BinaryKind.Eq
+        case TokenKind.BANGEQ: return BinaryKind.NotEq
         case _: assert False
 
 
