@@ -259,6 +259,8 @@ class TyCheck:
                     case PrimTy(p), RefTy(_) if p != PrimTyKind.Raw:
                         self.add_err(CastError(
                             f"invalid cast of `{cast_expr.ty}`"), span)
+                    case PrimTy(_), PrimTy(_):
+                        pass
                     case _, _:
                         assert False, "cast"
                 if ty != expected_ty:

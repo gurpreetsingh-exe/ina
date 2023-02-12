@@ -15,6 +15,7 @@ class LoweringContext:
         self.str_id: int = 0
         self.strings = []
         self.fns: Dict[str, Fn] = {}
+        self.off = 0
 
     def reset(self):
         self.fn: Fn | None = None
@@ -22,6 +23,7 @@ class LoweringContext:
         self.bb: BasicBlock | None = None
         self.blocks: List[BasicBlock] = []
         self.inst_id: int = 0
+        self.off = 0
 
     def alloc_str(self, val: str) -> Value:
         self.strings.append(val)
@@ -165,7 +167,9 @@ class IRGen:
         for arg in self.ctx.fn.args:
             match arg:
                 case Arg(name, ty):
-                    ptr = self.ctx.mk_inst(Alloc(ty))
+                    size = ty.get_size()
+                    self.ctx.off = (self.ctx.off + size * 2 - 1) & ~(size - 1)
+                    ptr = self.ctx.mk_inst(Alloc(ty, self.ctx.off))
                     self.ctx.mk_inst(Store(ptr, Value(ValueKind.InstId, name)))
                     self.ctx.alloc_var(name, ptr)
 
@@ -182,7 +186,9 @@ class IRGen:
                     self.lower_expr(stmt.kind)
                 case Let(name, ty, init):
                     val = self.lower_expr(init)
-                    ptr = self.ctx.mk_inst(Alloc(ty))
+                    size = ty.get_size()
+                    self.ctx.off = (self.ctx.off + size * 2 - 1) & ~(size - 1)
+                    ptr = self.ctx.mk_inst(Alloc(ty, self.ctx.off))
                     self.ctx.alloc_var(name, ptr)
                     self.ctx.mk_inst(Store(ptr, val))
                 case _:

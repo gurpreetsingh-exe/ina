@@ -51,16 +51,19 @@ class FnCall:
 
 
 class Alloc:
-    __match_args__ = ('ty', )
+    __match_args__ = ('ty', 'offset', )
 
-    def __init__(self, ty: Ty) -> None:
+    def __init__(self, ty: Ty, offset: int) -> None:
         self.ty = ty
+        self.offset = offset
 
     def __repr__(self) -> str:
         return f"alloc {self.ty}"
 
 
 class Store:
+    __match_args__ = ('dst', 'src', )
+
     def __init__(self, dst: Value, src: Value) -> None:
         self.dst = dst
         self.src = src
@@ -70,6 +73,8 @@ class Store:
 
 
 class Load:
+    __match_args__ = ('ptr', )
+
     def __init__(self, ptr: Value) -> None:
         self.ptr = ptr
 

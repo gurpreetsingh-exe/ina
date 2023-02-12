@@ -21,6 +21,98 @@ fn_regs = [
     ["xmm0", "xmm1"]
 ]
 
+
+class RegisterKind(Enum):
+    Al = auto()
+    Ax = auto()
+    Eax = auto()
+    Rax = auto()
+
+    Bl = auto()
+    Bx = auto()
+    Ebx = auto()
+    Rbx = auto()
+
+    Cl = auto()
+    Cx = auto()
+    Ecx = auto()
+    Rcx = auto()
+
+    Dl = auto()
+    Dx = auto()
+    Edx = auto()
+    Rdx = auto()
+
+    Sil = auto()
+    Si = auto()
+    Esi = auto()
+    Rsi = auto()
+
+    Dil = auto()
+    Di = auto()
+    Edi = auto()
+    Rdi = auto()
+
+    Rbp = auto()
+
+    Rsp = auto()
+
+    R8b = auto()
+    R8w = auto()
+    R8d = auto()
+    R8 = auto()
+
+    R9b = auto()
+    R9w = auto()
+    R9d = auto()
+    R9 = auto()
+
+    R10b = auto()
+    R10w = auto()
+    R10d = auto()
+    R10 = auto()
+
+    R11b = auto()
+    R11w = auto()
+    R11d = auto()
+    R11 = auto()
+
+    R12b = auto()
+    R12w = auto()
+    R12d = auto()
+    R12 = auto()
+
+    R13b = auto()
+    R13w = auto()
+    R13d = auto()
+    R13 = auto()
+
+    R14b = auto()
+    R14w = auto()
+    R14d = auto()
+    R14 = auto()
+
+    R15b = auto()
+    R15w = auto()
+    R15d = auto()
+    R15 = auto()
+
+    Xmm0 = auto()
+    Xmm1 = auto()
+    Xmm2 = auto()
+    Xmm3 = auto()
+    Xmm4 = auto()
+    Xmm5 = auto()
+    Xmm6 = auto()
+    Xmm7 = auto()
+
+
+class Register:
+    def __init__(self, size: int, kind: RegisterKind) -> None:
+        self.size = size
+        self.kind = kind
+
+
 reg_ = {
     "rax": {
         1: "al",
@@ -58,6 +150,18 @@ reg_ = {
         4: "esi",
         8: "rsi",
     },
+    "xmm0": {
+        1: "xmm0",
+        2: "xmm0",
+        4: "xmm0",
+        8: "xmm0",
+    },
+    "xmm1": {
+        1: "xmm1",
+        2: "xmm1",
+        4: "xmm1",
+        8: "xmm1",
+    }
 }
 
 for reg in regs[6:]:
@@ -168,14 +272,14 @@ class Codegen:
         ptr, __reg = self.reg_from_sz(reg, sz)
         self.dbg(f"    # load {name}")
         if reg:
-            if reg in fn_regs[1]:
-                self.buf += f"    mov rax, {ptr} [rbp - {off}]\n"
-                self.buf += f"    movq {reg}, rax\n"
-            else:
+            if reg in fn_regs[0]:
                 if sz in [1, 2]:
                     self.buf += f"    movzx {reg}, {ptr} [rbp - {off}]\n"
                 else:
                     self.buf += f"    mov {__reg}, {ptr} [rbp - {off}]\n"
+            else:
+                self.buf += f"    mov rax, [rbp - {off}]\n"
+                self.buf += f"    movq {reg}, rax\n"
         else:
             if sz in [1, 2]:
                 self.buf += f"    movzx al, {ptr} [rbp - {off}]\n"
@@ -369,11 +473,16 @@ class Codegen:
                 if expr.ty == ty:
                     self.expr(expr, reg)
                     return
+                if (expr.ty.is_int() and ty.is_int()) or (expr.ty.is_float() and expr.ty.is_float()):
+                    self.expr(expr, reg)
+                    return
                 match ty.kind:
                     case PrimTyKind.F64:
-                        self.expr(expr, reg)
-                        self.buf += f"    cvtsi2sd xmm0, {reg}\n"
-                        self.buf += f"    movq {reg}, xmm0\n"
+                        self.expr(expr, "rax")
+                        self.buf += f"    cvtsi2sd {reg}, rax\n"
+                    case PrimTyKind.F32:
+                        self.expr(expr, "rax")
+                        self.buf += f"    cvtsi2ss {reg}, rax\n"
                     case PrimTyKind.I64:
                         self.expr(expr, "xmm0")
                         self.buf += f"    cvttsd2si {reg}, xmm0\n"
@@ -435,8 +544,12 @@ class Codegen:
                     case Arg(name, ty):
                         off, sz = self.env.def_local(name, ty)
                         is_float = arg.ty.is_float()
+                        ptr, reg = self.reg_from_sz(fn_regs[is_float][i], sz)
                         self.dbg(f"    # {name}: {ty}")
-                        self.buf += f"    mov [rbp - {off}], {fn_regs[is_float][i]}\n"
+                        if is_float:
+                            self.buf += f"    movss [rbp - {off}], {reg}\n"
+                        else:
+                            self.buf += f"    mov {ptr} [rbp - {off}], {reg}\n"
                     case Variadic():
                         continue
                     case _:
@@ -575,19 +688,19 @@ def main(argv):
                         exit(1)
                     # gen = IRGen(ast)
                     # pp(ast, max_depth=10)
-                    ctx = LoweringContext(ast)
-                    IRGen(ctx)
-                    if emit_ir:
-                        for i, string in enumerate(ctx.strings):
-                            print(f"@{i} = {string}")
-                        print()
-                        for fn in ctx.lowered_ast:
-                            print(fn)
-                            print()
                     if skip_codegen:
                         return
                     output = filename.split('.')[0]
-                    if 1:
+                    if 0:
+                        ctx = LoweringContext(ast)
+                        IRGen(ctx)
+                        if emit_ir:
+                            for i, string in enumerate(ctx.strings):
+                                print(f"@{i} = {string}")
+                            print()
+                            for fn in ctx.lowered_ast:
+                                print(fn)
+                                print()
                         x86_64_gas(CodegenContext(
                             filename, output), ctx)
                     else:
