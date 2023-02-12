@@ -1,6 +1,7 @@
 from sys import stderr
 from Token import Span
 from utils import File
+from Ast import Ty
 
 
 class Error:
@@ -23,7 +24,7 @@ def emit(self, file: File, msg):
     stderr.write(err("error"))
     stderr.write(b(msg))
     stderr.write(f"  {self.span.start}\n")
-    line_col_buf = len(str(line_no))
+    line_col_buf = len(str(line_no + 1))
     a = " " * line_col_buf
     stderr.write(c(a))
     stderr.write(c("   ┃"))
@@ -68,6 +69,15 @@ class CastError(Error):
 
     def emit(self, file: File):
         emit(self, file, f": cast error\n")
+
+
+class DerefError(Error):
+    def __init__(self, ty: Ty) -> None:
+        super().__init__("")
+        self.ty = ty
+
+    def emit(self, file: File):
+        emit(self, file, f": `{self.ty}` cannot be dereferenced\n")
 
 
 def c(format: str) -> str:

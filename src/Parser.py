@@ -67,6 +67,9 @@ class Parser:
             case TokenKind.AMPERSAND:
                 self.advance()
                 return RefTy(self.parse_ty())
+            case TokenKind.STAR:
+                self.advance()
+                return PtrTy(self.parse_ty())
             case TokenKind.Ident:
                 ty = self.expect(TokenKind.Ident).raw(self.src)
                 if prim_ty := get_ty(ty):
@@ -175,10 +178,15 @@ class Parser:
     @spanned
     def parse_unary(self) -> Expr:
         assert self.t != None
-        if self.t.kind in [TokenKind.MINUS, TokenKind.BANG, TokenKind.AMPERSAND]:
+        if self.t.kind in [TokenKind.MINUS, TokenKind.BANG, TokenKind.AMPERSAND, TokenKind.STAR]:
             kind = unary_kind_from_token(self.t.kind)
             self.advance()
-            right = self.parse_unary()
+            if self.t.kind == TokenKind.LPAREN:
+                self.advance()
+                right = self.parse_expr()
+                self.expect(TokenKind.RPAREN)
+            else:
+                right = self.parse_unary()
             return Expr(Unary(kind, right))
 
         return self.parse_primary()

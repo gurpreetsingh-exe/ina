@@ -145,6 +145,36 @@ class PrimTy(Ty):
         return repr(self.kind)
 
 
+class PtrTy(Ty):
+    __match_args__ = ("ptr", )
+
+    def __init__(self, ptr: Ty):
+        self.ptr = ptr
+        self.span = None
+
+    def get_size(self) -> int:
+        return 8
+
+    def is_int(self) -> bool:
+        return self.ptr.is_int()
+
+    def is_float(self) -> bool:
+        return self.ptr.is_float()
+
+    def __eq__(self, __o: Ty) -> bool:
+        match __o:
+            case PtrTy(ptr):
+                return ptr == self.ptr
+            case _:
+                return False
+
+    def __ne__(self, __o: Ty) -> bool:
+        return not self.__eq__(__o)
+
+    def __repr__(self) -> str:
+        return f"*{repr(self.ptr)}"
+
+
 class RefTy(Ty):
     __match_args__ = ("ref", )
 
@@ -306,6 +336,7 @@ class UnaryKind(Enum):
     Neg = auto()
     Not = auto()
     AddrOf = auto()
+    Deref = auto()
 
 
 def unary_kind_from_token(kind: TokenKind) -> UnaryKind:
@@ -313,6 +344,7 @@ def unary_kind_from_token(kind: TokenKind) -> UnaryKind:
         case TokenKind.MINUS: return UnaryKind.Neg
         case TokenKind.BANG: return UnaryKind.Not
         case TokenKind.AMPERSAND: return UnaryKind.AddrOf
+        case TokenKind.STAR: return UnaryKind.Deref
         case _: assert False
 
 

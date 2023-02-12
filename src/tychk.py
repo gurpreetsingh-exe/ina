@@ -92,7 +92,9 @@ class TyCheck:
                 if lty == rty:
                     match kind:
                         case BinaryKind.Lt | BinaryKind.Gt | BinaryKind.Eq | BinaryKind.NotEq:
+                            expr.ty = self.mk_bool()
                             return self.mk_bool()
+                    expr.ty = lty
                     return lty
                 else:
                     self.add_err(TypesMismatchError(
@@ -147,6 +149,12 @@ class TyCheck:
                                 f"cannot use & on {expr.kind.__class__.__name__}")
                         ty = self.infer(expr)
                         return RefTy(ty)
+                    case UnaryKind.Deref:
+                        match ty := self.infer(expr):
+                            case PtrTy(ptr):
+                                return ptr
+                            case _:
+                                self.add_err(DerefError(ty), span)
                     case _:
                         assert False, f"{kind} unreachable"
             case If(cond, body, elze):
@@ -239,8 +247,10 @@ class TyCheck:
                                 self.check(expr, ty)
                             case _:
                                 panic(f"expected {expected_ty} but got Raw")
+                    case UnaryKind.Deref:
+                        self.check(expr, PtrTy(expected_ty))
                     case _:
-                        assert False, f"{op} unreachable"
+                        assert False, f"{kind} unreachable"
             case If(cond, body, elze):
                 self.check(cond, self.mk_bool())
                 self.check_block(body)
@@ -252,20 +262,32 @@ class TyCheck:
                 cast_expr.ty = self.infer(cast_expr)
                 match cast_expr.ty, ty:
                     case RefTy(_) | PrimTy(PrimTyKind.Raw), PrimTy(PrimTyKind.Raw):
-                        expr.ty = ty
+                        pass
                     case PrimTy(_), PrimTy(PrimTyKind.Raw):
                         self.add_err(CastError(
                             f"invalid cast of `{cast_expr.ty}`"), span)
                     case PrimTy(p), RefTy(_) if p != PrimTyKind.Raw:
                         self.add_err(CastError(
                             f"invalid cast of `{cast_expr.ty}`"), span)
+                    case PtrTy(lty), RefTy(rty):
+                        if lty != rty:
+                            self.add_err(CastError(
+                                f"invalid cast of `{cast_expr.ty}`"), span)
+                    case RefTy(rty), PtrTy(pty):
+                        if rty != pty:
+                            self.add_err(CastError(
+                                f"invalid cast of `{cast_expr.ty}`"), span)
                     case PrimTy(_), PrimTy(_):
                         pass
+                    case PtrTy(_), PrimTy(PrimTyKind.Str | PrimTyKind.Raw):
+                        pass
                     case _, _:
-                        assert False, "cast"
+                        self.add_err(CastError(
+                            f"invalid cast of `{cast_expr.ty}`"), span)
                 if ty != expected_ty:
                     self.add_err(TypesMismatchError(
                         f"expected `{expected_ty}`, found `{ty}`"), span)
+                expr.ty = ty
             case _:
                 assert False
 

@@ -27,18 +27,30 @@ def cast_i64_f64(self, expr, reg):
     self.buf += f"    cvtsi2sd {reg}, rax\n"
 
 
+def cast_i64_str(self, expr, reg):
+    self.expr(expr, reg)
+
+
 def cast_f64_i64(self, expr, reg):
     self.expr(expr, "xmm0")
     self.buf += f"    cvttsd2si {reg}, xmm0\n"
 
 
+def cast_raw_i64(self, expr, reg):
+    self.expr(expr, reg)
+
+
 cast_map = {
     PrimTyKind.I64: {
         PrimTyKind.F64: cast_i64_f64,
+        PrimTyKind.Str: cast_i64_str,
     },
     PrimTyKind.F64: {
         PrimTyKind.I64: cast_f64_i64,
     },
+    PrimTyKind.Raw: {
+        PrimTyKind.I64: cast_raw_i64,
+    }
 }
 
 
@@ -345,6 +357,8 @@ class Codegen:
                                         if label:
                                             jmp = "jge" if kind == BinaryKind.Lt else "jle"
                                             self.buf += f"    {jmp} .L{label}\n"
+                                        else:
+                                            assert False
                                 case BinaryKind.Eq | BinaryKind.NotEq:
                                     self.buf += f"    cmp {a}, {b}\n"
                                     if reg:
@@ -355,6 +369,8 @@ class Codegen:
                                         if label:
                                             jmp = "jne" if kind == BinaryKind.Eq else "je"
                                             self.buf += f"    {jmp} .L{label}\n"
+                                        else:
+                                            assert False
                                 case BinaryKind.Mod:
                                     self.buf += f"    mov rax, {a}\n"
                                     self.buf += f"    mov rcx, {b}\n"
@@ -414,7 +430,7 @@ class Codegen:
                             assert False, f"{abi} abi is not implemented"
                 self.buf += f"    call {name}\n"
                 if defn.data['ret_ty'].kind != PrimTyKind.Unit and reg and reg != "rax":
-                    self.dbg(f"    # return")
+                    self.dbg(f"    # return {name}")
                     self.buf += f"    mov {reg}, rax\n"
             case Literal(kind, value):
                 if not reg:
@@ -457,6 +473,14 @@ class Codegen:
                             self.expr(expr, None)
                             self.buf += f"    sub rbx, rax\n"
                             self.buf += f"    mov rax, rbx\n"
+                        case UnaryKind.Deref:
+                            self.expr(expr, reg)
+                            assert isinstance(expr.ty, PtrTy)
+                            match expr.ty.ptr.kind:
+                                case PrimTyKind.I64:
+                                    self.buf += f"    mov {reg}, [{reg}]\n"
+                                case _:
+                                    assert False
                         case _:
                             assert False, "not implemented"
                     return
@@ -475,6 +499,9 @@ class Codegen:
                     case UnaryKind.Neg:
                         self.expr(expr, reg)
                         self.buf += f"    neg {reg}\n"
+                    case UnaryKind.Deref:
+                        self.expr(expr, reg)
+                        self.buf += f"    mov {reg}, [{reg}]\n"
                     case _:
                         assert False, "not implemented"
             case If(cond, body, elze):
@@ -508,12 +535,17 @@ class Codegen:
                 if reg and reg != "rax":
                     self.buf += f"    mov {reg}, rax\n"
             case Cast(expr, ty):
-                assert isinstance(expr.ty, PrimTy)
                 self.dbg(f"    # cast {ty}")
                 if expr.ty == ty:
                     self.expr(expr, reg)
                     return
-                cast_map[expr.ty.kind][ty.kind](self, expr, reg)
+                match expr.ty:
+                    case RefTy(_):
+                        self.expr(expr, reg)
+                    case PrimTy(kind):
+                        cast_map[kind][ty.kind](self, expr, reg)
+                    case PtrTy(_):
+                        self.expr(expr, reg)
                 """
                 if (expr.ty.is_int() and ty.is_int()):
                     self.expr(expr, reg)
@@ -569,11 +601,7 @@ class Codegen:
                             case _:
                                 assert False
                     case _:
-                        if ty.is_int():
-                            self.expr(init, "rax")
-                            ptr, reg = self.reg_from_sz("rax", sz)
-                            self.buf += f"    mov {ptr} [rbp - {off}], {reg}\n"
-                        else:
+                        if ty.is_float():
                             self.expr(init, "xmm0")
                             ptr, reg = self.reg_from_sz("xmm0", sz)
                             if sz == 4:
@@ -582,6 +610,10 @@ class Codegen:
                                 self.buf += f"    movsd {ptr} [rbp - {off}], {reg}\n"
                             else:
                                 assert False
+                        else:
+                            self.expr(init, "rax")
+                            ptr, reg = self.reg_from_sz("rax", sz)
+                            self.buf += f"    mov {ptr} [rbp - {off}], {reg}\n"
             case Break():
                 break_label = self.label
                 self.buf += f"    jmp .L{break_label}\n"
