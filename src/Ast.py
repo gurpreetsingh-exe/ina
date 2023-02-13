@@ -291,6 +291,7 @@ class ExternBlock:
 
     def __init__(self, items: List[Fn]) -> None:
         self.items = items
+        self.span = None
 
 
 class Expr:
@@ -414,6 +415,16 @@ class Stmt:
 
 
 class Let:
+    __match_args__ = ("name", "ty", "init")
+
+    def __init__(self, name, ty, init):
+        self.name = name
+        self.ty = ty
+        self.init = init
+        self.span: Span | None = None
+
+
+class Const:
     __match_args__ = ("name", "ty", "init")
 
     def __init__(self, name, ty, init):

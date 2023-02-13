@@ -306,6 +306,8 @@ class Parser:
         body = None
         if self.t.kind == TokenKind.LCURLY:
             body = self.parse_block()
+        else:
+            self.expect(TokenKind.SEMI)
         return Fn(ident, args, ret_ty, body, is_extern, abi)
 
     def parse_extern_block(self) -> ExternBlock:
@@ -316,6 +318,19 @@ class Parser:
             items.append(self.parse_fn(is_extern=True))
         self.expect(TokenKind.RCURLY)
         return ExternBlock(items)
+
+    def parse_const(self) -> Const:
+        assert self.t != None
+        self.expect(TokenKind.Const)
+        name = self.expect(TokenKind.Ident).raw(self.src)
+        ty = None
+        if self.t.kind == TokenKind.COLON:
+            self.advance()
+            ty = self.parse_ty()
+        self.expect(TokenKind.EQ)
+        init = self.parse_expr()
+        self.expect(TokenKind.SEMI)
+        return Const(name, ty, init)
 
     def parse(self):
         self.advance()
@@ -334,5 +349,7 @@ class Parser:
                         yield self.parse_fn(is_extern=True, abi=abi)
                 case TokenKind.Fn:
                     yield self.parse_fn()
+                case TokenKind.Const:
+                    yield self.parse_const()
                 case _:
                     panic(f"{self.t.kind} not implemented")

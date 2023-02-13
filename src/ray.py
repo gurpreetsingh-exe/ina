@@ -11,7 +11,6 @@ from utils import *
 from Parser import Parser
 from tychk import TyCheck
 from ast_lowering import IRGen, LoweringContext
-# from codegen.gen_x86_64 import x86_64_gas
 from codegen import CodegenContext, x86_64_gas
 from intrinsics import builtins_
 
@@ -254,6 +253,7 @@ class Codegen:
         self.breaks = []
         self.fn_ctx: Fn | None = None
         self.debug_messages = 0
+        self.consts = {}
 
     @property
     def label(self):
@@ -386,6 +386,12 @@ class Codegen:
                 if reg and reg != "rax":
                     self.buf += f"    mov {reg}, rax\n"
             case Ident(name):
+                if name in self.consts:
+                    if not reg:
+                        self.buf += f"    mov rax, .L_{name}\n"
+                    else:
+                        self.buf += f"    mov {reg}, .L_{name}\n"
+                    return
                 if not reg:
                     self.load_var(name, None)
                 else:
@@ -680,6 +686,37 @@ class Codegen:
                     self.buf += "    pop rbp\n    ret\n"
                 case ExternBlock(items):
                     self.gen(items)
+                case Const(name, ty, init):
+                    assert isinstance(init.kind, Literal)
+                    match init.kind:
+                        case Literal(kind, value):
+                            if not reg:
+                                return
+                            self.dbg(f"    # {kind}: {value}")
+                            match kind:
+                                case Lit.Str:
+                                    self.consts[name] = {
+                                        'kind': kind,
+                                        'value': len(self.strings),
+                                    }
+                                    self.strings.append(value)
+                                case Lit.Bool:
+                                    self.consts[name] = {
+                                        'kind': kind,
+                                        'value': value,
+                                    }
+                                case Lit.Float:
+                                    label = self.label
+                                    self.consts[name] = {
+                                        'kind': kind,
+                                        'value': label,
+                                    }
+                                    self.floats.append((label, value))
+                                case _:
+                                    self.consts[name] = {
+                                        'kind': kind,
+                                        'value': value,
+                                    }
                 case _:
                     assert False, f"{node} is not implemented"
 
@@ -690,11 +727,20 @@ class Codegen:
             self.buf += f"\n.L__unnamed_{i}:\n"
             self.buf += f"    .string {string}\n"
         for i, flt in self.floats:
-            self.buf += f".L{i}:\n"
+            self.buf += f"\n.L{i}:\n"
             flt = struct.pack('d', float(flt))
             hi = int.from_bytes(flt[:4], 'little')
             lo = int.from_bytes(flt[4:], 'little')
             self.buf += f"    .long {hi}\n    .long {lo}\n"
+        for name, const in self.consts.items():
+            self.buf += f"\n.L_{name}:\n"
+            match const:
+                case {'kind': Lit.Str, 'value': value}:
+                    self.buf += f"    .quad .L__unnamed_{value}\n"
+                case {'kind': Lit.Float, 'value': value}:
+                    self.buf += f"    .quad .L{value}\n"
+                case {'kind': Lit.Int | Lit.Bool, 'value': value}:
+                    self.buf += f"    .quad {value}\n"
 
     def emit(self):
         self.buf += ".intel_syntax noprefix\n.text\n.globl main\n"

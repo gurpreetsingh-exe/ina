@@ -57,6 +57,7 @@ class TyCheck:
         self.scope = TyScope()
         self.fn_ctx = None
         self.errors = []
+        self.consts = {}
         self.tychk()
 
     def mk_bool(self) -> PrimTy:
@@ -124,7 +125,9 @@ class TyCheck:
                 else:
                     return self.mk_unit()
             case Ident(name):
-                if not self.scope.search_local(name):
+                if name in self.consts:
+                    return self.consts[name]
+                elif not self.scope.search_local(name):
                     self.add_err(NotFound(name, ""), span)
                 ty = self.scope.find_local(name)
                 expr.ty = ty
@@ -219,7 +222,9 @@ class TyCheck:
             case Call(name, args):
                 self.check_call(name, args, span, expected_ty)
             case Ident(name):
-                if ty := self.scope.find_local(name):
+                if name in self.consts:
+                    return self.consts[name]
+                elif ty := self.scope.find_local(name):
                     if ty != expected_ty:
                         self.add_err(TypesMismatchError(
                             f"expected `{expected_ty}`, found `{ty}`"), span)
@@ -426,11 +431,22 @@ class TyCheck:
 
     def tychk(self):
         for node in self.ast:
+            span = node.span
             match node:
                 case Fn():
                     self.visit_fn(node)
                 case ExternBlock(items):
                     for fn in items:
                         self.visit_fn(fn)
+                case Const(name, ty, init):
+                    if name in self.consts:
+                        self.add_err(Redefinition(
+                            f"{name} is already defined"), span)
+                    if ty:
+                        self.check(init, ty)
+                    else:
+                        ty = self.infer(init)
+                        node.ty = ty
+                    self.consts[name] = ty
                 case _:
                     assert False, f"{node}"
