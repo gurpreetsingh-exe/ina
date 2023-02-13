@@ -13,6 +13,7 @@ from tychk import TyCheck
 from ast_lowering import IRGen, LoweringContext
 # from codegen.gen_x86_64 import x86_64_gas
 from codegen import CodegenContext, x86_64_gas
+from intrinsics import builtins_
 
 regs = ["rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8",
         "r9", "r10", "r11", "r12", "r13", "r14", "r15"]
@@ -390,6 +391,9 @@ class Codegen:
                 else:
                     self.load_var(name, reg)
             case Call(name, args):
+                if name in builtins_:
+                    builtins_[name](self, args, reg)
+                    return
                 self.dbg(f"    # function call {name}")
                 defn = self.defs.get(name)
                 variadic = False
@@ -543,7 +547,10 @@ class Codegen:
                     case RefTy(_):
                         self.expr(expr, reg)
                     case PrimTy(kind):
-                        cast_map[kind][ty.kind](self, expr, reg)
+                        if kind == PrimTyKind.Raw:
+                            self.expr(expr, reg)
+                        else:
+                            cast_map[kind][ty.kind](self, expr, reg)
                     case PtrTy(_):
                         self.expr(expr, reg)
                 """
@@ -671,6 +678,8 @@ class Codegen:
                             self.dbg(f"    # return {name}")
                             self.buf += f"    xor rax, rax\n"
                     self.buf += "    pop rbp\n    ret\n"
+                case ExternBlock(items):
+                    self.gen(items)
                 case _:
                     assert False, f"{node} is not implemented"
 

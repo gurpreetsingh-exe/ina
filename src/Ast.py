@@ -286,6 +286,13 @@ class Block:
         return off
 
 
+class ExternBlock:
+    __match_args__ = ('items', )
+
+    def __init__(self, items: List[Fn]) -> None:
+        self.items = items
+
+
 class Expr:
     __match_args__ = ("kind", )
 

@@ -281,6 +281,8 @@ class TyCheck:
                         pass
                     case PtrTy(_), PrimTy(PrimTyKind.Str | PrimTyKind.Raw):
                         pass
+                    case PrimTy(PrimTyKind.Raw), PtrTy(_):
+                        pass
                     case _, _:
                         self.add_err(CastError(
                             f"invalid cast of `{cast_expr.ty}`"), span)
@@ -427,5 +429,8 @@ class TyCheck:
             match node:
                 case Fn():
                     self.visit_fn(node)
+                case ExternBlock(items):
+                    for fn in items:
+                        self.visit_fn(fn)
                 case _:
                     assert False, f"{node}"

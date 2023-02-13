@@ -308,6 +308,15 @@ class Parser:
             body = self.parse_block()
         return Fn(ident, args, ret_ty, body, is_extern, abi)
 
+    def parse_extern_block(self) -> ExternBlock:
+        assert self.t != None
+        self.expect(TokenKind.LCURLY)
+        items: List[Fn] = []
+        while self.t.kind != TokenKind.RCURLY:
+            items.append(self.parse_fn(is_extern=True))
+        self.expect(TokenKind.RCURLY)
+        return ExternBlock(items)
+
     def parse(self):
         self.advance()
         assert self.t != None
@@ -319,7 +328,10 @@ class Parser:
                     if self.t.kind == TokenKind.Str:
                         abi = self.t.raw(self.src)
                         self.advance()
-                    yield self.parse_fn(is_extern=True, abi=abi)
+                    if self.t.kind == TokenKind.LCURLY:
+                        yield self.parse_extern_block()
+                    else:
+                        yield self.parse_fn(is_extern=True, abi=abi)
                 case TokenKind.Fn:
                     yield self.parse_fn()
                 case _:
