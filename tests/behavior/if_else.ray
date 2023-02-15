@@ -1,4 +1,4 @@
-extern "C" fn printf(format: str, ...)
+extern "C" fn printf(format: str, ...);
 
 fn cond(c: bool, i: i64) {
     if c {

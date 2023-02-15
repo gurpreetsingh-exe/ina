@@ -1,5 +1,5 @@
-extern "C" fn printf(format: str, ...)
-extern "C" fn memset(dest: raw, value: i64, size: i64)
+extern "C" fn printf(format: str, ...);
+extern "C" fn memset(dest: raw, value: i64, size: i64);
 
 fn main() {
     let a = true;
