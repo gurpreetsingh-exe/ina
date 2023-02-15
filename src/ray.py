@@ -354,6 +354,8 @@ class Codegen:
                                     self.buf += f"    add {a}, {b}\n"
                                 case BinaryKind.Sub:
                                     self.buf += f"    sub {a}, {b}\n"
+                                case BinaryKind.Mul:
+                                    self.buf += f"    imul {a}, {b}\n"
                                 case BinaryKind.Lt | BinaryKind.Gt:
                                     self.buf += f"    cmp {a}, {b}\n"
                                     if reg:
@@ -853,7 +855,6 @@ def main(argv):
                     # gen = IRGen(ast)
                     # pp(ast, max_depth=10)
                     ConstantFolder(ast).fold()
-                    pp(ast, max_depth=10)
                     if skip_codegen:
                         return
                     output = filename.split('.')[0]

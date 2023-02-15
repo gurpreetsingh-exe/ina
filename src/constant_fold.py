@@ -26,6 +26,32 @@ class ConstantFolder:
                                 case BinaryKind.Add:
                                     expr.kind = Literal(lkind, str(
                                         cast_ty(lvalue) + cast_ty(rvalue)))
+                                case BinaryKind.Sub:
+                                    expr.kind = Literal(lkind, str(
+                                        cast_ty(lvalue) - cast_ty(rvalue)))
+                                case BinaryKind.Mul:
+                                    expr.kind = Literal(lkind, str(
+                                        cast_ty(lvalue) * cast_ty(rvalue)))
+                                case BinaryKind.Div:
+                                    expr.kind = Literal(lkind, str(
+                                        cast_ty(lvalue) / cast_ty(rvalue)))
+                                case BinaryKind.Mod:
+                                    expr.kind = Literal(lkind, str(
+                                        cast_ty(lvalue) % cast_ty(rvalue)))
+                                case BinaryKind.Lt:
+                                    expr.kind = Literal(Lit.Bool, str(
+                                        cast_ty(lvalue) < cast_ty(rvalue)))
+                                case BinaryKind.Gt:
+                                    expr.kind = Literal(Lit.Bool, str(
+                                        cast_ty(lvalue) > cast_ty(rvalue)))
+                                case BinaryKind.Eq:
+                                    expr.kind = Literal(Lit.Bool, str(
+                                        cast_ty(lvalue) == cast_ty(rvalue)))
+                                case BinaryKind.NotEq:
+                                    expr.kind = Literal(Lit.Bool, str(
+                                        cast_ty(lvalue) != cast_ty(rvalue)))
+                                case _:
+                                    assert False
                     case _, _:
                         pass
             case Call(_, args):
