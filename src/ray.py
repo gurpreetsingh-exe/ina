@@ -22,6 +22,10 @@ fn_regs = [
 ]
 
 
+def align(n, a):
+    return ((n + a - 1) // a) * a
+
+
 def cast_i64_f64(self, expr, reg):
     self.expr(expr, "rax")
     self.buf += f"    cvtsi2sd {reg}, rax\n"
@@ -254,6 +258,7 @@ class Codegen:
         self.fn_ctx: Fn | None = None
         self.debug_messages = 0
         self.consts = {}
+        self.types = {}
 
     @property
     def label(self):
@@ -590,6 +595,9 @@ class Codegen:
                 for brk in self.breaks:
                     self.buf += f".L{brk}:\n"
                 self.breaks = []
+            case StructExpr(name, fields):
+                for i, field in enumerate(fields):
+                    self.expr(field.expr, regs[i])
             case _:
                 assert False, f"{expr} is not implemented"
 
@@ -625,8 +633,17 @@ class Codegen:
                                 assert False
                         else:
                             self.expr(init, "rax")
-                            ptr, reg = self.reg_from_sz("rax", sz)
-                            self.buf += f"    mov {ptr} [rbp - {off}], {reg}\n"
+                            match ty:
+                                case StructTy(name, _):
+                                    struct = self.types[name]
+                                    for i, f in enumerate(struct.fields):
+                                        ptr, reg = self.reg_from_sz(
+                                            regs[i], f.ty.get_size())
+                                        self.buf += f"    mov {ptr} [rbp - {f.offset}], {reg}\n"
+                                        print(f.offset)
+                                case _:
+                                    ptr, reg = self.reg_from_sz("rax", sz)
+                                    self.buf += f"    mov {ptr} [rbp - {off}], {reg}\n"
             case Break():
                 break_label = self.label
                 self.buf += f"    jmp .L{break_label}\n"
@@ -717,6 +734,8 @@ class Codegen:
                                         'kind': kind,
                                         'value': value,
                                     }
+                case Struct(name, _):
+                    self.types[name] = node
                 case _:
                     assert False, f"{node} is not implemented"
 

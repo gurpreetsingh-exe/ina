@@ -58,6 +58,7 @@ class TyCheck:
         self.fn_ctx = None
         self.errors = []
         self.consts = {}
+        self.types = {}
         self.tychk()
 
     def mk_bool(self) -> PrimTy:
@@ -174,6 +175,28 @@ class TyCheck:
             case Cast(expr, ty):
                 expr.ty = self.infer(expr)
                 return ty
+            case StructExpr(name, fields):
+                if name not in self.types:
+                    self.add_err(NotFound(name, ""), span)
+                    return
+                struct = self.types[name]
+                field_tys = []
+                defined_fields = []
+                for struct_field in struct.fields:
+                    for expr_field in fields:
+                        if expr_field.name not in defined_fields:
+                            defined_fields.append(expr_field.name)
+                        if expr_field.name == struct_field.name:
+                            self.check(expr_field.expr, struct_field.ty)
+                            field_tys.append(struct_field.ty)
+                            break
+                undefined_fields = set(
+                    [f.name for f in struct.fields]) - set(defined_fields)
+                if undefined_fields:
+                    for f in undefined_fields:
+                        self.add_err(MissingStructFieldError(
+                            f"missing `{f}`", f, name), span)
+                return StructTy(name, field_tys)
             case _:
                 assert False, f"{expr.kind}"
 
@@ -448,5 +471,14 @@ class TyCheck:
                         ty = self.infer(init)
                         node.ty = ty
                     self.consts[name] = ty
+                case Struct(name, _):
+                    if name in self.types:
+                        assert False
+                    offset = 0
+                    for field in reversed(node.fields):
+                        field.offset = offset
+                        size = field.ty.get_size()
+                        offset += ((size + 3) // 4) * 4
+                    self.types[name] = node
                 case _:
                     assert False, f"{node}"

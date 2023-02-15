@@ -199,6 +199,41 @@ class RefTy(Ty):
         return f"&{repr(self.ref)}"
 
 
+class StructTy(Ty):
+    __match_args__ = ("name", "fields", )
+
+    def __init__(self, name, fields: List[Ty]):
+        self.name = name
+        self.fields = fields
+        self.span = None
+
+    def get_size(self) -> int:
+        sz = 0
+        for field in self.fields:
+            sz += ((field.get_size() + 3) // 4) * 4
+        return sz
+
+    def is_int(self) -> bool:
+        return False
+
+    def is_float(self) -> bool:
+        return False
+
+    def __eq__(self, __o: Ty) -> bool:
+        match __o:
+            case StructTy(fields):
+                return __o.name == self.name and all([a == b for a, b in zip(fields, self.fields)])
+            case _:
+                return False
+
+    def __ne__(self, __o: Ty) -> bool:
+        return not self.__eq__(__o)
+
+    def __repr__(self) -> str:
+        f = ", ".join(map(repr, self.fields))
+        return f"{self.name} {{ {f} }}"
+
+
 class FnArg:
     pass
 
@@ -459,6 +494,43 @@ class Cast:
         self.expr = expr
         self.ty = ty
         self.span: Span | None = None
+
+
+class StructField:
+    __match_args__ = ("name", "ty", )
+
+    def __init__(self, name, ty) -> None:
+        self.name = name
+        self.ty = ty
+        self.offset = 0
+        self.span = None
+
+
+class Struct:
+    __match_args__ = ("name", "fields", )
+
+    def __init__(self, name, fields: List[StructField]) -> None:
+        self.name = name
+        self.fields = fields
+        self.span = None
+
+
+class ExprField:
+    __match_args__ = ("name", "expr", )
+
+    def __init__(self, name, expr: Expr) -> None:
+        self.name = name
+        self.expr = expr
+        self.span = None
+
+
+class StructExpr:
+    __match_args__ = ("name", "fields", )
+
+    def __init__(self, name, fields: List[ExprField]) -> None:
+        self.name = name
+        self.fields = fields
+        self.span = None
 
 
 class Lit(Enum):

@@ -21,6 +21,7 @@ class TokenKind(Enum):
     Loop = auto()
     Break = auto()
     Const = auto()
+    Struct = auto()
 
     PLUS = auto()  # `+`
     MINUS = auto()  # `-`
@@ -74,6 +75,7 @@ Keywords = {
     "loop": TokenKind.Loop,
     "break": TokenKind.Break,
     "const": TokenKind.Const,
+    "struct": TokenKind.Struct,
 }
 
 Punctuators = {

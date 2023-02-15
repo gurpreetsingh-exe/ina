@@ -145,6 +145,24 @@ class Parser:
         return Ident(self.expect(TokenKind.Ident).raw(self.src))
 
     @spanned
+    def parse_struct_expr(self) -> StructExpr:
+        assert self.t != None
+        name = self.expect(TokenKind.Ident).raw(self.src)
+        self.expect(TokenKind.LCURLY)
+        fields = []
+        while self.t.kind != TokenKind.RCURLY:
+            field_name = self.expect(TokenKind.Ident).raw(self.src)
+            self.expect(TokenKind.COLON)
+            expr = self.parse_expr()
+            fields.append(ExprField(field_name, expr))
+            if self.t.kind == TokenKind.COMMA:
+                self.advance()
+            else:
+                break
+        self.expect(TokenKind.RCURLY)
+        return StructExpr(name, fields)
+
+    @spanned
     def parse_primary(self) -> Expr:
         assert self.t != None
         match self.t.kind:
@@ -297,6 +315,7 @@ class Parser:
         self.expect(TokenKind.RCURLY)
         return Block(stmts)
 
+    @spanned
     def parse_fn(self, is_extern=False, abi=None) -> Fn:
         assert self.t != None
         self.advance()
@@ -310,6 +329,7 @@ class Parser:
             self.expect(TokenKind.SEMI)
         return Fn(ident, args, ret_ty, body, is_extern, abi)
 
+    @spanned
     def parse_extern_block(self) -> ExternBlock:
         assert self.t != None
         self.expect(TokenKind.LCURLY)
@@ -319,6 +339,7 @@ class Parser:
         self.expect(TokenKind.RCURLY)
         return ExternBlock(items)
 
+    @spanned
     def parse_const(self) -> Const:
         assert self.t != None
         self.expect(TokenKind.Const)
@@ -331,6 +352,24 @@ class Parser:
         init = self.parse_expr()
         self.expect(TokenKind.SEMI)
         return Const(name, ty, init)
+
+    def parse_struct(self) -> Struct:
+        assert self.t != None
+        self.expect(TokenKind.Struct)
+        name = self.expect(TokenKind.Ident).raw(self.src)
+        fields = []
+        self.expect(TokenKind.LCURLY)
+        while self.t.kind != TokenKind.RCURLY:
+            field_name = self.expect(TokenKind.Ident).raw(self.src)
+            self.expect(TokenKind.COLON)
+            ty = self.parse_ty()
+            fields.append(StructField(field_name, ty))
+            if self.t.kind == TokenKind.COMMA:
+                self.advance()
+            else:
+                break
+        self.expect(TokenKind.RCURLY)
+        return Struct(name, fields)
 
     def parse(self):
         self.advance()
@@ -351,5 +390,7 @@ class Parser:
                     yield self.parse_fn()
                 case TokenKind.Const:
                     yield self.parse_const()
+                case TokenKind.Struct:
+                    yield self.parse_struct()
                 case _:
                     panic(f"{self.t.kind} not implemented")

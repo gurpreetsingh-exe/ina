@@ -80,6 +80,17 @@ class DerefError(Error):
         emit(self, file, f": `{self.ty}` cannot be dereferenced\n")
 
 
+class MissingStructFieldError(Error):
+    def __init__(self, msg: str, missing_field, struct) -> None:
+        super().__init__(msg)
+        self.missing_field = missing_field
+        self.struct = struct
+
+    def emit(self, file: File):
+        emit(
+            self, file, f": missing field `{self.missing_field}` in `{self.struct}`\n")
+
+
 def c(format: str) -> str:
     return f"\033[30;1m{format}\033[0m"
 
