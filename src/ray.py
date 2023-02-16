@@ -11,7 +11,7 @@ from utils import *
 from Parser import Parser
 from tychk import TyCheck
 from ast_lowering import IRGen, LoweringContext
-from codegen import CodegenContext, x86_64_gas
+from codegen.x86_64 import Gen
 from intrinsics import builtins_
 from constant_fold import ConstantFolder
 
@@ -57,97 +57,6 @@ cast_map = {
         PrimTyKind.I64: cast_raw_i64,
     }
 }
-
-
-class RegisterKind(Enum):
-    Al = auto()
-    Ax = auto()
-    Eax = auto()
-    Rax = auto()
-
-    Bl = auto()
-    Bx = auto()
-    Ebx = auto()
-    Rbx = auto()
-
-    Cl = auto()
-    Cx = auto()
-    Ecx = auto()
-    Rcx = auto()
-
-    Dl = auto()
-    Dx = auto()
-    Edx = auto()
-    Rdx = auto()
-
-    Sil = auto()
-    Si = auto()
-    Esi = auto()
-    Rsi = auto()
-
-    Dil = auto()
-    Di = auto()
-    Edi = auto()
-    Rdi = auto()
-
-    Rbp = auto()
-
-    Rsp = auto()
-
-    R8b = auto()
-    R8w = auto()
-    R8d = auto()
-    R8 = auto()
-
-    R9b = auto()
-    R9w = auto()
-    R9d = auto()
-    R9 = auto()
-
-    R10b = auto()
-    R10w = auto()
-    R10d = auto()
-    R10 = auto()
-
-    R11b = auto()
-    R11w = auto()
-    R11d = auto()
-    R11 = auto()
-
-    R12b = auto()
-    R12w = auto()
-    R12d = auto()
-    R12 = auto()
-
-    R13b = auto()
-    R13w = auto()
-    R13d = auto()
-    R13 = auto()
-
-    R14b = auto()
-    R14w = auto()
-    R14d = auto()
-    R14 = auto()
-
-    R15b = auto()
-    R15w = auto()
-    R15d = auto()
-    R15 = auto()
-
-    Xmm0 = auto()
-    Xmm1 = auto()
-    Xmm2 = auto()
-    Xmm3 = auto()
-    Xmm4 = auto()
-    Xmm5 = auto()
-    Xmm6 = auto()
-    Xmm7 = auto()
-
-
-class Register:
-    def __init__(self, size: int, kind: RegisterKind) -> None:
-        self.size = size
-        self.kind = kind
 
 
 reg_ = {
@@ -859,26 +768,15 @@ def main(argv):
                         return
                     output = filename.split('.')[0]
                     if 0:
-                        ctx = LoweringContext(ast)
-                        IRGen(ctx)
-                        if emit_ir:
-                            for i, string in enumerate(ctx.strings):
-                                print(f"@{i} = {string}")
-                            print()
-                            for fn in ctx.lowered_ast:
-                                print(fn)
-                                print()
-                        x86_64_gas(CodegenContext(
-                            filename, output), ctx)
-                    else:
                         code = Codegen(ast, tychk.defs).emit()
-                        output = filename.split('.')[0]
                         with open(f"{output}.asm", "w") as f:
                             f.write(code)
 
                         from subprocess import call
                         call(["as", f"{output}.asm", "-o", f"{output}.o"])
                         call(["gcc", f"{output}.o", "-o", output])
+                    else:
+                        Gen(ast, output).emit()
                 case _:
                     assert False, "unreachable"
 
