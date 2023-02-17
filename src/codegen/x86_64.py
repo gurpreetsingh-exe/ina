@@ -1,9 +1,10 @@
 from __future__ import annotations
-from typing import Dict
 from enum import Enum, auto
+from typing import Dict, Any
 from Ast import *
 from math import log
 from dataclasses import dataclass
+import struct
 
 
 @dataclass
@@ -57,8 +58,32 @@ class Register:
         return self.kind in list(map(lambda r: f"xmm{r}", range(8)))
 
 
+class Imm(Enum):
+    Int = auto()
+    Float = auto()
+    Str = auto()
+
+
+class Immediate:
+    def __init__(self, kind, value) -> None:
+        self.kind = kind
+        self.value = value
+
+    @classmethod
+    def from_lit(cls, lit):
+        match lit.kind:
+            case Lit.Int:
+                return cls(Imm.Int, lit.value)
+            case Lit.Float:
+                return cls(Imm.Float, lit.value)
+            case Lit.Str:
+                return cls(Imm.Str, lit.value)
+            case _:
+                assert False, lit.kind
+
+
 class Value:
-    def __init__(self, kind: Register | Literal):
+    def __init__(self, kind: Register | Immediate):
         self.kind = kind
 
 
@@ -126,6 +151,11 @@ class RegisterManager:
                             return Register(reg, 1)
                     case _:
                         assert kind
+            case PtrTy(_) | RefTy(_):
+                reg = self.find_int_reg()
+                if reg:
+                    self.used.append(reg)
+                    return Register(reg, 8)
 
     def alloc_arg_reg(self, ty: Ty) -> Register | None:
         match ty:
@@ -163,6 +193,13 @@ class RegisterManager:
                             return Register(reg, 1)
                     case _:
                         assert kind
+            case PtrTy(_) | RefTy(_):
+                reg = self.find_int_arg_reg()
+                if reg:
+                    self.used.append(reg)
+                    return Register(reg, 8)
+            case _:
+                assert False, ty
 
 
 class Env:
@@ -175,7 +212,7 @@ class Env:
         size = ty.get_size()
         self.stack_offset = (self.stack_offset + size * 2 - 1) & ~(size - 1)
         self.bindings.append({'name': name,
-                              'off': self.stack_offset, 'size': size})
+                              'off': self.stack_offset, 'ty': ty})
         return self.stack_offset, size
 
     def find_local(self, name) -> Dict[str, Any]:
@@ -188,6 +225,44 @@ class Env:
             assert False
 
 
+class LabelManager:
+    def __init__(self) -> None:
+        self.label_id = 0
+
+    @property
+    def unnamed_label(self) -> str:
+        self.label_id += 1
+        return f".L__unnamed_{self.label_id}"
+
+
+class DataSection:
+    def __init__(self, label_manager: LabelManager) -> None:
+        self.label_manager = label_manager
+        self.floats = {}
+        self.strings = {}
+
+    def add_float(self, value) -> str:
+        label = self.label_manager.unnamed_label
+        flt = struct.pack('d', float(value))
+        self.floats[label] = int.from_bytes(flt, 'little')
+        return label
+
+    def add_string(self, value) -> str:
+        label = self.label_manager.unnamed_label
+        self.strings[label] = value
+        return label
+
+    def emit(self, buf: str) -> str:
+        for label, data in self.floats.items():
+            buf += f"\n{label}:\n"
+            float_ = struct.unpack('d', data.to_bytes(8, 'little'))[0]
+            buf += f"    .quad {data} # {float_}\n"
+        for label, data in self.strings.items():
+            buf += f"\n{label}:\n"
+            buf += f"    .string {data}\n"
+        return buf
+
+
 class Gen:
     def __init__(self, ast, output) -> None:
         self.ast = ast
@@ -196,6 +271,8 @@ class Gen:
         self.env = Env()
         self.buf = ""
         self.fn_ctx = None
+        self.label_manager = LabelManager()
+        self.data_sec = DataSection(self.label_manager)
 
     def store_reg(self, off: int, reg: Register):
         if reg.is_vector:
@@ -209,15 +286,30 @@ class Gen:
         else:
             self.buf += f"    mov {reg.ptr} ptr [rbp - {off}], {reg.name}\n"
 
-    def store_val(self, off: int, val: Literal):
+    def store_val(self, off: int, val: Immediate):
         match val.kind:
-            case Lit.Int:
+            case Imm.Int:
                 self.buf += f"    mov qword ptr [rbp - {off}], {val.value}\n"
-            case Lit.Float:
-                self.buf += f"    movsd qword ptr [rbp - {off}], {val.value}\n"
+            case Imm.Float:
+                label = self.data_sec.add_float(val.value)
+                self.buf += f"    lea rax, [rip + {label}]\n"
+                self.buf += f"    mov qword ptr [rbp - {off}], rax\n"
+            case Imm.Str:
+                label = self.data_sec.add_string(val.value)
+                self.buf += f"    lea rax, [rip + {label}]\n"
+                self.buf += f"    mov qword ptr [rbp - {off}], rax\n"
+            case _:
+                assert False, val.kind
 
     def push_var(self, name):
         pass
+
+    def load(self, var) -> Register:
+        reg = self.reg_manager.alloc_reg(var['ty'])
+        if not reg:
+            assert False
+        self.buf += f"    mov {reg.name}, {reg.ptr} ptr [rbp - {var['off']}]\n"
+        return reg
 
     def gen_block(self, block):
         tmp_env = self.env
@@ -246,10 +338,28 @@ class Gen:
             self.stmt(stmt)
         self.env = tmp_env
 
-    def expr(self, expr: Expr) -> Value:
+    def load_addr(self, var) -> Register:
+        reg = self.reg_manager.alloc_reg(RefTy(var['ty']))
+        if not reg:
+            assert False
+        self.buf += f"    lea {reg.name}, {reg.ptr} ptr [rbp - {var['off']}]\n"
+        return reg
+
+    def expr(self, expr) -> Value:
         match expr.kind:
-            case Literal(kind, value):
-                return Value(expr.kind)
+            case Literal(_):
+                return Value(Immediate.from_lit(expr.kind))
+            case Unary(kind, expr):
+                match kind:
+                    case UnaryKind.AddrOf:
+                        var = self.env.find_local(expr.kind.name)
+                        return Value(self.load_addr(var))
+                    case _:
+                        assert False, kind
+            case Ident(name):
+                var = self.env.find_local(name)
+                reg = self.load(var)
+                return Value(reg)
             case _:
                 assert False, expr.kind
 
@@ -260,8 +370,10 @@ class Gen:
                 match value := self.expr(init).kind:
                     case Register():
                         self.store_reg(off, value)
-                    case Literal():
+                    case Immediate():
                         self.store_val(off, value)
+                    case _:
+                        assert False, value
 
     def gen(self, nodes):
         for node in nodes:
@@ -295,6 +407,7 @@ class Gen:
     def emit(self):
         self.buf += ".intel_syntax noprefix\n.globl main\n"
         self.gen(self.ast)
+        self.buf = self.data_sec.emit(self.buf)
         with open(f"{self.output}.asm", "w") as f:
             f.write(self.buf)
         from subprocess import call
