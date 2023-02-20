@@ -76,6 +76,21 @@ class Parser:
                     return PrimTy(prim_ty)
                 else:
                     panic("custom types are not implemented")
+            case TokenKind.Fn:
+                self.advance()
+                self.expect(TokenKind.LPAREN)
+                args = []
+                while self.t.kind != TokenKind.RPAREN:
+                    args.append(self.parse_ty())
+                    if self.t.kind == TokenKind.RPAREN:
+                        break
+                    self.eat_if_present(TokenKind.COMMA)
+                self.expect(TokenKind.RPAREN)
+                ret_ty = PrimTy(PrimTyKind.Unit)
+                if self.t.kind == TokenKind.ARROW:
+                    self.advance()
+                    ret_ty = self.parse_ty()
+                return FnTy(args, ret_ty)
             case _:
                 panic("unexpected type")
 

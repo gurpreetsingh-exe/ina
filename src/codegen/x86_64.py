@@ -1,10 +1,11 @@
 from __future__ import annotations
 from enum import Enum, auto
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 from Ast import *
 from math import log
 from dataclasses import dataclass
 import struct
+from beeprint import pp
 
 
 @dataclass
@@ -157,11 +158,13 @@ class RegisterManager:
                             return Register(reg, 1)
                     case _:
                         assert kind
-            case PtrTy(_) | RefTy(_):
+            case PtrTy(_) | RefTy(_) | FnTy(_):
                 reg = self.find_int_reg()
                 if reg:
                     self.used.append(reg)
                     return Register(reg, 8)
+            case _:
+                assert False, ty
 
     def alloc_arg_reg(self, ty: Ty) -> Register | None:
         match ty:
@@ -199,7 +202,7 @@ class RegisterManager:
                             return Register(reg, 1)
                     case _:
                         assert kind
-            case PtrTy(_) | RefTy(_):
+            case PtrTy(_) | RefTy(_) | FnTy(_):
                 reg = self.find_int_arg_reg()
                 if reg:
                     self.args.append(reg)
@@ -221,14 +224,12 @@ class Env:
                               'off': self.stack_offset, 'ty': ty})
         return self.stack_offset, size
 
-    def find_local(self, name) -> Dict[str, Any]:
+    def find_local(self, name) -> Dict[str, Any] | None:
         for var in self.bindings:
             if var['name'] == name:
                 return var
         if self.parent:
             return self.parent.find_local(name)
-        else:
-            assert False
 
 
 class LabelManager:
@@ -287,6 +288,7 @@ class Gen:
         self.output = output
         self.reg_manager = RegisterManager()
         self.env = Env()
+        self.fns = {}
         self.buf = ""
         self.fn_ctx = None
         self.label_manager = LabelManager()
@@ -409,7 +411,16 @@ class Gen:
                         assert False, kind
             case Ident(name):
                 var = self.env.find_local(name)
-                return self.load(var, True)
+                if var:
+                    return self.load(var, True)
+                elif name in self.fns:
+                    reg = self.reg_manager.alloc_arg_reg(FnTy.dummy())
+                    if not reg:
+                        assert False, "register overflow"
+                    self.buf += f"    lea {reg.name}, [rip + {name}]\n"
+                    return reg
+                else:
+                    assert False
             case Call(name, args):
                 floats = 0
                 for arg in args:
@@ -437,8 +448,16 @@ class Gen:
                         assert False, kind
             case Ident(name):
                 var = self.env.find_local(name)
-                reg = self.load(var)
-                return Value(reg)
+                if var:
+                    return Value(self.load(var))
+                elif name in self.fns:
+                    reg = self.reg_manager.alloc_arg_reg(FnTy.dummy())
+                    if not reg:
+                        assert False, "register overflow"
+                    self.buf += f"    lea {reg.name}, [rip + {name}]\n"
+                    return Value(reg)
+                else:
+                    assert False
             case Call(name, args):
                 floats = 0
                 for arg in args:
@@ -448,7 +467,12 @@ class Gen:
                 if floats:
                     self.store(Register("rax", 4),
                                Value(Immediate(Imm.Int, floats, 8)))
-                self.buf += f"    call {name}\n"
+                var = self.env.find_local(name)
+                if var and type(var['ty']) == FnTy:
+                    self.buf += f"    mov rax, [rbp - {var['off']}]\n"
+                    self.buf += f"    call rax\n"
+                else:
+                    self.buf += f"    call {name}\n"
                 return Value(Register("rax", 8))
             case _:
                 assert False, expr.kind
@@ -493,15 +517,16 @@ class Gen:
         for node in nodes:
             match node:
                 case Fn(name, _, ret_ty, body, is_extern, _):
+                    self.fns[name] = node
                     if is_extern:
                         continue
                     self.buf += f"\n{name}:\n"
                     alignment = node.stack_alignment
+                    self.buf += \
+                        "    push rbp\n" + \
+                        "    mov rbp, rsp\n"
                     if alignment:
-                        self.buf += \
-                            "    push rbp\n" + \
-                            "    mov rbp, rsp\n" + \
-                            f"    sub rsp, {alignment}\n"
+                        self.buf += f"    sub rsp, {alignment}\n"
                     assert body != None
                     self.fn_ctx = node
                     self.gen_block(body)
@@ -510,8 +535,7 @@ class Gen:
                     match ret_ty:
                         case PrimTy(PrimTyKind.Unit):
                             self.buf += f"    xor rax, rax\n"
-                    if alignment:
-                        self.buf += "    pop rbp\n"
+                    self.buf += "    pop rbp\n"
                     self.buf += "    ret\n"
                 case ExternBlock(items):
                     self.gen(items)
@@ -527,3 +551,4 @@ class Gen:
         from subprocess import call
         call(["as", f"{self.output}.asm", "-o", f"{self.output}.o"])
         call(["gcc", f"{self.output}.o", "-o", self.output])
+        # call(["rm", "-f", f"{self.output}.o", f"{self.output}.asm"])

@@ -127,12 +127,25 @@ class TyCheck:
                     return self.mk_unit()
             case Ident(name):
                 if name in self.consts:
+                    expr.ty = self.consts[name]
                     return self.consts[name]
-                elif not self.scope.search_local(name):
+                elif self.scope.search_local(name):
+                    ty = self.scope.find_local(name)
+                    expr.ty = ty
+                    return ty
+                elif name in self.defs:
+                    deff = self.defs[name]
+                    match deff.kind:
+                        case DefKind.Fn:
+                            fn = deff.data
+                            args = [arg.ty for arg in fn['args']]
+                            ty = FnTy(args, fn['ret_ty'])
+                            expr.ty = ty
+                            return ty
+                        case _:
+                            assert False
+                else:
                     self.add_err(NotFound(name, ""), span)
-                ty = self.scope.find_local(name)
-                expr.ty = ty
-                return ty
             case Unary(kind, expr):
                 match kind:
                     case UnaryKind.Not:
@@ -248,6 +261,21 @@ class TyCheck:
                         self.add_err(TypesMismatchError(
                             f"expected `{expected_ty}`, found `{ty}`"), span)
                     expr.ty = ty
+                elif name in self.defs:
+                    deff = self.defs[name]
+                    match deff.kind:
+                        case DefKind.Fn:
+                            fn = deff.data
+                            if type(expected_ty) != FnTy:
+                                self.add_err(TypesMismatchError(
+                                    f"`{name}` has type function"), span)
+                            args = [arg.ty for arg in fn['args']]
+                            found = FnTy(args, fn['ret_ty'])
+                            if found != expected_ty:
+                                self.add_err(TypesMismatchError(
+                                    f"expected `{expected_ty}`, found `{found}`"), span)
+                        case _:
+                            assert False
                 else:
                     panic(f"{name} is not defined")
             case Unary(kind, expr):
@@ -315,45 +343,58 @@ class TyCheck:
                         f"expected `{expected_ty}`, found `{ty}`"), span)
                 expr.ty = ty
             case _:
-                assert False
+                assert False, expr
 
     def check_call(self, name, args, span, expected_ty=None):
         defn = self.defs.get(name)
-        if not defn:
+        expected_args = None
+        expected_ret_ty = None
+        if defn != None:
+            expected_args = [arg.ty for arg in defn.data['args']]
+            expected_ret_ty = defn.data['ret_ty']
+        elif self.scope.search_local(name):
+            ty = self.scope.find_local(name)
+            match ty:
+                case FnTy(fargs, ret_ty):
+                    expected_args = fargs
+                    expected_ret_ty = ret_ty
+                case _:
+                    self.add_err(TypesMismatchError(
+                        f"`{name}` is not a function"), span)
+                    return self.mk_unit()
+        else:
             self.add_err(NotFound(name, ""), span)
             return self.mk_unit()
-
         variadic = False
         starts_at = 0
-        for arg in defn.data['args']:
-            if type(arg) == Variadic:
+        for arg in expected_args:
+            if type(arg) == VariadicTy:
                 variadic = True
                 break
             starts_at += 1
 
         found = len(args)
-        expected = len(defn.data['args'])
+        expected = len(expected_args)
 
         if not variadic and found != expected:
             panic(f"expected {expected} args found {found}")
 
         if variadic:
-            exp = defn.data['args']
             for i, arg in enumerate(args):
                 if i >= starts_at:
                     arg.ty = self.infer(arg)
                 else:
-                    self.check(arg, exp[i].ty)
-                    arg.ty = exp[i].ty
+                    self.check(arg, expected_args[i])
+                    arg.ty = expected_args[i]
         else:
-            for arg, exp in zip(args, defn.data['args']):
-                self.check(arg, exp.ty)
-                arg.ty = exp.ty
+            for arg, exp in zip(args, expected_args):
+                self.check(arg, exp)
+                arg.ty = exp
 
-        ty = defn.data['ret_ty']
-        if expected_ty and ty != expected_ty:
-            panic(f"unexpected type: expected {expected_ty} found {ty}")
-        return ty
+        if expected_ty and expected_ret_ty != expected_ty:
+            panic(
+                f"unexpected type: expected {expected_ty} found {expected_ret_ty}")
+        return expected_ret_ty
 
     def check_block(self, block):
         span = block.span

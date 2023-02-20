@@ -234,6 +234,35 @@ class StructTy(Ty):
         return f"{self.name} {{ {f} }}"
 
 
+class FnTy(Ty):
+    __match_args__ = ("args", "ret_ty", )
+
+    def __init__(self, args: List[Ty], ret_ty: Ty):
+        self.args = args
+        self.ret_ty = ret_ty
+        self.span = None
+
+    @classmethod
+    def dummy(cls):
+        return cls([], PrimTy(PrimTyKind.Unit))
+
+    def get_size(self) -> int:
+        return 8
+
+    def __eq__(self, __o: Ty) -> bool:
+        match __o:
+            case FnTy(args, ret_ty):
+                return all([arg == other for arg, other in zip(self.args, args)]) and self.ret_ty == ret_ty
+            case _:
+                return False
+
+    def __ne__(self, __o: Ty) -> bool:
+        return not self.__eq__(__o)
+
+    def __repr__(self) -> str:
+        return "fn ({}) -> {}".format(", ".join(map(repr, self.args)), self.ret_ty)
+
+
 class FnArg:
     pass
 
@@ -247,8 +276,13 @@ class Arg(FnArg):
         self.span: Span | None = None
 
 
-class Variadic(FnArg):
+class VariadicTy(Ty):
     pass
+
+
+class Variadic(FnArg):
+    def __init__(self) -> None:
+        self.ty = VariadicTy()
 
 
 class Fn:

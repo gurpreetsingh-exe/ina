@@ -686,8 +686,6 @@ def usage(arg0):
     print("\nCommands:")
     print("    build            compile the file")
     print("\nOptions:")
-    print("    --emit-ir        print IR")
-    print("    --skip-codegen   skip code-genration")
     print("    -h, --help       print help information\n")
     exit(1)
 
@@ -702,7 +700,6 @@ def main(argv):
     arg0 = argv[0]
     argv = argv[1:]
     command = Command.Nan
-    emit_ir = False
     skip_codegen = False
     while argv:
         arg = argv[0]
@@ -714,8 +711,6 @@ def main(argv):
                     match arg:
                         case "--help":
                             usage(arg0)
-                        case "--emit-ir":
-                            emit_ir = True
                         case "--skip-codegen":
                             skip_codegen = True
                         case _:
