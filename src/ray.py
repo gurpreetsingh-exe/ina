@@ -230,6 +230,7 @@ class Codegen:
                     self.buf += f"    movsd {reg}, [rbp - {off}]\n"
                 elif sz == 4:
                     self.buf += f"    movss {reg}, [rbp - {off}]\n"
+                    self.buf += f"    cvtss2sd xmm0, xmm0\n"
         else:
             if sz in [1, 2]:
                 self.buf += f"    movzx al, {ptr} [rbp - {off}]\n"

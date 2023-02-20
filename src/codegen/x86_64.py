@@ -65,19 +65,25 @@ class Imm(Enum):
 
 
 class Immediate:
-    def __init__(self, kind, value) -> None:
+    __match_args__ = ("kind", "value", )
+
+    def __init__(self, kind: Imm, value, size: int) -> None:
         self.kind = kind
         self.value = value
+        self.size = size
 
     @classmethod
-    def from_lit(cls, lit):
+    def from_lit(cls, expr):
+        lit = expr.kind
+        from beeprint import pp
+        size = expr.ty.get_size()
         match lit.kind:
             case Lit.Int:
-                return cls(Imm.Int, lit.value)
+                return cls(Imm.Int, lit.value, size)
             case Lit.Float:
-                return cls(Imm.Float, lit.value)
+                return cls(Imm.Float, lit.value, size)
             case Lit.Str:
-                return cls(Imm.Str, lit.value)
+                return cls(Imm.Str, lit.value, size)
             case _:
                 assert False, lit.kind
 
@@ -88,21 +94,21 @@ class Value:
 
 
 fn_arg_int_regs = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
-int_regs = ["rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8",
-            "r9", "r10", "r11", "r12", "r13", "r14", "r15"]
+int_regs = ["rax", "rbx", "rcx", "r10", "r11", "r12", "r13", "r14", "r15"]
 vec_regs = ["xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"]
 
 
 class RegisterManager:
     def __init__(self) -> None:
         self.used = []
+        self.args = []
 
     def free_regs(self) -> None:
-        self.used.clear()
+        self.args.clear()
 
     def find_int_arg_reg(self) -> str | None:
         for reg in fn_arg_int_regs:
-            if not reg in self.used:
+            if not reg in self.args:
                 return reg
 
     def find_int_reg(self) -> str | None:
@@ -161,42 +167,42 @@ class RegisterManager:
         match ty:
             case PrimTy(kind):
                 match kind:
-                    case PrimTyKind.I64 | PrimTyKind.U64 | PrimTyKind.ISize | PrimTyKind.USize:
+                    case PrimTyKind.I64 | PrimTyKind.U64 | PrimTyKind.ISize | PrimTyKind.USize | PrimTyKind.Str | PrimTyKind.Raw:
                         reg = self.find_int_arg_reg()
                         if reg:
-                            self.used.append(reg)
+                            self.args.append(reg)
                             return Register(reg, 8)
                     case PrimTyKind.F64:
                         reg = self.find_vec_reg()
                         if reg:
-                            self.used.append(reg)
+                            self.args.append(reg)
                             return Register(reg, 8)
                     case PrimTyKind.F32:
                         reg = self.find_vec_reg()
                         if reg:
-                            self.used.append(reg)
+                            self.args.append(reg)
                             return Register(reg, 4)
                     case PrimTyKind.I32 | PrimTyKind.U32:
                         reg = self.find_int_arg_reg()
                         if reg:
-                            self.used.append(reg)
+                            self.args.append(reg)
                             return Register(reg, 4)
                     case PrimTyKind.I16 | PrimTyKind.U16:
                         reg = self.find_int_arg_reg()
                         if reg:
-                            self.used.append(reg)
+                            self.args.append(reg)
                             return Register(reg, 2)
                     case PrimTyKind.I8 | PrimTyKind.U8 | PrimTyKind.Bool | PrimTyKind.Char:
                         reg = self.find_int_arg_reg()
                         if reg:
-                            self.used.append(reg)
+                            self.args.append(reg)
                             return Register(reg, 1)
                     case _:
                         assert kind
             case PtrTy(_) | RefTy(_):
                 reg = self.find_int_arg_reg()
                 if reg:
-                    self.used.append(reg)
+                    self.args.append(reg)
                     return Register(reg, 8)
             case _:
                 assert False, ty
@@ -241,10 +247,16 @@ class DataSection:
         self.floats = {}
         self.strings = {}
 
-    def add_float(self, value) -> str:
+    def add_float_64(self, value) -> str:
         label = self.label_manager.unnamed_label
         flt = struct.pack('d', float(value))
-        self.floats[label] = int.from_bytes(flt, 'little')
+        self.floats[label] = flt
+        return label
+
+    def add_float_32(self, value) -> str:
+        label = self.label_manager.unnamed_label
+        flt = struct.pack('f', float(value))
+        self.floats[label] = flt
         return label
 
     def add_string(self, value) -> str:
@@ -254,9 +266,15 @@ class DataSection:
 
     def emit(self, buf: str) -> str:
         for label, data in self.floats.items():
+            bytez = len(data)
+            data = int.from_bytes(data, 'little')
             buf += f"\n{label}:\n"
-            float_ = struct.unpack('d', data.to_bytes(8, 'little'))[0]
-            buf += f"    .quad {data} # {float_}\n"
+            if bytez == 8:
+                float_ = struct.unpack('d', data.to_bytes(8, 'little'))[0]
+                buf += f"    .quad {data} # {float_}\n"
+            elif bytez == 4:
+                float_ = struct.unpack('f', data.to_bytes(4, 'little'))[0]
+                buf += f"    .long {data} # {float_}\n"
         for label, data in self.strings.items():
             buf += f"\n{label}:\n"
             buf += f"    .string {data}\n"
@@ -291,8 +309,11 @@ class Gen:
             case Imm.Int:
                 self.buf += f"    mov qword ptr [rbp - {off}], {val.value}\n"
             case Imm.Float:
-                label = self.data_sec.add_float(val.value)
-                self.buf += f"    lea rax, [rip + {label}]\n"
+                if val.size == 8:
+                    label = self.data_sec.add_float_64(val.value)
+                elif val.size == 4:
+                    label = self.data_sec.add_float_32(val.value)
+                self.buf += f"    mov rax, [rip + {label}]\n"
                 self.buf += f"    mov qword ptr [rbp - {off}], rax\n"
             case Imm.Str:
                 label = self.data_sec.add_string(val.value)
@@ -304,11 +325,24 @@ class Gen:
     def push_var(self, name):
         pass
 
-    def load(self, var) -> Register:
-        reg = self.reg_manager.alloc_reg(var['ty'])
+    def load(self, var, is_arg=False) -> Register:
+        if is_arg:
+            reg = self.reg_manager.alloc_arg_reg(var['ty'])
+        else:
+            reg = self.reg_manager.alloc_reg(var['ty'])
         if not reg:
             assert False
-        self.buf += f"    mov {reg.name}, {reg.ptr} ptr [rbp - {var['off']}]\n"
+        if reg.is_vector:
+            match reg.size:
+                case 4:
+                    self.buf += f"    movss {reg.name}, {reg.ptr} ptr [rbp - {var['off']}]\n"
+                    self.buf += f"    cvtss2sd {reg.name}, {reg.name}\n"
+                case 8:
+                    self.buf += f"    movsd {reg.name}, {reg.ptr} ptr [rbp - {var['off']}]\n"
+                case _:
+                    assert False, "f32, f64"
+        else:
+            self.buf += f"    mov {reg.name}, {reg.ptr} ptr [rbp - {var['off']}]\n"
         return reg
 
     def gen_block(self, block):
@@ -338,17 +372,62 @@ class Gen:
             self.stmt(stmt)
         self.env = tmp_env
 
-    def load_addr(self, var) -> Register:
-        reg = self.reg_manager.alloc_reg(RefTy(var['ty']))
+    def load_addr(self, var, is_arg=False) -> Register:
+        if is_arg:
+            reg = self.reg_manager.alloc_arg_reg(RefTy(var['ty']))
+        else:
+            reg = self.reg_manager.alloc_reg(RefTy(var['ty']))
         if not reg:
             assert False
         self.buf += f"    lea {reg.name}, {reg.ptr} ptr [rbp - {var['off']}]\n"
         return reg
 
+    def arg_expr(self, expr) -> Register:
+        match expr.kind:
+            case Literal(kind, value):
+                ty = None
+                match kind:
+                    case Lit.Int:
+                        ty = PrimTy(PrimTyKind.I64)
+                    case Lit.Float:
+                        ty = PrimTy(PrimTyKind.F64)
+                    case Lit.Str:
+                        ty = PrimTy(PrimTyKind.Str)
+                    case _:
+                        assert False, kind
+                reg = self.reg_manager.alloc_arg_reg(ty)
+                if not reg:
+                    assert False, "register overflow"
+                self.store(reg, Value(Immediate.from_lit(expr)))
+                return reg
+            case Unary(kind, expr):
+                match kind:
+                    case UnaryKind.AddrOf:
+                        var = self.env.find_local(expr.kind.name)
+                        return self.load_addr(var, True)
+                    case _:
+                        assert False, kind
+            case Ident(name):
+                var = self.env.find_local(name)
+                return self.load(var, True)
+            case Call(name, args):
+                floats = 0
+                for arg in args:
+                    reg = self.arg_expr(arg)
+                    floats += reg.is_vector
+                self.reg_manager.free_regs()
+                if floats:
+                    self.store(Register("rax", 4),
+                               Value(Immediate(Imm.Int, floats, 8)))
+                self.buf += f"    call {name}\n"
+                return Register("rax", 8)
+            case _:
+                assert False, expr.kind
+
     def expr(self, expr) -> Value:
         match expr.kind:
             case Literal(_):
-                return Value(Immediate.from_lit(expr.kind))
+                return Value(Immediate.from_lit(expr))
             case Unary(kind, expr):
                 match kind:
                     case UnaryKind.AddrOf:
@@ -360,8 +439,39 @@ class Gen:
                 var = self.env.find_local(name)
                 reg = self.load(var)
                 return Value(reg)
+            case Call(name, args):
+                floats = 0
+                for arg in args:
+                    reg = self.arg_expr(arg)
+                    floats += reg.is_vector
+                self.reg_manager.free_regs()
+                if floats:
+                    self.store(Register("rax", 4),
+                               Value(Immediate(Imm.Int, floats, 8)))
+                self.buf += f"    call {name}\n"
+                return Value(Register("rax", 8))
             case _:
                 assert False, expr.kind
+
+    def store(self, r0: Register, r1: Value):
+        match r := r1.kind:
+            case Register():
+                if r.is_vector:
+                    self.buf += f"    mov rax, {r.name}\n"
+                    self.buf += f"    mov {r0.name}, rax\n"
+                else:
+                    self.buf += f"    mov {r0.name}, {r.name}\n"
+            case Immediate(kind, value):
+                match kind:
+                    case Imm.Int:
+                        self.buf += f"    mov {r0.name}, {value}\n"
+                    case Imm.Str:
+                        label = self.data_sec.add_string(value)
+                        self.buf += f"    lea {r0.name}, [rip + {label}]\n"
+                    case _:
+                        assert False
+            case _:
+                assert False
 
     def stmt(self, stmt):
         match stmt.kind:
@@ -374,6 +484,10 @@ class Gen:
                         self.store_val(off, value)
                     case _:
                         assert False, value
+            case Break():
+                pass
+            case Expr():
+                self.expr(stmt.kind)
 
     def gen(self, nodes):
         for node in nodes:

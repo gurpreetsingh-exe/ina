@@ -224,24 +224,20 @@ class TyCheck:
                         self.check(left, expected_ty)
                         self.check(right, expected_ty)
             case Literal(kind, _):
-                val = None
-                match kind:
-                    case Lit.Int:
-                        val = PrimTyKind.I64
-                    case Lit.Float:
-                        val = PrimTyKind.F64
-                    case Lit.Bool:
-                        val = PrimTyKind.Bool
-                    case Lit.Str:
-                        val = PrimTyKind.Str
-                    case Lit.Char:
-                        val = PrimTyKind.Char
-                    case _:
-                        panic(f"unexpected literal {kind}")
-                ty = PrimTy(val)
-                if expected_ty and ty != expected_ty:
-                    self.add_err(TypesMismatchError(
-                        f"expected `{expected_ty}`, found `{ty}`"), span)
+                match expected_ty:
+                    case PrimTy(ty_kind):
+                        if kind is Lit.Int and ty_kind.is_int():
+                            pass
+                        elif kind is Lit.Float and ty_kind.is_float():
+                            pass
+                        elif kind is Lit.Str and ty_kind == PrimTyKind.Str:
+                            pass
+                        elif kind is Lit.Bool and ty_kind == PrimTyKind.Bool:
+                            pass
+                        else:
+                            self.add_err(TypesMismatchError(
+                                f"expected `{expected_ty}`, found `{kind.name.lower()}`"), span)
+                expr.ty = expected_ty
             case Call(name, args):
                 self.check_call(name, args, span, expected_ty)
             case Ident(name):

@@ -5,7 +5,6 @@ import pathlib
 import subprocess
 from ray import *
 from ast_lowering import IRGen, LoweringContext
-from codegen import CodegenContext, x86_64_gas
 
 
 def split_file(filepath):
@@ -41,17 +40,14 @@ def test_behavior(filepath):
     ast = list(parser.parse())
     tychk = TyCheck(ast)
     output = filepath.stem
-    if 1:
+    if 0:
         code = Codegen(ast, tychk.defs).emit()
         with open(f"{output}.asm", "w") as f:
             f.write(code)
         subprocess.call(["as", f"{output}.asm", "-o", f"{output}.o"])
         subprocess.call(["gcc", f"{output}.o", "-o", output])
     else:
-        ctx = LoweringContext(ast)
-        IRGen(ctx)
-        x86_64_gas(CodegenContext(
-            filepath, output), ctx)
+        Gen(ast, output).emit()
     proc = subprocess.Popen(
         [f"./{output}"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     lines = "".join([i.decode('utf-8') for i in proc.stdout.readlines()])
