@@ -1,7 +1,7 @@
 from __future__ import annotations
 from enum import Enum, auto
 from typing import Dict, Any, Tuple
-from Ast import *
+from ..Ast import *
 from math import log
 from dataclasses import dataclass
 import struct

@@ -1,7 +1,7 @@
 from sys import stderr
-from Token import Span
-from utils import File
-from Ast import Ty
+from .Token import Span
+from .utils import File
+from .Ast import Ty
 
 
 class Error:

@@ -1,8 +1,8 @@
 from __future__ import annotations
-from Ast import *
-from Token import *
-from utils import panic
-from Errors import *
+from ..Ast import *
+from ..Token import *
+from ..utils import panic
+from ..Errors import *
 from beeprint import pp
 
 

@@ -1,4 +1,4 @@
-from Ast import *
+from ..Ast import *
 
 cast = {
     Lit.Int: int,

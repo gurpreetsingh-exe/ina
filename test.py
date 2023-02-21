@@ -3,8 +3,7 @@
 import os
 import pathlib
 import subprocess
-from ray import *
-from ast_lowering import IRGen, LoweringContext
+from ray.driver.driver import *
 
 
 def split_file(filepath):
@@ -61,7 +60,7 @@ def test_behavior(filepath):
 
 
 def run_tests():
-    root = pathlib.Path(__file__).parent.parent
+    root = pathlib.Path(__file__).parent
     tests_dir = os.path.join(root, "tests")
     comp_fail = os.path.join(tests_dir, "compile_fail")
     behavior = os.path.join(tests_dir, "behavior")

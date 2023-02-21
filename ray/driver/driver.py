@@ -1,19 +1,15 @@
-#!/usr/bin/python
-
 from __future__ import annotations
-import sys
 from typing import Any, Dict, Tuple
 from beeprint import pp
 
-from Lexer import *
-from Ast import *
-from utils import *
-from Parser import Parser
-from tychk import TyCheck
-from ast_lowering import IRGen, LoweringContext
-from codegen.x86_64 import Gen
-from intrinsics import builtins_
-from constant_fold import ConstantFolder
+from ..front.Lexer import *
+from ..Ast import *
+from ..utils import *
+from ..front.Parser import Parser
+from ..sema.tychk import TyCheck
+from ..codegen.x86_64 import Gen
+from ..builtin.intrinsics import builtins_
+from ..optimize.constant_fold import ConstantFolder
 
 regs = ["rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8",
         "r9", "r10", "r11", "r12", "r13", "r14", "r15"]
@@ -695,7 +691,7 @@ class Command(Enum):
     Build = auto()
 
 
-def main(argv):
+def entry(argv):
     filename = ""
     arg0 = argv[0]
     argv = argv[1:]
@@ -775,7 +771,3 @@ def main(argv):
                         Gen(ast, output).emit()
                 case _:
                     assert False, "unreachable"
-
-
-if __name__ == "__main__":
-    main(sys.argv)

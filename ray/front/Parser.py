@@ -2,9 +2,9 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Generator, List
 
-from Ast import *
-from Token import *
-from utils import panic
+from ..Ast import *
+from ..Token import *
+from ..utils import panic
 
 
 def spanned(func):

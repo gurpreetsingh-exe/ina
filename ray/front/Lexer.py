@@ -1,7 +1,7 @@
 from __future__ import annotations
 from copy import deepcopy
 from typing import Generator
-from Token import *
+from ..Token import *
 
 
 def lexer_from_file(filepath: str) -> Lexer:

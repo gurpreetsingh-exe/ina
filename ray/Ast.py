@@ -1,8 +1,8 @@
 from __future__ import annotations
 from typing import List
 from enum import Enum, auto
-from utils import *
-from Token import TokenKind, Span
+from .utils import *
+from .Token import TokenKind, Span
 
 
 def get_ty(name) -> PrimTyKind | None:
