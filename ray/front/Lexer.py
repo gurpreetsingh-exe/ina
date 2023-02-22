@@ -18,7 +18,10 @@ class Lexer:
     def __init__(self, program: str, filepath: str):
         self.program = program
         self.loc = Loc(0, 0, filepath)
-        self.curr_char = self.program[self.loc.offset]
+        if self.program:
+            self.curr_char = self.program[self.loc.offset]
+        else:
+            self.curr_char = None
 
     def advance(self):
         self.loc.offset += 1
@@ -42,7 +45,6 @@ class Lexer:
     def lexfile(self) -> Generator:
         while self.curr_char:
             loc = deepcopy(self.loc)
-
             if self.curr_char == None:
                 yield Token(self.curr_char, loc)
                 break
@@ -89,10 +91,13 @@ class Lexer:
             elif self.curr_char in Punctuators:
                 prev = self.curr_char
                 self.advance()
+                if not self.curr_char:
+                    loc.len = self.loc.offset - loc.offset
+                    yield Token(Punctuators[prev], loc)
+                    continue
                 compound = prev + self.curr_char
-
                 if compound == "//":
-                    while self.curr_char != "\n":
+                    while self.curr_char and self.curr_char != "\n":
                         self.advance()
                     continue
                 elif compound == "..":
@@ -113,3 +118,6 @@ class Lexer:
 
             else:
                 assert False, f"unreachable {self.curr_char}"
+        else:
+            loc = deepcopy(self.loc)
+            yield Token(TokenKind.EOF, loc)

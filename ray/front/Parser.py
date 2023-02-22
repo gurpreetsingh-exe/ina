@@ -388,7 +388,8 @@ class Parser:
 
     def parse(self):
         self.advance()
-        assert self.t != None
+        if not self.t:
+            return []
         while self.check():
             match self.t.kind:
                 case TokenKind.Extern:
@@ -407,5 +408,7 @@ class Parser:
                     yield self.parse_const()
                 case TokenKind.Struct:
                     yield self.parse_struct()
+                case TokenKind.EOF:
+                    break
                 case _:
                     panic(f"{self.t.kind} not implemented")

@@ -76,8 +76,10 @@ class Immediate:
     @classmethod
     def from_lit(cls, expr):
         lit = expr.kind
-        from beeprint import pp
-        size = expr.ty.get_size()
+        if expr.ty:
+            size = expr.ty.get_size()
+        else:
+            size = 8
         match lit.kind:
             case Lit.Int:
                 return cls(Imm.Int, lit.value, size)
@@ -107,12 +109,16 @@ class RegisterManager:
     def free_regs(self) -> None:
         self.args.clear()
 
+    def free(self) -> None:
+        self.used.clear()
+
     def find_int_arg_reg(self) -> str | None:
         for reg in fn_arg_int_regs:
             if not reg in self.args:
                 return reg
 
     def find_int_reg(self) -> str | None:
+        print(self.used)
         for reg in int_regs:
             if not reg in self.used:
                 return reg
