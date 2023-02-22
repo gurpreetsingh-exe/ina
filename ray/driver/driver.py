@@ -10,6 +10,7 @@ from ..sema.tychk import TyCheck
 from ..codegen.x86_64 import Gen
 from ..builtin.intrinsics import builtins_
 from ..optimize.constant_fold import ConstantFolder
+from ..ast_lowering.IrGen import *
 
 regs = ["rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8",
         "r9", "r10", "r11", "r12", "r13", "r14", "r15"]
@@ -758,6 +759,9 @@ def entry(argv):
                     ConstantFolder(ast).fold()
                     if skip_codegen:
                         return
+                    ir = IRGen(ast).lower()
+                    for fn in ir:
+                        print(fn)
                     output = filename.split('.')[0]
                     if 0:
                         code = Codegen(ast, tychk.defs).emit()

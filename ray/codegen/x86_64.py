@@ -118,7 +118,6 @@ class RegisterManager:
                 return reg
 
     def find_int_reg(self) -> str | None:
-        print(self.used)
         for reg in int_regs:
             if not reg in self.used:
                 return reg
