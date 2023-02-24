@@ -7,3 +7,5 @@ __pycache__/
 *.o
 *.asm
 *.s
+*.dot
+*.png

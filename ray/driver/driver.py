@@ -11,6 +11,7 @@ from ..codegen.x86_64 import Gen
 from ..builtin.intrinsics import builtins_
 from ..optimize.constant_fold import ConstantFolder
 from ..ast_lowering.IrGen import *
+from ..ir.cfg_dump import dump_cfg
 
 regs = ["rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8",
         "r9", "r10", "r11", "r12", "r13", "r14", "r15"]
@@ -760,9 +761,9 @@ def entry(argv):
                     if skip_codegen:
                         return
                     ir = IRGen(ast).lower()
-                    for fn in ir:
-                        print(fn)
                     output = filename.split('.')[0]
+                    dump_cfg(ir, output)
+                    return
                     if 0:
                         code = Codegen(ast, tychk.defs).emit()
                         with open(f"{output}.asm", "w") as f:
