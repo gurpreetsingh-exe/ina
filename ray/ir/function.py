@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List
+from typing import List, Tuple
 from ..Ast import Ty
 from .inst import Value
 from .basic_block import BasicBlock
@@ -15,6 +15,14 @@ class FnDef:
         self.args = args
         self.ret_ty = ret_ty
         self.basic_blocks = basic_blocks
+
+    @property
+    def edges(self) -> List[Tuple[BasicBlock, BasicBlock]]:
+        edges_ = []
+        for a in self.basic_blocks:
+            for b in a.succ:
+                edges_.append((a, b, ))
+        return edges_
 
     def __str__(self) -> str:
         return "def {}({}) -> {} {{\n{}\n}}".format(

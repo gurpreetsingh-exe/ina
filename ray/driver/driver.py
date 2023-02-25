@@ -12,6 +12,7 @@ from ..builtin.intrinsics import builtins_
 from ..optimize.constant_fold import ConstantFolder
 from ..ast_lowering.IrGen import *
 from ..ir.cfg_dump import dump_cfg
+from ..ast_lowering.dominance_frontier import dominance_frontier
 
 regs = ["rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8",
         "r9", "r10", "r11", "r12", "r13", "r14", "r15"]
@@ -763,6 +764,7 @@ def entry(argv):
                     ir = IRGen(ast).lower()
                     output = filename.split('.')[0]
                     dump_cfg(ir, output)
+                    dominance_frontier(ir)
                     return
                     if 0:
                         code = Codegen(ast, tychk.defs).emit()
