@@ -24,7 +24,8 @@ class Env:
 
 
 class BasicBlockBuilder:
-    def __init__(self, instructions: List[Inst]) -> None:
+    def __init__(self, ctx: LoweringContext, instructions: List[Inst]) -> None:
+        self.ctx = ctx
         self.instructions = instructions
 
     def link_blocks(self, basic_blocks: List[BasicBlock]):
@@ -47,6 +48,7 @@ class BasicBlockBuilder:
         basic_blocks: List[BasicBlock] = []
         basic_blocks.append(BasicBlock([], [], []))
         for inst in self.instructions:
+            inst.parent = basic_blocks[-1]
             basic_blocks[-1].add(inst)
             match inst:
                 case Br() | Jmp():
@@ -55,12 +57,32 @@ class BasicBlockBuilder:
         return basic_blocks
 
 
+class LoweringContext:
+    def __init__(self) -> None:
+        # blocks containing definitions of a variable
+        self.defs: Dict[str, List[BasicBlock]] = {}
+
+        # blocks containing uses of a variable
+        self.uses: Dict[str, List[BasicBlock]] = {}
+
+    def add_def(self, name: str, block: BasicBlock):
+        if name not in self.defs:
+            self.defs[name] = []
+        self.defs[name].append(block)
+
+    def add_use(self, name: str, block: BasicBlock):
+        if name not in self.uses:
+            self.uses[name] = []
+        self.uses[name].append(block)
+
+
 class IRGen:
     def __init__(self, ast) -> None:
         self.ast = ast
         self.off = 0
         self.env = Env()
         self.instructions = []
+        self.ctx = LoweringContext()
         self._bb_id = 0
 
     def add_inst(self, inst: Inst) -> InstId:
@@ -74,6 +96,10 @@ class IRGen:
 
     def lower_expr(self, expr: Expr) -> Value:
         match expr.kind:
+            case Binary(kind, left, right):
+                l = self.lower_expr(left)
+                r = self.lower_expr(right)
+                return self.add_inst(Cmp(l, r, CmpKind.Lt))
             case Ident(name):
                 return self.add_inst(Load(self.env.find(name)))
             case If(cond, then, elze):
@@ -92,6 +118,11 @@ class IRGen:
                 return c
             case Literal():
                 return inst.Const.from_lit(expr.kind)
+            case Assign(Ident(name), init):
+                var = self.env.find(name)
+                p = self.lower_expr(init)
+                self.add_inst(Store(var, p, name))
+                return var
             case _:
                 assert False, expr.kind
 
@@ -99,8 +130,8 @@ class IRGen:
         match stmt.kind:
             case Let(name, ty, init):
                 p = self.lower_expr(init)
-                inst = self.add_inst(Alloc(ty, self.off))
-                self.add_inst(Store(inst, p))
+                inst = self.add_inst(Alloc(ty, self.off, name))
+                self.add_inst(Store(inst, p, name))
                 self.env.bind(name, inst)
             case Expr(_):
                 self.lower_expr(stmt.kind)
@@ -127,9 +158,9 @@ class IRGen:
                             ir_args.append(p)
                             if not is_extern:
                                 inst = self.add_inst(
-                                    Alloc(ty, self.off))
+                                    Alloc(ty, self.off, param))
                                 self.env.bindings[param] = inst
-                                self.add_inst(Store(inst, p))
+                                self.add_inst(Store(inst, p, param))
                         case Variadic():
                             ir_args.append(Inst("..."))
                 ret = ret_ty if ret_ty else PrimTy(PrimTyKind.Unit)
@@ -137,7 +168,8 @@ class IRGen:
                     return FnDecl(name, ir_args, ret)
                 if body:
                     self.lower_block(body)
-                basic_blocks = BasicBlockBuilder(self.instructions).run()
+                basic_blocks = BasicBlockBuilder(
+                    self.ctx, self.instructions).run()
                 self.instructions.clear()
                 return FnDef(name, ir_args, ret, basic_blocks)
 

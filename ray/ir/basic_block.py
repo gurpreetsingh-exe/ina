@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List
+from typing import Dict, List, Set
 from .inst import *
 
 
@@ -18,10 +18,18 @@ class BasicBlock:
         self.dominators: List[BasicBlock] = []
         self.dominance_frontiers: List[BasicBlock] = []
         self.idom: BasicBlock
+        self.live_ins: Set[Inst] = set()
+        self.live_outs: Set[Inst] = set()
         BasicBlock._id += 1
 
     def is_root(self) -> bool:
         return self.bb_id == 0
+
+    def uses(self, i: Inst) -> bool:
+        for inst in self.instructions:
+            if inst.uses(i):
+                return True
+        return False
 
     def add(self, inst: Inst):
         self.instructions.append(inst)
@@ -33,7 +41,10 @@ class BasicBlock:
         return block in self.dominators and self != block
 
     def __str__(self) -> str:
-        return "bb{}:\n{}".format(self.bb_id, "\n".join(map(str, self.instructions)))
+        return "\nbb{}:                             ; preds: {}\n{}".format(
+            self.bb_id,
+            ", ".join(map(lambda b: f"%bb{b.bb_id}", self.pred)),
+            "\n".join(map(str, self.instructions)))
 
     def __repr__(self) -> str:
         return "\033[1;31mbb{}\033[0m".format(self.bb_id)

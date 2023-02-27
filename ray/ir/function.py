@@ -1,7 +1,8 @@
 from __future__ import annotations
-from typing import List, Tuple
+from functools import reduce
+from typing import List, Set, Tuple
 from ..Ast import Ty
-from .inst import Value
+from .inst import Value, InstId
 from .basic_block import BasicBlock
 
 
