@@ -8,7 +8,7 @@ def dump_cfg(funcs: List[FnDef | FnDecl], output: str):
     for fn in funcs:
         match fn:
             case FnDef():
-                buf += "    node [shape = box fontname = monospace fontsize = 12]\n"
+                buf += "    node [shape = box fontname = monospace fontsize = 10]\n"
                 for block in fn.basic_blocks:
                     buf += "    bb{} [label = \"{}\" xlabel = \"bb{}\"]\n".format(
                         block.bb_id, "\\l".join(map(lambda i: str(i)[4:], block.instructions)) + "\\l", block.bb_id)

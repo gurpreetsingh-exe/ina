@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import List
 from ..Ast import Literal, Ty, BinaryKind, Lit
 from enum import Enum, auto
 from .basic_block import BasicBlock
@@ -6,18 +7,6 @@ from .basic_block import BasicBlock
 
 class Value:
     pass
-
-
-class InstId(Value):
-    def __init__(self, i: int) -> None:
-        self._i = i
-
-    @property
-    def i(self) -> int:
-        return self._i
-
-    def __repr__(self) -> str:
-        return f"%{self._i}"
 
 
 class Inst(Value):
@@ -29,6 +18,7 @@ class Inst(Value):
             Inst._id += 1
         self.name = name
         self.parent: BasicBlock
+        self.ty: Ty
 
     @classmethod
     def reset(cls):
@@ -40,13 +30,28 @@ class Inst(Value):
     def __str__(self) -> str:
         return "%{}".format(self.inst_id if not self.name else self.name)
 
+    def __repr__(self) -> str:
+        return "%{}".format(self.inst_id if not self.name else self.name)
+
 
 class Alloc(Inst):
     def __init__(self, ty: Ty, off: int, name: str) -> None:
         super().__init__()
         self.ty = ty
+        self.size = ty.get_size()
         self.off = off
         self.var_name = name
+        self.userz: List[Inst] = []
+
+    def users(self, basic_block: BasicBlock) -> List[Inst]:
+        users = set()
+        for inst in basic_block.instructions:
+            if inst.uses(self):
+                users.add(inst)
+        return list(users)
+
+    def remove_from_parent(self):
+        self.parent.instructions.remove(self)
 
     def uses(self, _: Inst) -> bool:
         return False
@@ -62,23 +67,27 @@ class Store(Inst):
         self.src = src
         self.var_name = name
 
-    def uses(self, _: Inst) -> bool:
-        return False
+    def uses(self, i: Inst) -> bool:
+        match self.src:
+            case IConst():
+                return self.dst == i
+            case _:
+                return self.dst == i or self.src == i
 
     def __str__(self) -> str:
-        return "    store {}, {}".format(self.dst, self.src)
+        return "    store {}, {}".format(repr(self.dst), repr(self.src))
 
 
 class Load(Inst):
-    def __init__(self, src: InstId) -> None:
+    def __init__(self, src: Inst) -> None:
         super().__init__()
         self.src = src
 
     def uses(self, i: Inst) -> bool:
-        return self.src.i == i.inst_id
+        return self.src == i
 
     def __str__(self) -> str:
-        return "    {} = load {}".format(super().__str__(), self.src)
+        return "    {} = load {}".format(super().__str__(), self.ty, repr(self.src))
 
 
 class CmpKind(Enum):
@@ -111,10 +120,10 @@ class Cmp(Inst):
         self.kind = kind
 
     def uses(self, i: Inst) -> bool:
-        return self.left.i == i.inst_id or self.right.i == i.inst_id
+        return self.left == i or self.right == i
 
     def __str__(self) -> str:
-        return "    {} = cmp {} {}, {}".format(super().__str__(), repr(self.kind), self.left, self.right)
+        return "    {} = cmp {} {}, {}".format(super().__str__(), repr(self.kind), repr(self.left), repr(self.right))
 
 
 class Br(Inst):
@@ -127,10 +136,10 @@ class Br(Inst):
         self.bfalse = bfalse
 
     def uses(self, i: Inst):
-        return self.cond.i == i.inst_id
+        return self.cond == i
 
     def __str__(self) -> str:
-        return "    br {}, %bb{}, %bb{}".format(self.cond, self.btrue, self.bfalse)
+        return "    br {}, %bb{}, %bb{}".format(repr(self.cond), self.btrue, self.bfalse)
 
 
 class Jmp(Inst):
@@ -178,24 +187,26 @@ class ConstKind(Enum):
     Bool = auto()
 
 
-class Const(Value):
+class IConst(Value):
     def __init__(self, kind, value) -> None:
         self.kind = kind
         self.value = value
 
     @staticmethod
-    def from_lit(lit: Literal) -> Const:
+    def from_lit(lit: Literal) -> IConst:
         match lit.kind:
             case Lit.Int:
-                return Const(ConstKind.Int, lit.value)
+                return IConst(ConstKind.Int, lit.value)
             case Lit.Float:
-                return Const(ConstKind.Float, lit.value)
+                return IConst(ConstKind.Float, lit.value)
             case Lit.Str:
-                return Const(ConstKind.Str, lit.value)
+                return IConst(ConstKind.Str, lit.value)
             case Lit.Bool:
-                return Const(ConstKind.Bool, lit.value)
+                return IConst(ConstKind.Bool, lit.value)
             case _:
                 assert False, lit.kind
 
     def __str__(self) -> str:
         return self.value
+
+    __repr__ = __str__

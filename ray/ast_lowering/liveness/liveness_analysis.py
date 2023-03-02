@@ -1,50 +1,9 @@
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Tuple
 from itertools import chain
 from ...ir.basic_block import BasicBlock
 from ...ir.function import FnDef
 from ...ir.inst import *
 from ..dominance_frontier import postorder
-
-"""
-/// Partial liveness, with post-order traversal.
-
-Function DAG_DFS(block B )
-    foreach S ∈ succs(B ) such that (B ,S ) is not a back-edge do
-        if S is unprocessed then DAG_DFS(S )
-    Live ← PhiUses(B )
-    foreach S ∈ succs(B ) such that (B ,S ) is not a back-edge do
-        Live ← Live ∪ (LiveIn(S ) \\ PhiDefs(S ))
-    LiveOut(B ) ← Live
-    foreach program point p in B , backwards, do
-        remove variables defined at p from Live
-        add uses at p to Live
-    LiveIn(B ) ← Live ∪ PhiDefs(B )
-    mark B as processed
-"""
-
-
-def up_and_mark(block: BasicBlock, var: Inst):
-    for inst in block.instructions:
-        match inst:
-            case Store():
-                dst = inst.dst
-                assert isinstance(dst, InstId)
-                # killed in block
-                if dst.i == var.inst_id:
-                    return
-
-    if var in block.live_ins:
-        return
-    block.live_ins.add(var)
-    for p in block.pred:
-        p.live_outs.add(var)
-        up_and_mark(p, var)
-
-
-class LiveInterval:
-    def __init__(self) -> None:
-        self.start: int
-        self.end: int
 
 
 def liveness(fn: FnDef):
@@ -58,28 +17,13 @@ def liveness(fn: FnDef):
                     defs[b].add(i)
 
     live_in: Dict[BasicBlock, Set[Inst]] = {b: set() for b in fn.basic_blocks}
-    live_intervals: Dict[Inst, List[LiveInterval]] = {}
-    """
-    for v in chain(*defs.values()):
-        for b in fn.basic_blocks:
-            if v in defs[b]:
-                continue
-            for p in b.instructions:
-                if p.uses(v):
-                    live_in[b].add(v)
-    """
     for v in chain(*defs.values()):
         for b in postorder(fn.basic_blocks[0]):
             if v in defs[b]:
                 continue
             for p in b.instructions:
                 if p.uses(v):
-                    if v not in live_intervals:
-                        live_intervals[v] = []
-                        live_intervals[v].append(LiveInterval())
                     live_in[b].add(v)
-                    live_intervals[v][-1].start = b.instructions.index(p)
-    print(live_intervals)
 
     print("LiveIn:")
     for b, uses in live_in.items():
@@ -88,17 +32,6 @@ def liveness(fn: FnDef):
             map(lambda a: f"%{a.inst_id}", list(uses)))))
 
     live_out: Dict[BasicBlock, Set[Inst]] = {b: set() for b in fn.basic_blocks}
-    """
-    for v in chain(*defs.values()):
-        for b in fn.basic_blocks:
-            for p in postorder(b):
-                if p == b or v in defs[p]:
-                    continue
-                if p.uses(v):
-                    if v.inst_id == 17:
-                        print(p.bb_id, v)
-                    live_out[b].add(v)
-    """
     for v in chain(*defs.values()):
         for b in postorder(fn.basic_blocks[0]):
             for p in b.succ:
@@ -125,23 +58,186 @@ def compute_liveness_sets(basic_blocks: List[BasicBlock]):
             map(lambda a: f"%{a.inst_id}", basic_block.live_outs))))
 
 
-def dag_dfs(block: BasicBlock):
-    blocks = postorder(block)
-    blocks.remove(block)
-    for s in blocks:
-        if s.processed:
+class LargeBlockInfo:
+    def __init__(self) -> None:
+        self.inst_index: Dict[Inst, int] = {}
+
+    def get_inst_index(self, inst: Inst) -> int:
+        if inst in self.inst_index:
+            return self.inst_index[inst]
+        for i, bbi in enumerate(inst.parent.instructions):
+            match bbi:
+                case Load() | Store():
+                    self.inst_index[bbi] = i
+        assert inst in self.inst_index, "insertion failed"
+        return self.inst_index[inst]
+
+
+class AllocInfo:
+    def __init__(self) -> None:
+        # Blocks where alloc is used
+        self.using: List[BasicBlock] = []
+        # Blocks where alloc is defined
+        self.defs: List[BasicBlock] = []
+
+        self.only_used_in_one_block = True
+        self.only_block: BasicBlock | None = None
+        self.only_store: Store | None = None
+
+    def analyze(self, alloc: Alloc, fn: FnDef):
+        users = set()
+        for basic_block in fn.basic_blocks:
+            for i in alloc.users(basic_block):
+                users.add(i)
+        alloc.userz += users
+
+        for user in users:
+            match user:
+                case Load():
+                    if user.parent not in self.using:
+                        self.using.append(user.parent)
+                case Store():
+                    if user.parent not in self.defs:
+                        self.defs.append(user.parent)
+                        self.only_store = user
+            if self.only_used_in_one_block:
+                if not self.only_block:
+                    self.only_block = user.parent
+                elif self.only_block != user.parent:
+                    self.only_used_in_one_block = False
+
+
+def rewrite_single_store_alloc(alloc: Alloc, info: AllocInfo, large_block_info: LargeBlockInfo):
+    only_store = info.only_store
+    assert only_store != None
+    store_block = only_store.parent
+    store_index = -1
+    info.using.clear()
+
+    for user_inst in alloc.userz:
+        if user_inst == only_store:
             continue
-        dag_dfs(s)
+        load_inst = user_inst
+        if load_inst.parent:
+            if store_index == -1:
+                store_index = large_block_info.get_inst_index(only_store)
 
-    live = set()
-    for b in blocks:
-        if b.processed:
+            if store_index > large_block_info.get_inst_index(load_inst):
+                info.using.append(store_block)
+                continue
+        elif not store_block.dominates(load_inst.parent):
+            info.using.append(load_inst.parent)
             continue
-        live_in = set([i for i in b.instructions if b.uses(i)])
-        print(live_in)
-        live.add(live_in)
 
-    print("  LiveOut(bb{}) = {{{}}}".format(block.bb_id, ", ".join(
-        map(lambda a: f"%{a.inst_id}", list(live)))))
+        repl_val = only_store.dst
+        if repl_val == load_inst:
+            repl_val = PoisonValue()
+    return False
 
-    block.processed = True
+
+def promote_single_block_alloc(alloc: Alloc, info: AllocInfo, large_block_info: LargeBlockInfo):
+    store_by_index: List[Tuple[int, Store]] = []
+    for user in alloc.userz:
+        match user:
+            case Store():
+                store_by_index.append(
+                    (large_block_info.get_inst_index(user), user))
+    for user in alloc.userz:
+        load = user
+        if not isinstance(load, Load):
+            continue
+        load_index = large_block_info.get_inst_index(load)
+    return True
+
+
+def compute_livein_blocks(alloc: Alloc, info: AllocInfo, defs: List[BasicBlock], live_ins: List[BasicBlock]):
+    live_in_work_list = list(info.defs)
+    i = 0
+    while i != len(live_in_work_list):
+        bb = live_in_work_list[i]
+        if bb not in defs:
+            i += 1
+            continue
+        for inst in bb.instructions:
+            match inst:
+                case Store():
+                    if inst.src != alloc:
+                        continue
+                    live_in_work_list[i] = live_in_work_list[-1]
+                    live_in_work_list.pop()
+                    i -= 1
+                case Load():
+                    if inst.src == alloc:
+                        break
+        i += 1
+
+    while live_in_work_list:
+        bb = live_in_work_list.pop()
+        if bb not in live_ins:
+            live_ins.append(bb)
+            continue
+        for p in bb.pred:
+            if p not in defs:
+                continue
+            live_in_work_list.append(p)
+
+
+def get_phi_blocks(defs: List[BasicBlock], live_ins: List[BasicBlock]) -> List[BasicBlock]:
+    W: Set[BasicBlock] = set(defs)
+    F: Set[BasicBlock] = set()
+    while W:
+        X = W.pop()
+        for Y in X.dominance_frontiers:
+            F.add(Y)
+    return list(F)
+
+
+def queue_phi_node(bb: BasicBlock, alloc: Alloc, current_version: int):
+    # bb.instructions.insert(0, Phi(bb.bb_id, alloc.parent.bb_id))
+    pass
+
+
+def promote_mem_to_reg(fn: FnDef, allocs: List[Alloc]):
+    info = AllocInfo()
+    large_block_info = LargeBlockInfo()
+    alloc_lookup: Dict[Alloc, int] = {}
+    for i, alloc in enumerate(allocs):
+        info.analyze(alloc, fn)
+        if not alloc.userz:
+            alloc.remove_from_parent()
+            allocs.remove(alloc)
+            continue
+        if len(info.defs) == 1:
+            if rewrite_single_store_alloc(alloc, info, large_block_info):
+                allocs.remove(alloc)
+                continue
+        if info.only_used_in_one_block and promote_single_block_alloc(alloc, info, large_block_info):
+            allocs.remove(alloc)
+            continue
+
+        alloc_lookup[alloc] = i
+        defs: List[BasicBlock] = list(info.defs)
+        live_ins = []
+        compute_livein_blocks(alloc, info, defs, live_ins)
+        current_version = 0
+        for bb in get_phi_blocks(defs, live_ins):
+            queue_phi_node(bb, alloc, current_version)
+    if not allocs:
+        return
+    for alloc in allocs:
+        if alloc.userz:
+            for user in alloc.userz:
+                bb = user.parent
+                bb.instructions.remove(user)
+        alloc.remove_from_parent()
+
+
+def mem2reg(fn: FnDef):
+    allocs: List[Alloc] = []
+    basic_block: BasicBlock = fn.basic_blocks[0]
+    for basic_block in fn.basic_blocks:
+        for inst in basic_block.instructions:
+            match inst:
+                case Alloc():
+                    allocs.append(inst)
+    promote_mem_to_reg(fn, allocs)

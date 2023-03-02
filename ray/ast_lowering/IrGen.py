@@ -9,12 +9,12 @@ from ..ir import inst
 class Env:
     def __init__(self, parent: Env | None = None) -> None:
         self.parent = parent
-        self.bindings: Dict[str, InstId] = {}
+        self.bindings: Dict[str, Inst] = {}
 
-    def bind(self, name: str, inst: InstId):
+    def bind(self, name: str, inst: Inst):
         self.bindings[name] = inst
 
-    def find(self, name: str) -> InstId:
+    def find(self, name: str) -> Inst:
         if name in self.bindings:
             return self.bindings[name]
         elif self.parent:
@@ -85,9 +85,9 @@ class IRGen:
         self.ctx = LoweringContext()
         self._bb_id = 0
 
-    def add_inst(self, inst: Inst) -> InstId:
+    def add_inst(self, inst: Inst) -> Inst:
         self.instructions.append(inst)
-        return InstId(inst.inst_id)
+        return inst
 
     @property
     def bb_id(self):
@@ -99,25 +99,29 @@ class IRGen:
             case Binary(kind, left, right):
                 l = self.lower_expr(left)
                 r = self.lower_expr(right)
-                return self.add_inst(Cmp(l, r, CmpKind.Lt))
+                binary = Cmp(l, r, CmpKind.Lt)
+                return self.add_inst(binary)
             case Ident(name):
-                return self.add_inst(Load(self.env.find(name)))
+                bind = self.env.find(name)
+                load = Load(bind)
+                load.ty = bind.ty
+                return self.add_inst(load)
             case If(cond, then, elze):
                 c = self.lower_expr(cond)
                 btrue = self.bb_id
                 br_id = self.add_inst(Br(c, btrue, 0))
                 self.lower_block(then)
                 bfalse = self.bb_id
-                self.instructions[br_id.i].bfalse = bfalse
+                self.instructions[br_id.inst_id].bfalse = bfalse
                 jmp = self.add_inst(Jmp(bfalse))
                 if elze:
                     self.lower_block(elze)
                     bb_id = self.bb_id
-                    self.instructions[jmp.i].br_id = bb_id
+                    self.instructions[jmp.inst_id].br_id = bb_id
                     self.add_inst(Jmp(bb_id))
                 return c
             case Literal():
-                return inst.Const.from_lit(expr.kind)
+                return inst.IConst.from_lit(expr.kind)
             case Assign(Ident(name), init):
                 var = self.env.find(name)
                 p = self.lower_expr(init)
@@ -130,6 +134,8 @@ class IRGen:
         match stmt.kind:
             case Let(name, ty, init):
                 p = self.lower_expr(init)
+                size = ty.get_size()
+                self.off = (self.off + size * 2 - 1) & ~(size - 1)
                 inst = self.add_inst(Alloc(ty, self.off, name))
                 self.add_inst(Store(inst, p, name))
                 self.env.bind(name, inst)

@@ -27,7 +27,8 @@ def get_ty(name) -> PrimTyKind | None:
 
 
 class Ty:
-    pass
+    def get_size(self) -> int:
+        raise NotImplemented()
 
 
 class PrimTyKind(Enum):

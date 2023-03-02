@@ -1,12 +1,13 @@
 from __future__ import annotations
-from functools import reduce
-from typing import List, Set, Tuple
+from typing import List, Tuple
 from ..Ast import Ty
-from .inst import Value, InstId
+from .inst import Value
 from .basic_block import BasicBlock
 
 
 class FnDef:
+    __match_args__ = ('name', 'args', 'ret_ty', 'basic_blocks')
+
     def __init__(self,
                  name: str,
                  args: List[Value],

@@ -13,7 +13,7 @@ from ..optimize.constant_fold import ConstantFolder
 from ..ast_lowering.IrGen import *
 from ..ir.cfg_dump import dump_cfg
 from ..ast_lowering.dominance_frontier import dominance_frontier
-from ..ast_lowering.liveness.liveness_analysis import liveness, compute_liveness_sets
+from ..ast_lowering.liveness.liveness_analysis import liveness, compute_liveness_sets, mem2reg
 
 regs = ["rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8",
         "r9", "r10", "r11", "r12", "r13", "r14", "r15"]
@@ -770,12 +770,10 @@ def entry(argv):
                     for fn in ir:
                         match fn:
                             case FnDef():
-                                liveness(fn)
-                                print()
+                                # liveness(fn)
                                 # compute_liveness_sets(fn.basic_blocks)
+                                # mem2reg(fn)
                                 print(fn)
-
-                    return
                     if 0:
                         code = Codegen(ast, tychk.defs).emit()
                         with open(f"{output}.asm", "w") as f:
@@ -785,6 +783,6 @@ def entry(argv):
                         call(["as", f"{output}.asm", "-o", f"{output}.o"])
                         call(["gcc", f"{output}.o", "-o", output])
                     else:
-                        Gen(ast, output).emit()
+                        Gen(ir, output).emit()
                 case _:
                     assert False, "unreachable"
