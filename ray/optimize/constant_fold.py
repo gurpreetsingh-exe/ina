@@ -52,6 +52,9 @@ class ConstantFolder:
                                         cast_ty(lvalue) != cast_ty(rvalue)))
                                 case _:
                                     assert False
+                    case _, Binary():
+                        expr.kind.left = right
+                        expr.kind.right = left
                     case _, _:
                         pass
             case Call(_, args):

@@ -87,12 +87,14 @@ class Load(Inst):
         return self.src == i
 
     def __str__(self) -> str:
-        return "    {} = load {}".format(super().__str__(), self.ty, repr(self.src))
+        return "    {} = load {}".format(super().__str__(), repr(self.src))
 
 
 class CmpKind(Enum):
     Lt = auto()
     Gt = auto()
+    Eq = auto()
+    NotEq = auto()
 
     @staticmethod
     def from_binary(kind: BinaryKind):
@@ -101,8 +103,12 @@ class CmpKind(Enum):
                 return CmpKind.Lt
             case BinaryKind.Gt:
                 return CmpKind.Gt
+            case BinaryKind.Eq:
+                return CmpKind.Eq
+            case BinaryKind.NotEq:
+                return CmpKind.NotEq
             case _:
-                assert False
+                assert False, kind
 
     def __repr__(self) -> str:
         match self:
@@ -110,6 +116,10 @@ class CmpKind(Enum):
                 return "lt"
             case CmpKind.Gt:
                 return "gt"
+            case CmpKind.Eq:
+                return "eq"
+            case CmpKind.NotEq:
+                return "noteq"
 
 
 class Cmp(Inst):
@@ -124,6 +134,49 @@ class Cmp(Inst):
 
     def __str__(self) -> str:
         return "    {} = cmp {} {}, {}".format(super().__str__(), repr(self.kind), repr(self.left), repr(self.right))
+
+
+class Bin(Inst):
+    def __init__(self, left: Value, right: Value) -> None:
+        super().__init__()
+        self.left = left
+        self.right = right
+
+    def uses(self, i: Inst) -> bool:
+        return self.left == i or self.right == i
+
+    def __str__(self) -> str:
+        return "    {} = {} {}, {}".format(super().__str__(), self.inst_name, repr(self.left), repr(self.right))
+
+
+class Add(Bin):
+    def __init__(self, left: Value, right: Value) -> None:
+        super().__init__(left, right)
+        self.inst_name = "add"
+
+
+class Sub(Bin):
+    def __init__(self, left: Value, right: Value) -> None:
+        super().__init__(left, right)
+        self.inst_name = "sub"
+
+
+class Mul(Bin):
+    def __init__(self, left: Value, right: Value) -> None:
+        super().__init__(left, right)
+        self.inst_name = "mul"
+
+
+class Div(Bin):
+    def __init__(self, left: Value, right: Value) -> None:
+        super().__init__(left, right)
+        self.inst_name = "div"
+
+
+class Mod(Bin):
+    def __init__(self, left: Value, right: Value) -> None:
+        super().__init__(left, right)
+        self.inst_name = "mod"
 
 
 class Br(Inst):

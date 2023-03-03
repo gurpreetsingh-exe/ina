@@ -37,6 +37,14 @@ class RegisterKind:
     xmm7 = "xmm7"
 
 
+cmp = {
+    CmpKind.Lt: "setl",
+    CmpKind.Gt: "setg",
+    CmpKind.Eq: "sete",
+    CmpKind.NotEq: "setne",
+}
+
+
 class Register:
     def __init__(self, kind: str, size: int = 8) -> None:
         self.size = size
@@ -119,7 +127,9 @@ used_regs = []
 def alloc_reg(size) -> Register:
     for reg in int_regs:
         if reg not in used_regs:
+            used_regs.append(reg)
             return Register(reg, size)
+    raise NotImplemented("TODO: spill register")
 
 
 class Gen:
@@ -131,19 +141,19 @@ class Gen:
         self.fn_ctx = None
         self.label_manager = LabelManager()
         self.data_sec = DataSection(self.label_manager)
+        self.reg_map: Dict[Value, Register] = {}
 
     def render_val(self, val: Register | IConst | None) -> str:
         match val:
             case Register():
                 return val.name
-            case Value():
-                match val:
-                    case IConst():
-                        return val.value
-                    case _:
-                        assert False, val
+            case IConst():
+                match val.kind:
+                    case ConstKind.Bool:
+                        return str(int(bool(val.value)))
+                return val.value
             case _:
-                assert False
+                assert False, val
 
     def gen_val(self, val: Value) -> Register | IConst | None:
         match val:
@@ -157,6 +167,15 @@ class Gen:
     def size_to_ptr(self, size) -> str:
         return {1: "byte", 2: "word", 4: "dword", 8: "qword"}[size]
 
+    def lookup(self, val: Value) -> Register | IConst:
+        match val:
+            case Inst():
+                return self.reg_map[val]
+            case IConst():
+                return val
+            case _:
+                assert False
+
     def gen_inst(self, inst: Inst) -> Register | IConst | None:
         match inst:
             case Alloc():
@@ -165,13 +184,30 @@ class Gen:
                 alloc = inst.src
                 assert isinstance(alloc, Alloc)
                 reg = alloc_reg(alloc.size)
-                used_regs.clear()
                 self.buf += f"    mov {reg.name}, {self.size_to_ptr(alloc.size)} [rbp - {alloc.off}]\n"
+                self.reg_map[inst] = reg
+                return reg
             case Store():
                 alloc = inst.dst
                 assert isinstance(alloc, Alloc)
-                val = self.gen_val(inst.src)
+                val = self.lookup(inst.src)
                 self.buf += f"    mov {self.size_to_ptr(alloc.size)} ptr [rbp - {alloc.off}], {self.render_val(val)}\n"
+            case Cmp():
+                l = self.lookup(inst.left)
+                r = self.lookup(inst.right)
+                used_regs.pop()
+                self.buf += f"    cmp {self.render_val(l)}, {self.render_val(r)}\n"
+                assert isinstance(l, Register)
+                l.size = 1
+                self.buf += f"    {cmp[inst.kind]} {self.render_val(l)}\n"
+                self.reg_map[inst] = l
+            case Add() | Sub():
+                l = self.lookup(inst.left)
+                r = self.lookup(inst.right)
+                used_regs.pop()
+                self.buf += f"    {inst.inst_name} {self.render_val(l)}, {self.render_val(r)}\n"
+                assert isinstance(l, Register)
+                self.reg_map[inst] = l
             case Jmp():
                 self.buf += f"    jmp .LBB_{inst.br_id}\n"
             case _:

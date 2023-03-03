@@ -99,7 +99,21 @@ class IRGen:
             case Binary(kind, left, right):
                 l = self.lower_expr(left)
                 r = self.lower_expr(right)
-                binary = Cmp(l, r, CmpKind.Lt)
+                match kind:
+                    case BinaryKind.Lt | BinaryKind.Gt | BinaryKind.Eq | BinaryKind.NotEq:
+                        binary = Cmp(l, r, CmpKind.from_binary(kind))
+                    case BinaryKind.Add:
+                        binary = Add(l, r)
+                    case BinaryKind.Sub:
+                        binary = Sub(l, r)
+                    case BinaryKind.Mul:
+                        binary = Mul(l, r)
+                    case BinaryKind.Div:
+                        binary = Div(l, r)
+                    case BinaryKind.Mod:
+                        binary = Mod(l, r)
+                    case _:
+                        assert False
                 return self.add_inst(binary)
             case Ident(name):
                 bind = self.env.find(name)

@@ -553,7 +553,6 @@ class Codegen:
                                         ptr, reg = self.reg_from_sz(
                                             regs[i], f.ty.get_size())
                                         self.buf += f"    mov {ptr} [rbp - {f.offset}], {reg}\n"
-                                        print(f.offset)
                                 case _:
                                     ptr, reg = self.reg_from_sz("rax", sz)
                                     self.buf += f"    mov {ptr} [rbp - {off}], {reg}\n"
@@ -767,13 +766,6 @@ def entry(argv):
                     output = filename.split('.')[0]
                     dominance_frontier(ir)
                     dump_cfg(ir, output)
-                    for fn in ir:
-                        match fn:
-                            case FnDef():
-                                # liveness(fn)
-                                # compute_liveness_sets(fn.basic_blocks)
-                                # mem2reg(fn)
-                                print(fn)
                     if 0:
                         code = Codegen(ast, tychk.defs).emit()
                         with open(f"{output}.asm", "w") as f:
