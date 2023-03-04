@@ -1,6 +1,5 @@
 from __future__ import annotations
-from enum import Enum, auto
-from typing import Dict, Any, Tuple
+from typing import Dict
 from ..ir.function import *
 from ..ir.inst import *
 from ..ir.basic_block import *
@@ -42,6 +41,13 @@ cmp = {
     CmpKind.Gt: "setg",
     CmpKind.Eq: "sete",
     CmpKind.NotEq: "setne",
+}
+
+jmp = {
+    CmpKind.Lt: "jge",
+    CmpKind.Gt: "jle",
+    CmpKind.Eq: "je",
+    CmpKind.NotEq: "jne",
 }
 
 
@@ -132,6 +138,14 @@ def alloc_reg(size) -> Register:
     raise NotImplemented("TODO: spill register")
 
 
+def alloc_arg_reg(size) -> Register:
+    for reg in fn_arg_int_regs:
+        if reg not in used_regs:
+            used_regs.append(reg)
+            return Register(reg, size)
+    raise NotImplemented("TODO: spill register")
+
+
 class Gen:
     def __init__(self, ir: List[FnDef | FnDecl], output) -> None:
         self.ir = ir
@@ -151,18 +165,14 @@ class Gen:
                 match val.kind:
                     case ConstKind.Bool:
                         return str(int(bool(val.value)))
+                    case ConstKind.Str:
+                        reg = alloc_reg(8)
+                        label = self.data_sec.add_string(val.value)
+                        self.buf += f"    lea {reg.name}, [rip + {label}]\n"
+                        return reg.name
                 return val.value
             case _:
                 assert False, val
-
-    def gen_val(self, val: Value) -> Register | IConst | None:
-        match val:
-            case Inst():
-                return self.gen_inst(val)
-            case IConst():
-                return val
-            case _:
-                assert False
 
     def size_to_ptr(self, size) -> str:
         return {1: "byte", 2: "word", 4: "dword", 8: "qword"}[size]
@@ -176,6 +186,12 @@ class Gen:
             case _:
                 assert False
 
+    def eval_const(self, const: IConst, func) -> IConst:
+        match const.kind:
+            case ConstKind.Int:
+                const.value = func(int(const.value))
+        return const
+
     def gen_inst(self, inst: Inst) -> Register | IConst | None:
         match inst:
             case Alloc():
@@ -184,32 +200,51 @@ class Gen:
                 alloc = inst.src
                 assert isinstance(alloc, Alloc)
                 reg = alloc_reg(alloc.size)
-                self.buf += f"    mov {reg.name}, {self.size_to_ptr(alloc.size)} [rbp - {alloc.off}]\n"
+                self.buf += f"    mov {reg.name}, {self.size_to_ptr(alloc.size)} ptr [rbp - {alloc.off}]\n"
                 self.reg_map[inst] = reg
                 return reg
             case Store():
                 alloc = inst.dst
                 assert isinstance(alloc, Alloc)
                 val = self.lookup(inst.src)
-                self.buf += f"    mov {self.size_to_ptr(alloc.size)} ptr [rbp - {alloc.off}], {self.render_val(val)}\n"
+                rendered_val = self.render_val(val)
+                self.buf += f"    mov {self.size_to_ptr(alloc.size)} ptr [rbp - {alloc.off}], {rendered_val}\n"
             case Cmp():
                 l = self.lookup(inst.left)
                 r = self.lookup(inst.right)
-                used_regs.pop()
-                self.buf += f"    cmp {self.render_val(l)}, {self.render_val(r)}\n"
+                used_regs.clear()
+                rendered_left = self.render_val(l)
+                rendered_right = self.render_val(r)
+                self.buf += f"    cmp {rendered_left}, {rendered_right}\n"
                 assert isinstance(l, Register)
                 l.size = 1
-                self.buf += f"    {cmp[inst.kind]} {self.render_val(l)}\n"
+                r = self.render_val(l)
+                self.buf += f"    {cmp[inst.kind]} {r}\n"
                 self.reg_map[inst] = l
             case Add() | Sub():
                 l = self.lookup(inst.left)
                 r = self.lookup(inst.right)
-                used_regs.pop()
-                self.buf += f"    {inst.inst_name} {self.render_val(l)}, {self.render_val(r)}\n"
+                used_regs.clear()
+                rendered_left = self.render_val(l)
+                rendered_right = self.render_val(r)
+                self.buf += f"    {inst.inst_name} {rendered_left}, {rendered_right}\n"
                 assert isinstance(l, Register)
                 self.reg_map[inst] = l
             case Jmp():
                 self.buf += f"    jmp .LBB_{inst.br_id}\n"
+            case Br():
+                match inst.cond:
+                    case Cmp():
+                        self.buf += f"    {jmp[inst.cond.kind]} .LBB_{inst.bfalse}\n"
+                    case _:
+                        pass
+            case FnCall():
+                for arg in inst.args:
+                    reg = alloc_arg_reg(8)
+                    rendered_arg = self.render_val(self.lookup(arg))
+                    self.buf += f"    mov {reg.name}, {rendered_arg}\n"
+                self.buf += f"    call {inst.fn_name}\n"
+                used_regs.clear()
             case _:
                 assert False, inst
 
@@ -246,6 +281,8 @@ class Gen:
                             self.buf += f"    xor rax, rax\n"
                     self.buf += "    pop rbp\n"
                     self.buf += "    ret\n"
+                case FnDecl():
+                    pass
                 case _:
                     assert False, f"{node} is not implemented"
 

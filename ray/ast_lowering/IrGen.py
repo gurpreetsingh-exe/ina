@@ -141,6 +141,9 @@ class IRGen:
                 p = self.lower_expr(init)
                 self.add_inst(Store(var, p, name))
                 return var
+            case Call(name, args):
+                lowered_args = [self.lower_expr(arg) for arg in args]
+                return self.add_inst(FnCall(name, lowered_args))
             case _:
                 assert False, expr.kind
 
@@ -163,11 +166,14 @@ class IRGen:
         self.env = Env(tmp)
         for stmt in block.stmts:
             self.lower_stmt(stmt)
+        if block.expr:
+            self.lower_expr(block.expr)
         self.env = tmp
 
     def lower_fn(self, fn: Fn) -> FnDef | FnDecl:
         match fn:
             case Fn(name, args, ret_ty, body, is_extern, abi):
+                self.off = 0
                 ir_args = []
                 for arg in args:
                     match arg:

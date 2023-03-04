@@ -763,9 +763,11 @@ def entry(argv):
                         return
                     gen = IRGen(ast)
                     ir = gen.lower()
+                    for f in ir:
+                        print(f)
                     output = filename.split('.')[0]
                     dominance_frontier(ir)
-                    dump_cfg(ir, output)
+                    # dump_cfg(ir, output)
                     if 0:
                         code = Codegen(ast, tychk.defs).emit()
                         with open(f"{output}.asm", "w") as f:

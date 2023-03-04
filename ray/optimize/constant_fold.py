@@ -52,6 +52,16 @@ class ConstantFolder:
                                         cast_ty(lvalue) != cast_ty(rvalue)))
                                 case _:
                                     assert False
+                    case Literal(), _:
+                        comp = [BinaryKind.Lt, BinaryKind.Gt]
+                        if kind in comp:
+                            match kind:
+                                case BinaryKind.Lt:
+                                    expr.kind.kind = BinaryKind.Gt
+                                case BinaryKind.Gt:
+                                    expr.kind.kind = BinaryKind.Lt
+                            expr.kind.left = right
+                            expr.kind.right = left
                     case _, Binary():
                         expr.kind.left = right
                         expr.kind.right = left
@@ -76,6 +86,8 @@ class ConstantFolder:
                     stmt.kind.init = self.fold_expr(init)
                 case Expr(_):
                     self.fold_expr(stmt.kind)
+        if block.expr:
+            self.fold_expr(block.expr)
 
     def fold(self):
         for node in self.ast:

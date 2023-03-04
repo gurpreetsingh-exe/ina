@@ -6,7 +6,8 @@ from .basic_block import BasicBlock
 
 
 class Value:
-    pass
+    def uses(self, _: Inst):
+        raise NotImplemented()
 
 
 class Inst(Value):
@@ -88,6 +89,19 @@ class Load(Inst):
 
     def __str__(self) -> str:
         return "    {} = load {}".format(super().__str__(), repr(self.src))
+
+
+class FnCall(Inst):
+    def __init__(self, name: str, args: List[Value]) -> None:
+        super().__init__()
+        self.fn_name = name
+        self.args = args
+
+    def uses(self, i: Inst) -> bool:
+        return any(map(lambda arg: arg.uses(i), self.args))
+
+    def __str__(self) -> str:
+        return "    {} = call {} ({})".format(super().__str__(), self.fn_name, ", ".join(map(repr, self.args)))
 
 
 class CmpKind(Enum):
@@ -258,6 +272,9 @@ class IConst(Value):
                 return IConst(ConstKind.Bool, lit.value)
             case _:
                 assert False, lit.kind
+
+    def uses(self, _: Inst) -> bool:
+        return False
 
     def __str__(self) -> str:
         return self.value

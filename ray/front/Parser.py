@@ -317,7 +317,15 @@ class Parser:
                 stmt = Break()
             case _:
                 stmt = self.parse_expr()
-                self.eat_if_present(TokenKind.SEMI)
+                if isinstance(stmt.kind, If):
+                    stmt = Stmt(stmt)
+                    self.eat_if_present(TokenKind.SEMI)
+                    return stmt
+                if self.t.kind != TokenKind.SEMI:
+                    stmt = Stmt(stmt)
+                    stmt.semi = False
+                    return stmt
+                self.expect(TokenKind.SEMI)
         return Stmt(stmt)
 
     @spanned
@@ -325,10 +333,18 @@ class Parser:
         assert self.t != None
         self.expect(TokenKind.LCURLY)
         stmts = []
+        last_expr = None
         while self.check() and self.t.kind != TokenKind.RCURLY:
-            stmts.append(self.parse_stmt())
+            stmt = self.parse_stmt()
+            if stmt.semi:
+                stmts.append(stmt)
+            else:
+                if not last_expr:
+                    last_expr = stmt.kind
+                else:
+                    assert False, last_expr
         self.expect(TokenKind.RCURLY)
-        return Block(stmts)
+        return Block(stmts, last_expr)
 
     @spanned
     def parse_fn(self, is_extern=False, abi=None) -> Fn:

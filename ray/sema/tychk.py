@@ -181,6 +181,7 @@ class TyCheck:
                 else_ty = None
                 if elze:
                     else_ty = self.infer_block(elze)
+                assert if_ty == else_ty
                 return if_ty
             case Loop(body):
                 self.infer_block(body)
@@ -305,11 +306,11 @@ class TyCheck:
                         assert False, f"{kind} unreachable"
             case If(cond, body, elze):
                 self.check(cond, self.mk_bool())
-                self.check_block(body)
+                self.check_block(body, expected_ty)
                 if elze:
-                    self.check_block(elze)
+                    self.check_block(elze, expected_ty)
             case Loop(body):
-                self.check_block(body)
+                self.check_block(body, expected_ty)
             case Cast(cast_expr, ty):
                 cast_expr.ty = self.infer(cast_expr)
                 match cast_expr.ty, ty:
@@ -396,10 +397,8 @@ class TyCheck:
                 f"unexpected type: expected {expected_ty} found {expected_ret_ty}")
         return expected_ret_ty
 
-    def check_block(self, block):
-        span = block.span
+    def check_block(self, block, expected_ty):
         self.scope.add()
-        ret_ty = None
         if self.fn_ctx:
             deff = self.defs[self.fn_ctx]
             assert deff.kind == DefKind.Fn
@@ -408,11 +407,12 @@ class TyCheck:
                 if type(arg) == Variadic:
                     continue
                 self.scope.def_local(arg.name, arg.ty)
-            ret_ty = fn_dict['ret_ty']
         self.fn_ctx = None
         for stmt in block.stmts:
             self.visit_stmt(stmt)
         self.scope.pop()
+        if block.expr:
+            self.check(block.expr, expected_ty)
 
     def infer_block(self, block):
         span = block.span
@@ -426,21 +426,29 @@ class TyCheck:
                     continue
                 self.scope.def_local(arg.name, arg.ty)
         self.fn_ctx = None
-        ty = None
         max = len(block.stmts)
         for i, stmt in enumerate(block.stmts):
             self.visit_stmt(stmt)
             if i == max - 1:
                 match stmt.kind:
-                    case Let():
-                        assert False, "expected expression"
+                    case Let(name, ty, init):
+                        if self.scope.search_local(name):
+                            self.add_err(Redefinition(
+                                f"{name} is not defined"), span)
+                        if ty:
+                            self.check(init, ty)
+                            stmt.kind.ty = ty
+                        else:
+                            ty = self.infer(init)
+                        self.scope.def_local(name, ty)
                     case Break():
                         pass
                     case _:
-                        ty = self.infer(stmt.kind)
+                        self.infer(stmt.kind)
         self.scope.pop()
-        if ty:
-            return ty
+        if block.expr:
+            return self.infer(block.expr)
+        return self.mk_unit()
 
     def visit_stmt(self, stmt: Stmt):
         span = stmt.span

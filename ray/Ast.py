@@ -335,8 +335,9 @@ class Fn:
 class Block:
     __match_args__ = ("stmts", )
 
-    def __init__(self, stmts: List[Stmt]):
+    def __init__(self, stmts: List[Stmt], expr: Expr | None = None):
         self.stmts = stmts
+        self.expr = expr
         self.span: Span | None = None
 
     def calc_stack(self) -> int:
@@ -482,6 +483,7 @@ class Stmt:
     def __init__(self, kind) -> None:
         self.kind = kind
         self.span: Span | None = None
+        self.semi = True
 
 
 class Let:
