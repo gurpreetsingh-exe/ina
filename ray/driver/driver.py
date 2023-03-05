@@ -6,6 +6,7 @@ from ..front.Lexer import *
 from ..Ast import *
 from ..utils import *
 from ..front.Parser import Parser
+from ..front.fmt import *
 from ..sema.tychk import TyCheck
 from ..codegen.x86_64 import Gen
 from ..builtin.intrinsics import builtins_

@@ -344,6 +344,18 @@ class BinaryKind(Enum):
     Eq = auto()
     NotEq = auto()
 
+    def to_display(self):
+        match self:
+            case BinaryKind.Add: return "+"
+            case BinaryKind.Sub: return "-"
+            case BinaryKind.Mul: return "*"
+            case BinaryKind.Div: return "/"
+            case BinaryKind.Gt: return ">"
+            case BinaryKind.Lt: return "<"
+            case BinaryKind.Mod: return "%"
+            case BinaryKind.Eq: return "=="
+            case BinaryKind.NotEq: return "!="
+
 
 def binary_kind_from_token(kind: TokenKind) -> BinaryKind:
     match kind:
@@ -366,7 +378,7 @@ class Binary:
         self.kind = kind
         self.left = left
         self.right = right
-        self.ty = None
+        self.ty: Ty | None = None
         self.span: Span | None = None
 
 
@@ -375,6 +387,13 @@ class UnaryKind(Enum):
     Not = auto()
     AddrOf = auto()
     Deref = auto()
+
+    def to_display(self) -> str:
+        match self:
+            case UnaryKind.Neg: return "-"
+            case UnaryKind.Not: return "!"
+            case UnaryKind.AddrOf: return "&"
+            case UnaryKind.Deref: return "*"
 
 
 def unary_kind_from_token(kind: TokenKind) -> UnaryKind:
@@ -472,6 +491,7 @@ class Assign:
         self.name = name
         self.init = init
         self.span: Span | None = None
+        self.ty: Ty | None = None
 
 
 class Ident:
@@ -479,7 +499,7 @@ class Ident:
 
     def __init__(self, name):
         self.name = name
-        self.ty = None
+        self.ty: Ty | None = None
         self.span: Span | None = None
 
 
@@ -543,7 +563,7 @@ class Literal:
     def __init__(self, kind, value):
         self.kind = kind
         self.value = value
-        self.ty = None
+        self.ty: Ty | None = None
         self.span: Span | None = None
 
 

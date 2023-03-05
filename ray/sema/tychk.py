@@ -32,11 +32,12 @@ class TyScope:
                     return True
         return False
 
-    def find_local(self, name) -> Ty | None:
+    def find_local(self, name) -> Ty:
         for scope in reversed(self.scopes):
             for var in scope:
                 if var['name'] == name:
                     return var['ty']
+        assert False
 
     def def_local(self, name, ty, val=None):
         if self.search_local(name):
@@ -70,7 +71,7 @@ class TyCheck:
     def mk_prim_ty(self, kind) -> PrimTy:
         return PrimTy(kind)
 
-    def add_err(self, err: Error, span: Span):
+    def add_err(self, err: Error, span: Span | None):
         err.span = span
         self.errors.append(err)
 
@@ -86,8 +87,7 @@ class TyCheck:
                 if inf_ty != ty:
                     self.add_err(TypesMismatchError(
                         f"expected `{ty}`, found `{inf_ty}`"), span)
-                else:
-                    return ty
+                return ty
             case Binary(kind, left, right):
                 lty = self.infer(left)
                 rty = self.infer(right)
@@ -101,7 +101,7 @@ class TyCheck:
                 else:
                     self.add_err(TypesMismatchError(
                         f"cannot {kind} `{lty}` and `{rty}`"), span)
-                    return self.mk_unit()
+                    return lty
             case Literal(kind, _):
                 val = None
                 match kind:
@@ -146,6 +146,7 @@ class TyCheck:
                             assert False
                 else:
                     self.add_err(NotFound(name, ""), span)
+                    assert False, "TODO: emit the error"
             case Unary(kind, expr):
                 match kind:
                     case UnaryKind.Not:
@@ -161,9 +162,9 @@ class TyCheck:
                             case _:
                                 assert False
                     case UnaryKind.AddrOf:
-                        if type(expr.kind) != Ident:
+                        if type(expr) != Ident:
                             panic(
-                                f"cannot use & on {expr.kind.__class__.__name__}")
+                                f"cannot use & on {expr.__class__.__name__}")
                         ty = self.infer(expr)
                         return RefTy(ty)
                     case UnaryKind.Deref:

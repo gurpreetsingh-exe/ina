@@ -144,6 +144,8 @@ class Parser:
 
     @spanned
     def parse_call(self) -> Call:
+        # TODO: support trailing comma
+        # func(49,)
         assert self.t != None
         name = self.expect(TokenKind.Ident).raw(self.src)
         self.expect(TokenKind.LPAREN)
@@ -278,6 +280,8 @@ class Parser:
 
     @spanned
     def parse_expr(self) -> Expr:
+        # TODO: support `()` for binary expressions
+        # (20.20 + 50)
         assert self.t != None
         left = self.parse_assign()
         while self.check() and self.t.kind in [TokenKind.BANGEQ, TokenKind.EQ2]:
@@ -319,6 +323,7 @@ class Parser:
                 stmt = self.parse_expr()
                 if isinstance(stmt, If):
                     stmt = Stmt(stmt)
+                    stmt.semi = self.t.kind == TokenKind.SEMI
                     self.eat_if_present(TokenKind.SEMI)
                     return stmt
                 if self.t.kind != TokenKind.SEMI:
@@ -336,13 +341,17 @@ class Parser:
         last_expr = None
         while self.check() and self.t.kind != TokenKind.RCURLY:
             stmt = self.parse_stmt()
-            if stmt.semi:
-                stmts.append(stmt)
+            if not stmt.semi:
+                match last_expr:
+                    case If():
+                        stmts.append(Stmt(last_expr))
+                        last_expr = stmt.kind
+                    case None:
+                        last_expr = stmt.kind
+                    case _:
+                        assert False, last_expr
             else:
-                if not last_expr:
-                    last_expr = stmt.kind
-                else:
-                    assert False, last_expr
+                stmts.append(stmt)
         self.expect(TokenKind.RCURLY)
         return Block(stmts, last_expr)
 
