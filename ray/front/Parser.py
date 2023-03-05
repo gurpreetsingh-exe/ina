@@ -184,14 +184,14 @@ class Parser:
             case TokenKind.Ident:
                 next_ = self.peek()
                 if next_.kind == TokenKind.LPAREN:
-                    return Expr(self.parse_call())
+                    return self.parse_call()
                 else:
-                    return Expr(self.parse_ident())
+                    return self.parse_ident()
             case TokenKind.Int | TokenKind.Float | TokenKind.Bool | TokenKind.Str:
                 value = self.t.raw(self.src)
                 lit_kind = self.token_to_lit()
                 self.advance()
-                return Expr(Literal(lit_kind, value))
+                return Literal(lit_kind, value)
             case TokenKind.If:
                 self.advance()
                 cond = self.parse_expr()
@@ -200,11 +200,11 @@ class Parser:
                 if self.t.kind == TokenKind.Else:
                     self.advance()
                     elze = self.parse_block()
-                return Expr(If(cond, body, elze))
+                return If(cond, body, elze)
             case TokenKind.Loop:
                 self.advance()
                 block = self.parse_block()
-                return Expr(Loop(block))
+                return Loop(block)
             case _:
                 panic(f"unreachable {self.t.kind}")
 
@@ -220,7 +220,7 @@ class Parser:
                 self.expect(TokenKind.RPAREN)
             else:
                 right = self.parse_unary()
-            return Expr(Unary(kind, right))
+            return Unary(kind, right)
 
         return self.parse_primary()
 
@@ -232,12 +232,12 @@ class Parser:
             kind = binary_kind_from_token(self.t.kind)
             self.advance()
             right = self.parse_factor()
-            left = Expr(Binary(kind, left, right))
+            left = Binary(kind, left, right)
 
         if self.t.kind == TokenKind.As:
             self.advance()
             ty = self.parse_ty()
-            left = Expr(Cast(left, ty))
+            left = Cast(left, ty)
         return left
 
     @spanned
@@ -248,7 +248,7 @@ class Parser:
             kind = binary_kind_from_token(self.t.kind)
             self.advance()
             right = self.parse_term()
-            left = Expr(Binary(kind, left, right))
+            left = Binary(kind, left, right)
         return left
 
     @spanned
@@ -259,7 +259,7 @@ class Parser:
             kind = binary_kind_from_token(self.t.kind)
             self.advance()
             right = self.parse_comparison()
-            left = Expr(Binary(kind, left, right))
+            left = Binary(kind, left, right)
         return left
 
     @spanned
@@ -269,8 +269,8 @@ class Parser:
         while self.t.kind == TokenKind.EQ:
             self.advance()
             init = self.parse_assign()
-            if isinstance(left.kind, Ident):
-                return Expr(Assign(left.kind, init))
+            if isinstance(left, Ident):
+                return Assign(left, init)
             else:
                 panic(
                     f"Assignment expression expected `Ident` but got `{left}`")
@@ -284,7 +284,7 @@ class Parser:
             kind = binary_kind_from_token(self.t.kind)
             self.advance()
             right = self.parse_expr()
-            left = Expr(Binary(kind, left, right))
+            left = Binary(kind, left, right)
         return left
 
     @spanned
@@ -317,7 +317,7 @@ class Parser:
                 stmt = Break()
             case _:
                 stmt = self.parse_expr()
-                if isinstance(stmt.kind, If):
+                if isinstance(stmt, If):
                     stmt = Stmt(stmt)
                     self.eat_if_present(TokenKind.SEMI)
                     return stmt
@@ -402,10 +402,12 @@ class Parser:
         self.expect(TokenKind.RCURLY)
         return Struct(name, fields)
 
-    def parse(self):
+    def parse(self) -> Module:
+        items = []
+        mod = Module(items)
         self.advance()
         if not self.t:
-            return []
+            return mod
         while self.check():
             match self.t.kind:
                 case TokenKind.Extern:
@@ -415,16 +417,17 @@ class Parser:
                         abi = self.t.raw(self.src)
                         self.advance()
                     if self.t.kind == TokenKind.LCURLY:
-                        yield self.parse_extern_block()
+                        items.append(self.parse_extern_block())
                     else:
-                        yield self.parse_fn(is_extern=True, abi=abi)
+                        items.append(self.parse_fn(is_extern=True, abi=abi))
                 case TokenKind.Fn:
-                    yield self.parse_fn()
+                    items.append(self.parse_fn())
                 case TokenKind.Const:
-                    yield self.parse_const()
+                    items.append(self.parse_const())
                 case TokenKind.Struct:
-                    yield self.parse_struct()
+                    items.append(self.parse_struct())
                 case TokenKind.EOF:
                     break
                 case _:
                     panic(f"{self.t.kind} not implemented")
+        return Module(items)

@@ -51,7 +51,7 @@ class TyScope:
 
 
 class TyCheck:
-    def __init__(self, ast):
+    def __init__(self, ast: Module):
         self.ast = ast
         self.defs = {}
         self.scope = TyScope()
@@ -76,7 +76,7 @@ class TyCheck:
 
     def infer(self, expr: Expr) -> Ty:
         span = expr.span
-        match expr.kind:
+        match expr:
             case Assign(Ident(name), init):
                 if not self.scope.search_local(name):
                     self.add_err(NotFound(name, ""), span)
@@ -176,7 +176,7 @@ class TyCheck:
                         assert False, f"{kind} unreachable"
             case If(cond, body, elze):
                 self.check(cond, self.mk_bool())
-                expr.kind.cond.ty = self.mk_bool()
+                expr.cond.ty = self.mk_bool()
                 if_ty = self.infer_block(body)
                 else_ty = None
                 if elze:
@@ -216,7 +216,7 @@ class TyCheck:
 
     def check(self, expr: Expr, expected_ty: Ty):
         span = expr.span
-        match expr.kind:
+        match expr:
             case Assign(Ident(name), init):
                 if not self.scope.search_local(name):
                     self.add_err(NotFound(name, ""), span)

@@ -77,7 +77,7 @@ class LoweringContext:
 
 
 class IRGen:
-    def __init__(self, ast) -> None:
+    def __init__(self, ast: Module) -> None:
         self.ast = ast
         self.off = 0
         self.env = Env()
@@ -95,7 +95,7 @@ class IRGen:
         return self._bb_id
 
     def lower_expr(self, expr: Expr) -> Value:
-        match expr.kind:
+        match expr:
             case Binary(kind, left, right):
                 l = self.lower_expr(left)
                 r = self.lower_expr(right)
@@ -135,7 +135,7 @@ class IRGen:
                     self.add_inst(Jmp(bb_id))
                 return c
             case Literal():
-                return inst.IConst.from_lit(expr.kind)
+                return inst.IConst.from_lit(expr)
             case Assign(Ident(name), init):
                 var = self.env.find(name)
                 p = self.lower_expr(init)
@@ -145,7 +145,7 @@ class IRGen:
                 lowered_args = [self.lower_expr(arg) for arg in args]
                 return self.add_inst(FnCall(name, lowered_args))
             case _:
-                assert False, expr.kind
+                assert False, expr
 
     def lower_stmt(self, stmt: Stmt):
         match stmt.kind:
@@ -156,10 +156,10 @@ class IRGen:
                 inst = self.add_inst(Alloc(ty, self.off, name))
                 self.add_inst(Store(inst, p, name))
                 self.env.bind(name, inst)
-            case Expr(_):
-                self.lower_expr(stmt.kind)
-            case _:
+            case Break():
                 assert False
+            case _:
+                self.lower_expr(stmt.kind)
 
     def lower_block(self, block: Block):
         tmp = self.env

@@ -750,33 +750,22 @@ def entry(argv):
                     file = File(filename, src)
                     tokens = list(lexer.lexfile())
                     parser = Parser(src, tokens)
-                    ast = list(parser.parse())
-                    tychk = TyCheck(ast)
+                    module = parser.parse()
+                    tychk = TyCheck(module)
                     if tychk.errors:
                         for err in tychk.errors:
                             err.emit(file)
                         exit(1)
-                    # gen = IRGen(ast)
-                    # pp(ast, max_depth=10)
-                    ConstantFolder(ast).fold()
+                    ConstantFolder(module).fold()
                     if skip_codegen:
                         return
-                    gen = IRGen(ast)
+                    gen = IRGen(module)
                     ir = gen.lower()
                     for f in ir:
                         print(f)
                     output = filename.split('.')[0]
                     dominance_frontier(ir)
                     # dump_cfg(ir, output)
-                    if 0:
-                        code = Codegen(ast, tychk.defs).emit()
-                        with open(f"{output}.asm", "w") as f:
-                            f.write(code)
-
-                        from subprocess import call
-                        call(["as", f"{output}.asm", "-o", f"{output}.o"])
-                        call(["gcc", f"{output}.o", "-o", output])
-                    else:
-                        Gen(ir, output).emit()
+                    Gen(ir, output).emit()
                 case _:
                     assert False, "unreachable"

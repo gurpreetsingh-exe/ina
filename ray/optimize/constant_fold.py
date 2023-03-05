@@ -7,48 +7,48 @@ cast = {
 
 
 class ConstantFolder:
-    def __init__(self, ast) -> None:
+    def __init__(self, ast: Module) -> None:
         self.ast = ast
 
     def fold_expr(self, expr) -> Expr:
-        match expr.kind:
+        match expr:
             case Assign(_, init):
                 init = self.fold_expr(init)
             case Binary(kind, left, right):
                 left = self.fold_expr(left)
                 right = self.fold_expr(right)
-                match left.kind, right.kind:
+                match left, right:
                     case Literal(lkind, lvalue), Literal(rkind, rvalue):
                         assert lkind == rkind
                         if lkind in {Lit.Int, Lit.Float}:
                             cast_ty = cast[lkind]
                             match kind:
                                 case BinaryKind.Add:
-                                    expr.kind = Literal(lkind, str(
+                                    expr = Literal(lkind, str(
                                         cast_ty(lvalue) + cast_ty(rvalue)))
                                 case BinaryKind.Sub:
-                                    expr.kind = Literal(lkind, str(
+                                    expr = Literal(lkind, str(
                                         cast_ty(lvalue) - cast_ty(rvalue)))
                                 case BinaryKind.Mul:
-                                    expr.kind = Literal(lkind, str(
+                                    expr = Literal(lkind, str(
                                         cast_ty(lvalue) * cast_ty(rvalue)))
                                 case BinaryKind.Div:
-                                    expr.kind = Literal(lkind, str(
+                                    expr = Literal(lkind, str(
                                         cast_ty(lvalue) / cast_ty(rvalue)))
                                 case BinaryKind.Mod:
-                                    expr.kind = Literal(lkind, str(
+                                    expr = Literal(lkind, str(
                                         cast_ty(lvalue) % cast_ty(rvalue)))
                                 case BinaryKind.Lt:
-                                    expr.kind = Literal(Lit.Bool, str(
+                                    expr = Literal(Lit.Bool, str(
                                         cast_ty(lvalue) < cast_ty(rvalue)))
                                 case BinaryKind.Gt:
-                                    expr.kind = Literal(Lit.Bool, str(
+                                    expr = Literal(Lit.Bool, str(
                                         cast_ty(lvalue) > cast_ty(rvalue)))
                                 case BinaryKind.Eq:
-                                    expr.kind = Literal(Lit.Bool, str(
+                                    expr = Literal(Lit.Bool, str(
                                         cast_ty(lvalue) == cast_ty(rvalue)))
                                 case BinaryKind.NotEq:
-                                    expr.kind = Literal(Lit.Bool, str(
+                                    expr = Literal(Lit.Bool, str(
                                         cast_ty(lvalue) != cast_ty(rvalue)))
                                 case _:
                                     assert False
@@ -57,14 +57,14 @@ class ConstantFolder:
                         if kind in comp:
                             match kind:
                                 case BinaryKind.Lt:
-                                    expr.kind.kind = BinaryKind.Gt
+                                    expr.kind = BinaryKind.Gt
                                 case BinaryKind.Gt:
-                                    expr.kind.kind = BinaryKind.Lt
-                            expr.kind.left = right
-                            expr.kind.right = left
+                                    expr.kind = BinaryKind.Lt
+                            expr.left = right
+                            expr.right = left
                     case _, Binary():
-                        expr.kind.left = right
-                        expr.kind.right = left
+                        expr.left = right
+                        expr.right = left
                     case _, _:
                         pass
             case Call(_, args):
@@ -84,7 +84,9 @@ class ConstantFolder:
             match stmt.kind:
                 case Let(_, _, init):
                     stmt.kind.init = self.fold_expr(init)
-                case Expr(_):
+                case Break():
+                    pass
+                case _:
                     self.fold_expr(stmt.kind)
         if block.expr:
             self.fold_expr(block.expr)

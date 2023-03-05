@@ -69,6 +69,7 @@ class PrimTyKind(Enum):
             case PrimTyKind.Str: return 8
             case PrimTyKind.Raw: return 8
             case PrimTyKind.Unit: return 0
+            case _: assert False, f"get_size({self})"
 
     def is_number(self) -> bool:
         match self:
@@ -307,23 +308,6 @@ class Fn:
         self.span: Span | None = None
 
     @property
-    def stack_offset(self):
-        stack_off = 0
-        for arg in self.args:
-            match arg:
-                case Arg(_, ty):
-                    stack_off += ty.get_size()
-        if not self.body:
-            return stack_off
-
-        stack_off += self.body.calc_stack()
-        return stack_off
-
-    @property
-    def stack_alignment(self):
-        return (self.stack_offset + 15) & ~15
-
-    @property
     def is_variadic(self) -> bool:
         for arg in self.args:
             match arg:
@@ -340,22 +324,6 @@ class Block:
         self.expr = expr
         self.span: Span | None = None
 
-    def calc_stack(self) -> int:
-        off = 0
-        for stmt in self.stmts:
-            match stmt.kind:
-                case Let(_, ty, _):
-                    off += ty.get_size()
-                case Expr(kind):
-                    match kind:
-                        case Loop(block):
-                            off += block.calc_stack()
-                        case If(_, if_block, else_block):
-                            off += if_block.calc_stack()
-                            if else_block:
-                                off += else_block.calc_stack()
-        return off
-
 
 class ExternBlock:
     __match_args__ = ('items', )
@@ -363,15 +331,6 @@ class ExternBlock:
     def __init__(self, items: List[Fn]) -> None:
         self.items = items
         self.span = None
-
-
-class Expr:
-    __match_args__ = ("kind", )
-
-    def __init__(self, kind) -> None:
-        self.kind = kind
-        self.ty: Ty | None = None
-        self.span: Span | None = None
 
 
 class BinaryKind(Enum):
@@ -586,3 +545,36 @@ class Literal:
         self.value = value
         self.ty = None
         self.span: Span | None = None
+
+
+Item = Const | Fn | ExternBlock
+
+
+class Module:
+    __match_args__ = ("items", )
+
+    def __init__(self, items: List[Item]) -> None:
+        self.items = items
+        self._itr_index = 0
+
+    def __iter__(self) -> Module:
+        self._itr_index = 0
+        return self
+
+    def __next__(self) -> Item:
+        if self._itr_index < len(self.items):
+            item = self.items[self._itr_index]
+            self._itr_index += 1
+            return item
+        raise StopIteration()
+
+
+Expr = Binary \
+    | Unary \
+    | Call \
+    | Literal \
+    | Ident \
+    | Cast \
+    | Assign \
+    | Loop \
+    | If
