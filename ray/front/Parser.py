@@ -338,22 +338,40 @@ class Parser:
         assert self.t != None
         self.expect(TokenKind.LCURLY)
         stmts = []
-        last_expr = None
+        last = None
         while self.check() and self.t.kind != TokenKind.RCURLY:
             stmt = self.parse_stmt()
+            """
             if not stmt.semi:
-                match last_expr:
-                    case If():
-                        stmts.append(Stmt(last_expr))
-                        last_expr = stmt.kind
+                match last:
+                    case Stmt(If()):
+                        stmts.append(last)
+                        last = stmt
                     case None:
-                        last_expr = stmt.kind
+                        last = stmt
                     case _:
-                        assert False, last_expr
+                        assert False, last
             else:
                 stmts.append(stmt)
+            """
+            match last:
+                case Stmt(_):
+                    stmts.append(last)
+                    last = stmt
+                case None:
+                    if stmt.semi:
+                        stmts.append(stmt)
+                        continue
+                    last = stmt
+                case _: assert False, last
+
         self.expect(TokenKind.RCURLY)
-        return Block(stmts, last_expr)
+        match last:
+            case Stmt(expr):
+                last = expr
+            case _:
+                last = None
+        return Block(stmts, last)
 
     @spanned
     def parse_fn(self, is_extern=False, abi=None) -> Fn:

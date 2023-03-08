@@ -23,6 +23,14 @@ def parse_stmt(src: str) -> Stmt:
     return parser.parse_stmt()
 
 
+def parse(src: str) -> Module:
+    lexer = lexer_from_src(src, '')
+    tokens = list(lexer.lexfile())
+    parser = Parser(src, tokens)
+    # advance to set initial state
+    return parser.parse()
+
+
 ast_renderer = AstRenderer()
 
 
@@ -79,6 +87,43 @@ let a = if a {
     20;
     50
 };""",
+
+    """\
+let a = loop {
+    expr
+};""",
+
+    """\
+let a = func(loop {
+    if a {
+        expr
+    }
+    expr
+});""",
 ])
 def test_parse_stmt(input):
     assert ast_renderer.stmt(parse_stmt(input)) == input
+
+
+@pytest.mark.parametrize('input', [
+    """\
+fn main() {
+    let a = 4;
+    let b = 5;
+    let d = 4;
+    let x = 1000;
+    if a < b {
+        let c = b;
+        d = 2;
+    }
+    let c = 4;
+    b * d + c;
+    if b < b {
+        let e = c;
+        e
+    }
+    a
+}""",
+])
+def test_parse(input):
+    assert ast_renderer.render(parse(input)) == input

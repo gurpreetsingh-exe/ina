@@ -458,6 +458,8 @@ class Break:
 
 
 class Stmt:
+    __match_args__ = ('kind', )
+
     def __init__(self, kind) -> None:
         self.kind = kind
         self.span: Span | None = None

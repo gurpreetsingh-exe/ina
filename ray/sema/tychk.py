@@ -4,6 +4,7 @@ from ..Token import *
 from ..utils import panic
 from ..Errors import *
 from beeprint import pp
+# from copy import deepcopy
 
 
 class DefKind(Enum):
@@ -17,45 +18,37 @@ class Def:
         self.data = data
 
 
-class TyScope:
-    def __init__(self):
-        self.scopes = []
-
-    @property
-    def stack_offset(self):
-        self.scopes[-1]
+class TyEnv:
+    def __init__(self, parent: TyEnv | None = None):
+        self.parent = parent
+        self.bindings = {}
 
     def search_local(self, name) -> bool:
-        for scope in reversed(self.scopes):
-            for var in scope:
-                if var['name'] == name:
-                    return True
-        return False
+        if name in self.bindings:
+            return True
+        elif self.parent:
+            return self.parent.search_local(name)
+        else:
+            return False
 
     def find_local(self, name) -> Ty:
-        for scope in reversed(self.scopes):
-            for var in scope:
-                if var['name'] == name:
-                    return var['ty']
+        if name in self.bindings:
+            return self.bindings[name]['ty']
+        elif self.parent:
+            return self.parent.find_local(name)
         assert False
 
     def def_local(self, name, ty, val=None):
         if self.search_local(name):
             panic(f"{name} is already defined")
-        self.scopes[-1].append({'name': name, 'ty': ty, 'val': val})
-
-    def add(self):
-        self.scopes.append([])
-
-    def pop(self):
-        self.scopes.pop()
+        self.bindings[name] = {'name': name, 'ty': ty, 'val': val}
 
 
 class TyCheck:
     def __init__(self, ast: Module):
         self.ast = ast
         self.defs = {}
-        self.scope = TyScope()
+        self.env = None
         self.fn_ctx = None
         self.errors = []
         self.consts = {}
@@ -79,9 +72,9 @@ class TyCheck:
         span = expr.span
         match expr:
             case Assign(Ident(name), init):
-                if not self.scope.search_local(name):
+                if not self.env.search_local(name):
                     self.add_err(NotFound(name, ""), span)
-                ty = self.scope.find_local(name)
+                ty = self.env.find_local(name)
                 expr.ty = ty
                 inf_ty = self.infer(init)
                 if inf_ty != ty:
@@ -129,8 +122,8 @@ class TyCheck:
                 if name in self.consts:
                     expr.ty = self.consts[name]
                     return self.consts[name]
-                elif self.scope.search_local(name):
-                    ty = self.scope.find_local(name)
+                elif self.env.search_local(name):
+                    ty = self.env.find_local(name)
                     expr.ty = ty
                     return ty
                 elif name in self.defs:
@@ -182,7 +175,7 @@ class TyCheck:
                 else_ty = None
                 if elze:
                     else_ty = self.infer_block(elze)
-                assert if_ty == else_ty
+                    assert if_ty == else_ty
                 return if_ty
             case Loop(body):
                 self.infer_block(body)
@@ -219,9 +212,9 @@ class TyCheck:
         span = expr.span
         match expr:
             case Assign(Ident(name), init):
-                if not self.scope.search_local(name):
+                if not self.env.search_local(name):
                     self.add_err(NotFound(name, ""), span)
-                ty = self.scope.find_local(name)
+                ty = self.env.find_local(name)
                 expr.ty = ty
                 self.check(init, expected_ty)
             case Binary(kind, left, right):
@@ -258,7 +251,7 @@ class TyCheck:
             case Ident(name):
                 if name in self.consts:
                     return self.consts[name]
-                elif ty := self.scope.find_local(name):
+                elif ty := self.env.find_local(name):
                     if ty != expected_ty:
                         self.add_err(TypesMismatchError(
                             f"expected `{expected_ty}`, found `{ty}`"), span)
@@ -354,8 +347,8 @@ class TyCheck:
         if defn != None:
             expected_args = [arg.ty for arg in defn.data['args']]
             expected_ret_ty = defn.data['ret_ty']
-        elif self.scope.search_local(name):
-            ty = self.scope.find_local(name)
+        elif self.env.search_local(name):
+            ty = self.env.find_local(name)
             match ty:
                 case FnTy(fargs, ret_ty):
                     expected_args = fargs
@@ -399,7 +392,8 @@ class TyCheck:
         return expected_ret_ty
 
     def check_block(self, block, expected_ty):
-        self.scope.add()
+        tmp_env = self.env
+        self.env = TyEnv(tmp_env)
         if self.fn_ctx:
             deff = self.defs[self.fn_ctx]
             assert deff.kind == DefKind.Fn
@@ -407,17 +401,18 @@ class TyCheck:
             for arg in fn_dict['args']:
                 if type(arg) == Variadic:
                     continue
-                self.scope.def_local(arg.name, arg.ty)
+                self.env.def_local(arg.name, arg.ty)
         self.fn_ctx = None
         for stmt in block.stmts:
             self.visit_stmt(stmt)
-        self.scope.pop()
+        self.env = tmp_env
         if block.expr:
             self.check(block.expr, expected_ty)
 
     def infer_block(self, block):
         span = block.span
-        self.scope.add()
+        tmp_env = self.env
+        self.env = TyEnv(tmp_env)
         if self.fn_ctx:
             deff = self.defs[self.fn_ctx]
             assert deff.kind == DefKind.Fn
@@ -425,7 +420,7 @@ class TyCheck:
             for arg in fn_dict['args']:
                 if type(arg) == Variadic:
                     continue
-                self.scope.def_local(arg.name, arg.ty)
+                self.env.def_local(arg.name, arg.ty)
         self.fn_ctx = None
         max = len(block.stmts)
         for i, stmt in enumerate(block.stmts):
@@ -433,7 +428,7 @@ class TyCheck:
             if i == max - 1:
                 match stmt.kind:
                     case Let(name, ty, init):
-                        if self.scope.search_local(name):
+                        if self.env.search_local(name):
                             self.add_err(Redefinition(
                                 f"{name} is not defined"), span)
                         if ty:
@@ -441,12 +436,12 @@ class TyCheck:
                             stmt.kind.ty = ty
                         else:
                             ty = self.infer(init)
-                        self.scope.def_local(name, ty)
+                        self.env.def_local(name, ty)
                     case Break():
                         pass
                     case _:
                         self.infer(stmt.kind)
-        self.scope.pop()
+        self.env = tmp_env
         if block.expr:
             return self.infer(block.expr)
         return self.mk_unit()
@@ -455,21 +450,22 @@ class TyCheck:
         span = stmt.span
         match stmt.kind:
             case Let(name, ty, init):
-                if self.scope.search_local(name):
+                if self.env.search_local(name):
                     self.add_err(Redefinition(f"{name} is not defined"), span)
                 if ty:
                     self.check(init, ty)
                 else:
                     ty = self.infer(init)
                     stmt.kind.ty = ty
-                self.scope.def_local(name, ty)
+                self.env.def_local(name, ty)
             case Break():
                 pass
             case _:
                 self.infer(stmt.kind)
 
     def visit_block(self, block: Block):
-        self.scope.add()
+        tmp_env = self.env
+        self.env = TyEnv(tmp_env)
         if self.fn_ctx:
             deff = self.defs[self.fn_ctx]
             assert deff.kind == DefKind.Fn
@@ -477,11 +473,11 @@ class TyCheck:
             for arg in fn_dict['args']:
                 if type(arg) == Variadic:
                     continue
-                self.scope.def_local(arg.name, arg.ty)
+                self.env.def_local(arg.name, arg.ty)
         self.fn_ctx = None
         for stmt in block.stmts:
             self.visit_stmt(stmt)
-        self.scope.pop()
+        self.env = tmp_env
 
     def visit_fn(self, fn: Fn):
         name = fn.name

@@ -12,6 +12,8 @@ class AstRenderer:
 
     def expr(self, expr: Expr) -> str:
         match expr:
+            case Assign(Ident(name), init):
+                return "{} = {}".format(name, self.expr(init))
             case Binary(kind, left, right):
                 return "{} {} {}".format(self.expr(left),
                                          kind.to_display(), self.expr(right))
@@ -28,8 +30,10 @@ class AstRenderer:
                     return "if {} {} else {}".format(self.expr(cond), self.block(then), self.block(elze))
                 else:
                     return "if {} {}".format(self.expr(cond), self.block(then))
+            case Loop(body):
+                return "loop {}".format(self.block(body))
             case _:
-                assert False, "not implemented"
+                assert False, f"{expr} not implemented"
 
     def block(self, block: Block) -> str:
         self.indent_level += 1
@@ -52,4 +56,35 @@ class AstRenderer:
             case Break():
                 return "break;"
             case _:
-                return "{};".format(self.expr(stmt.kind))
+                return "{}{}".format(self.expr(stmt.kind), ";" if stmt.semi else "")
+
+    def fn(self, fn: Fn) -> str:
+        args = []
+        for arg in fn.args:
+            match arg:
+                case Arg(name, ty):
+                    args.append("{}: {}".format(name, ty))
+                case Variadic():
+                    args.append("...")
+        args = ", ".join(args)
+        ret_ty = " -> {}".format(fn.ret_ty) if fn.ret_ty != PrimTy(
+            PrimTyKind.Unit) else ""
+        if not fn.body:
+            return "{}fn {}({}){}".format(
+                "extern " if fn.is_extern else "",
+                fn.name,
+                args,
+                ret_ty)
+        else:
+            return "{}fn {}({}){} {}".format(
+                "extern " if fn.is_extern else "",
+                fn.name,
+                args,
+                ret_ty,
+                self.block(fn.body))
+
+    def render(self, mod: Module):
+        for item in mod:
+            match item:
+                case Fn():
+                    return self.fn(item)

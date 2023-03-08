@@ -752,6 +752,8 @@ def entry(argv):
                     tokens = list(lexer.lexfile())
                     parser = Parser(src, tokens)
                     module = parser.parse()
+                    renderer = AstRenderer()
+                    print(renderer.render(module))
                     tychk = TyCheck(module)
                     if tychk.errors:
                         for err in tychk.errors:
