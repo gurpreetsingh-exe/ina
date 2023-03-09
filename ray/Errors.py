@@ -9,7 +9,7 @@ class Error:
         self.msg = msg
         self.span: Span | None = None
 
-    def emit(self, _: File):
+    def emit(self, _: File, exit=False):
         raise NotImplemented()
 
 
@@ -42,16 +42,20 @@ class Redefinition(Error):
     def __init__(self, msg: str) -> None:
         super().__init__(msg)
 
-    def emit(self, file: File):
+    def emit(self, file: File, _exit=False):
         emit(self, file, ": variable redefinition\n")
+        if _exit:
+            exit(1)
 
 
 class TypesMismatchError(Error):
     def __init__(self, msg: str) -> None:
         super().__init__(msg)
 
-    def emit(self, file: File):
+    def emit(self, file: File, _exit=False):
         emit(self, file, ": types mismatch\n")
+        if _exit:
+            exit(1)
 
 
 class NotFound(Error):
@@ -59,16 +63,20 @@ class NotFound(Error):
         super().__init__(msg)
         self.name = name
 
-    def emit(self, file: File):
-        emit(self, file, f": {self.name} not found\n")
+    def emit(self, file: File, _exit=False):
+        emit(self, file, f": `{self.name}` not found\n")
+        if _exit:
+            exit(1)
 
 
 class CastError(Error):
     def __init__(self, msg: str) -> None:
         super().__init__(msg)
 
-    def emit(self, file: File):
+    def emit(self, file: File, _exit=False):
         emit(self, file, f": cast error\n")
+        if _exit:
+            exit(1)
 
 
 class DerefError(Error):
@@ -76,8 +84,10 @@ class DerefError(Error):
         super().__init__("")
         self.ty = ty
 
-    def emit(self, file: File):
+    def emit(self, file: File, _exit=False):
         emit(self, file, f": `{self.ty}` cannot be dereferenced\n")
+        if _exit:
+            exit(1)
 
 
 class MissingStructFieldError(Error):
@@ -86,9 +96,11 @@ class MissingStructFieldError(Error):
         self.missing_field = missing_field
         self.struct = struct
 
-    def emit(self, file: File):
+    def emit(self, file: File, _exit=False):
         emit(
             self, file, f": missing field `{self.missing_field}` in `{self.struct}`\n")
+        if _exit:
+            exit(1)
 
 
 def c(format: str) -> str:

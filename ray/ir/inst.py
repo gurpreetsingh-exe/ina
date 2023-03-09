@@ -178,7 +178,7 @@ class Sub(Bin):
 class Mul(Bin):
     def __init__(self, left: Value, right: Value) -> None:
         super().__init__(left, right)
-        self.inst_name = "mul"
+        self.inst_name = "imul"
 
 
 class Div(Bin):

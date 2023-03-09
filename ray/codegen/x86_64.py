@@ -7,7 +7,7 @@ from ..Ast import *
 from math import log
 from dataclasses import dataclass
 import struct
-from beeprint import pp
+# from beeprint import pp
 
 
 @dataclass
@@ -221,7 +221,7 @@ class Gen:
                 r = self.render_val(l)
                 self.buf += f"    {cmp[inst.kind]} {r}\n"
                 self.reg_map[inst] = l
-            case Add() | Sub():
+            case Add() | Sub() | Mul():
                 l = self.lookup(inst.left)
                 r = self.lookup(inst.right)
                 used_regs.clear()

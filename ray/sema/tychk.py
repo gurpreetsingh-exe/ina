@@ -3,7 +3,7 @@ from ..Ast import *
 from ..Token import *
 from ..utils import panic
 from ..Errors import *
-from beeprint import pp
+# from beeprint import pp
 # from copy import deepcopy
 
 
@@ -45,7 +45,8 @@ class TyEnv:
 
 
 class TyCheck:
-    def __init__(self, ast: Module):
+    def __init__(self, ast: Module, file: File):
+        self.file = file
         self.ast = ast
         self.defs = {}
         self.env = None
@@ -64,9 +65,10 @@ class TyCheck:
     def mk_prim_ty(self, kind) -> PrimTy:
         return PrimTy(kind)
 
-    def add_err(self, err: Error, span: Span | None):
+    def add_err(self, err: Error, span: Span | None) -> Error:
         err.span = span
         self.errors.append(err)
+        return err
 
     def infer(self, expr: Expr) -> Ty:
         span = expr.span
@@ -138,8 +140,8 @@ class TyCheck:
                         case _:
                             assert False
                 else:
-                    self.add_err(NotFound(name, ""), span)
-                    assert False, "TODO: emit the error"
+                    self.add_err(NotFound(name, ""), span).emit(
+                        self.file, True)
             case Unary(kind, expr):
                 match kind:
                     case UnaryKind.Not:
@@ -405,12 +407,11 @@ class TyCheck:
         self.fn_ctx = None
         for stmt in block.stmts:
             self.visit_stmt(stmt)
-        self.env = tmp_env
         if block.expr:
             self.check(block.expr, expected_ty)
+        self.env = tmp_env
 
     def infer_block(self, block):
-        span = block.span
         tmp_env = self.env
         self.env = TyEnv(tmp_env)
         if self.fn_ctx:
@@ -422,28 +423,11 @@ class TyCheck:
                     continue
                 self.env.def_local(arg.name, arg.ty)
         self.fn_ctx = None
-        max = len(block.stmts)
-        for i, stmt in enumerate(block.stmts):
+        for stmt in block.stmts:
             self.visit_stmt(stmt)
-            if i == max - 1:
-                match stmt.kind:
-                    case Let(name, ty, init):
-                        if self.env.search_local(name):
-                            self.add_err(Redefinition(
-                                f"{name} is not defined"), span)
-                        if ty:
-                            self.check(init, ty)
-                            stmt.kind.ty = ty
-                        else:
-                            ty = self.infer(init)
-                        self.env.def_local(name, ty)
-                    case Break():
-                        pass
-                    case _:
-                        self.infer(stmt.kind)
-        self.env = tmp_env
         if block.expr:
             return self.infer(block.expr)
+        self.env = tmp_env
         return self.mk_unit()
 
     def visit_stmt(self, stmt: Stmt):
@@ -477,6 +461,8 @@ class TyCheck:
         self.fn_ctx = None
         for stmt in block.stmts:
             self.visit_stmt(stmt)
+        if block.expr:
+            self.infer(block.expr)
         self.env = tmp_env
 
     def visit_fn(self, fn: Fn):

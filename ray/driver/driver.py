@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Any, Dict, Tuple
-from beeprint import pp
+# from beeprint import pp
 
 from ..front.Lexer import *
 from ..Ast import *
@@ -752,9 +752,7 @@ def entry(argv):
                     tokens = list(lexer.lexfile())
                     parser = Parser(src, tokens)
                     module = parser.parse()
-                    renderer = AstRenderer()
-                    print(renderer.render(module))
-                    tychk = TyCheck(module)
+                    tychk = TyCheck(module, file)
                     if tychk.errors:
                         for err in tychk.errors:
                             err.emit(file)
