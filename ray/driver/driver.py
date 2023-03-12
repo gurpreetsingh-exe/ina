@@ -761,12 +761,13 @@ def entry(argv):
                     if skip_codegen:
                         return
                     gen = IRGen(module)
-                    ir = gen.lower()
-                    for f in ir:
-                        print(f)
+                    mod = gen.lower()
+                    print(mod)
                     output = filename.split('.')[0]
-                    dominance_frontier(ir)
+                    # for f in ir:
+                    #     print(f)
+                    # dominance_frontier(ir)
                     # dump_cfg(ir, output)
-                    Gen(ir, output).emit()
+                    Gen(mod, output).emit()
                 case _:
                     assert False, "unreachable"

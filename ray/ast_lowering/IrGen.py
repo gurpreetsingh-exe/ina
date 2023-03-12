@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Dict
+from typing import Dict, TypeVar
 from ..Ast import *
 from ..ir.function import *
 from ..ir.inst import *
@@ -24,8 +24,7 @@ class Env:
 
 
 class BasicBlockBuilder:
-    def __init__(self, ctx: LoweringContext, instructions: List[Inst]) -> None:
-        self.ctx = ctx
+    def __init__(self, instructions: List[Inst]) -> None:
         self.instructions = instructions
 
     def link_blocks(self, basic_blocks: List[BasicBlock]):
@@ -57,23 +56,7 @@ class BasicBlockBuilder:
         return basic_blocks
 
 
-class LoweringContext:
-    def __init__(self) -> None:
-        # blocks containing definitions of a variable
-        self.defs: Dict[str, List[BasicBlock]] = {}
-
-        # blocks containing uses of a variable
-        self.uses: Dict[str, List[BasicBlock]] = {}
-
-    def add_def(self, name: str, block: BasicBlock):
-        if name not in self.defs:
-            self.defs[name] = []
-        self.defs[name].append(block)
-
-    def add_use(self, name: str, block: BasicBlock):
-        if name not in self.uses:
-            self.uses[name] = []
-        self.uses[name].append(block)
+T = TypeVar('T')
 
 
 class IRGen:
@@ -82,11 +65,11 @@ class IRGen:
         self.off = 0
         self.env = Env()
         self.instructions = []
-        self.ctx = LoweringContext()
+        self.ir_module: IRModule = IRModule()
         self._bb_id = 0
         self.globls = {}
 
-    def add_inst(self, inst: Inst) -> Inst:
+    def add_inst(self, inst: T) -> T:
         self.instructions.append(inst)
         return inst
 
@@ -120,25 +103,34 @@ class IRGen:
                 try:
                     bind = self.env.find(name)
                 except AssertionError:
-                    bind = self.globls[name]
+                    if name in self.globls:
+                        bind = self.globls[name]
+                    else:
+                        bind = self.ir_module.consts[name][0]
                 load = Load(bind)
                 return self.add_inst(load)
             case If(cond, then, elze):
                 c = self.lower_expr(cond)
                 btrue = self.bb_id
-                br_id = self.add_inst(Br(c, btrue, 0))
+                br = self.add_inst(Br(c, btrue, 0))
                 self.lower_block(then)
                 bfalse = self.bb_id
-                self.instructions[br_id.inst_id].bfalse = bfalse
+                br.bfalse = bfalse
                 jmp = self.add_inst(Jmp(bfalse))
                 if elze:
                     self.lower_block(elze)
                     bb_id = self.bb_id
-                    self.instructions[jmp.inst_id].br_id = bb_id
+                    jmp.br_id = bb_id
                     self.add_inst(Jmp(bb_id))
                 return c
-            case Literal():
-                return inst.IConst.from_lit(expr)
+            case Literal(kind, _):
+                const = inst.IConst.from_lit(expr)
+                match kind:
+                    case Lit.Float | Lit.Str:
+                        label = Label()
+                        self.ir_module.anon_consts[label] = const
+                        return label
+                return const
             case Assign(Ident(name), init):
                 var = self.env.find(name)
                 p = self.lower_expr(init)
@@ -182,7 +174,7 @@ class IRGen:
             self.lower_expr(block.expr)
         self.env = tmp
 
-    def lower_fn(self, fn: Fn) -> FnDef | FnDecl:
+    def lower_fn(self, fn: Fn):
         match fn:
             case Fn(name, args, ret_ty, body, is_extern, abi):
                 self.globls[name] = name
@@ -204,23 +196,29 @@ class IRGen:
                             ir_args.append(Inst("..."))
                 ret = ret_ty if ret_ty else PrimTy(PrimTyKind.Unit)
                 if is_extern:
-                    return FnDecl(name, ir_args, ret)
+                    self.ir_module.decls.append(FnDecl(name, ir_args, ret))
+                    return
                 if body:
                     self.lower_block(body)
-                basic_blocks = BasicBlockBuilder(
-                    self.ctx, self.instructions).run()
+                basic_blocks = BasicBlockBuilder(self.instructions).run()
                 self.instructions.clear()
-                return FnDef(name, ir_args, ret, basic_blocks)
+                self.ir_module.defs.append(
+                    FnDef(name, ir_args, ret, basic_blocks))
+                return
 
-    def lower(self) -> List[FnDecl | FnDef]:
-        lowered_fn = []
+    def lower(self) -> IRModule:
         for node in self.ast:
             match node:
                 case Fn():
-                    lowered_fn.append(self.lower_fn(node))
+                    self.lower_fn(node)
                 case ExternBlock(fns):
                     for fn in fns:
-                        lowered_fn.append(self.lower_fn(fn))
+                        self.lower_fn(fn)
+                case Const(name, _, init):
+                    assert isinstance(init, Literal)
+                    const = IConst.from_lit(init)
+                    label = Label()
+                    self.ir_module.consts[name] = (label, const, )
                 case _:
                     assert False, node
-        return lowered_fn
+        return self.ir_module

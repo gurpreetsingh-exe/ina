@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List
+from typing import Dict, List
 from ..Ast import Literal, Ty, BinaryKind, Lit
 from enum import Enum, auto
 from .basic_block import BasicBlock
@@ -33,6 +33,17 @@ class Inst(Value):
 
     def __repr__(self) -> str:
         return "%{}".format(self.inst_id if not self.name else self.name)
+
+
+class Label(Value):
+    _id = 0
+
+    def __init__(self) -> None:
+        Label._id += 1
+        self._id = Label._id
+
+    def __repr__(self) -> str:
+        return f".L__unnamed_{self._id}"
 
 
 class Alloc(Inst):

@@ -1,7 +1,7 @@
 from __future__ import annotations
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 from ..Ast import Ty
-from .inst import Value
+from .inst import Label, Value, IConst
 from .basic_block import BasicBlock
 
 
@@ -48,3 +48,21 @@ class FnDecl:
             self.name,
             ", ".join(map(str, self.args)),
             self.ret_ty)
+
+
+class IRModule:
+    def __init__(self) -> None:
+        self.defs: List[FnDef] = []
+        self.decls: List[FnDecl] = []
+        self.consts: Dict[str, Tuple[Label, IConst]] = {}
+        self.anon_consts: Dict[Label, IConst] = {}
+
+    def __repr__(self) -> str:
+        decls = "\n".join(map(str, self.decls))
+        consts = "\n"
+        for name, const in self.consts.items():
+            consts += "const {} = {} ;; {}\n".format(const[0], const[1], name)
+        for name, const in self.anon_consts.items():
+            consts += "const {} = {}\n".format(name, const)
+        defs = "\n".join(map(str, self.defs))
+        return "\n{}\n{}\n{}".format(decls, consts, defs)

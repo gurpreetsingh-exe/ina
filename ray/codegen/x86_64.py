@@ -107,6 +107,7 @@ class DataSection:
     def __init__(self, label_manager: LabelManager) -> None:
         self.label_manager = label_manager
         self.floats = {}
+        self.ints = {}
         self.strings = {}
 
     def add_float_64(self, value) -> str:
@@ -126,6 +127,9 @@ class DataSection:
         self.strings[label] = value
         return label
 
+    def add_const(self, label, const: IConst):
+        self.strings[label] = const
+
     def emit(self, buf: str) -> str:
         for label, data in self.floats.items():
             bytez = len(data)
@@ -140,6 +144,9 @@ class DataSection:
         for label, data in self.strings.items():
             buf += f"\n{label}:\n"
             buf += f"    .string {data}\n"
+        for label, data in self.ints.items():
+            buf += f"\n{label}:\n"
+            buf += f"    .quad {data}\n"
         return buf
 
 
@@ -175,8 +182,8 @@ class StackVar:
 
 
 class Gen:
-    def __init__(self, ir: List[FnDef | FnDecl], output) -> None:
-        self.ir = ir
+    def __init__(self, mod: IRModule, output) -> None:
+        self.mod = mod
         self.output = output
         self.fns = {}
         self.buf = ""
@@ -184,6 +191,7 @@ class Gen:
         self.label_manager = LabelManager()
         self.data_sec = DataSection(self.label_manager)
         self.reg_map: Dict[Value, Register | StackVar] = {}
+        self.globls: Dict[str, str] = {}
         self.unwinding_tables = 1
         self.exception_table_id = 0
 
@@ -201,6 +209,7 @@ class Gen:
                     case ConstKind.Bool:
                         return str(int(bool(val.value)))
                     case ConstKind.Str:
+                        # this should be unreachable
                         reg = alloc_reg(8)
                         label = self.data_sec.add_string(val.value)
                         self.buf += f"    lea {reg.name}, [rip + {label}]\n"
@@ -222,6 +231,11 @@ class Gen:
                 return self.reg_map[val]
             case IConst():
                 return val
+            case Label():
+                # must be an anonymous const
+                reg = alloc_reg(8)
+                self.buf += f"    lea {reg.name}, [rip + {val}]\n"
+                return reg
             case _:
                 assert False
 
@@ -241,6 +255,10 @@ class Gen:
                     case Alloc():
                         reg = alloc_reg(alloc.size)
                         self.buf += f"    mov {reg.name}, {self.size_to_ptr(alloc.size)} ptr [rbp - {alloc.off}]\n"
+                        self.reg_map[inst] = reg
+                    case Label():
+                        reg = alloc_reg(8)
+                        self.buf += f"    mov {reg.name}, [rip + {alloc}]\n"
                         self.reg_map[inst] = reg
                     case _:
                         reg = alloc_reg(8)
@@ -383,7 +401,12 @@ class Gen:
 
     def emit(self):
         self.buf += ".intel_syntax noprefix\n.globl main\n"
-        self.gen(self.ir)
+        for _, value in self.mod.consts.items():
+            label, const = value
+            self.data_sec.ints[label] = const
+        for label, const in self.mod.anon_consts.items():
+            self.data_sec.strings[label] = const
+        self.gen(self.mod.defs)
         self.buf = self.data_sec.emit(self.buf)
         with open(f"{self.output}.asm", "w") as f:
             f.write(self.buf)
