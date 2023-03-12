@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Dict
+from typing import Callable, Dict
 from ..ir.function import *
 from ..ir.inst import *
 from ..ir.basic_block import *
@@ -8,6 +8,22 @@ from math import log
 from dataclasses import dataclass
 import struct
 # from beeprint import pp
+
+
+def __offset(self, args):
+    assert len(args) == 2
+    ptr = self.lookup(args[0])
+    offset = self.lookup(args[1])
+    used_regs.clear()
+    rendered_ptr = self.render_val(ptr)
+    rendered_offset = self.render_val(offset)
+    self.buf += f"    add {rendered_ptr}, {rendered_offset}\n"
+    return ptr
+
+
+intrinsics: Dict[str, Callable] = {
+    "offset":  __offset
+}
 
 
 @dataclass
@@ -146,6 +162,18 @@ def alloc_arg_reg(size) -> Register:
     raise NotImplemented("TODO: spill register")
 
 
+class StackVar:
+    __match_args__ = ('size', 'off', )
+
+    def __init__(self, size, off) -> None:
+        self.size = size
+        self.off = off
+
+    @staticmethod
+    def from_alloc(alloc: Alloc) -> StackVar:
+        return StackVar(alloc.size, alloc.off)
+
+
 class Gen:
     def __init__(self, ir: List[FnDef | FnDecl], output) -> None:
         self.ir = ir
@@ -155,9 +183,16 @@ class Gen:
         self.fn_ctx = None
         self.label_manager = LabelManager()
         self.data_sec = DataSection(self.label_manager)
-        self.reg_map: Dict[Value, Register] = {}
+        self.reg_map: Dict[Value, Register | StackVar] = {}
+        self.unwinding_tables = 1
+        self.exception_table_id = 0
 
-    def render_val(self, val: Register | IConst | None) -> str:
+    @property
+    def except_table(self):
+        self.exception_table_id += 1
+        return f".LException{self.exception_table_id}"
+
+    def render_val(self, val: Register | StackVar | IConst | None) -> str:
         match val:
             case Register():
                 return val.name
@@ -171,13 +206,17 @@ class Gen:
                         self.buf += f"    lea {reg.name}, [rip + {label}]\n"
                         return reg.name
                 return val.value
+            case StackVar(size, off):
+                reg = alloc_reg(8)
+                self.buf += f"    lea {reg.name}, [rbp - {off}]\n"
+                return reg.name
             case _:
                 assert False, val
 
     def size_to_ptr(self, size) -> str:
         return {1: "byte", 2: "word", 4: "dword", 8: "qword"}[size]
 
-    def lookup(self, val: Value) -> Register | IConst:
+    def lookup(self, val: Value) -> Register | StackVar | IConst:
         match val:
             case Inst():
                 return self.reg_map[val]
@@ -195,13 +234,18 @@ class Gen:
     def gen_inst(self, inst: Inst) -> Register | IConst | None:
         match inst:
             case Alloc():
-                pass
+                self.reg_map[inst] = StackVar.from_alloc(inst)
             case Load():
                 alloc = inst.src
-                assert isinstance(alloc, Alloc)
-                reg = alloc_reg(alloc.size)
-                self.buf += f"    mov {reg.name}, {self.size_to_ptr(alloc.size)} ptr [rbp - {alloc.off}]\n"
-                self.reg_map[inst] = reg
+                match alloc:
+                    case Alloc():
+                        reg = alloc_reg(alloc.size)
+                        self.buf += f"    mov {reg.name}, {self.size_to_ptr(alloc.size)} ptr [rbp - {alloc.off}]\n"
+                        self.reg_map[inst] = reg
+                    case _:
+                        reg = alloc_reg(8)
+                        self.buf += f"    lea {reg.name}, [rip + {alloc}]\n"
+                        self.reg_map[inst] = reg
                 return reg
             case Store():
                 alloc = inst.dst
@@ -239,12 +283,22 @@ class Gen:
                     case _:
                         pass
             case FnCall():
-                for arg in inst.args:
-                    reg = alloc_arg_reg(8)
-                    rendered_arg = self.render_val(self.lookup(arg))
-                    self.buf += f"    mov {reg.name}, {rendered_arg}\n"
-                self.buf += f"    call {inst.fn_name}\n"
-                used_regs.clear()
+                if inst.fn_name in intrinsics:
+                    self.reg_map[inst] = intrinsics[inst.fn_name](
+                        self, inst.args)
+                else:
+                    for arg in inst.args:
+                        lookup_val = self.lookup(arg)
+                        rendered_arg = self.render_val(lookup_val)
+                        if isinstance(lookup_val, Register):
+                            reg = alloc_arg_reg(lookup_val.size)
+                        else:
+                            reg = alloc_arg_reg(8)
+                        self.buf += f"    mov {reg.name}, {rendered_arg}\n"
+                    self.buf += f"    call {inst.fn_name}\n"
+                    used_regs.clear()
+                    reg = alloc_reg(8)
+                    self.reg_map[inst] = reg
             case _:
                 assert False, inst
 
@@ -253,34 +307,75 @@ class Gen:
         self.buf += f".LBB_{block.bb_id}:\n"
         for inst in block.instructions:
             self.gen_inst(inst)
+        used_regs.clear()
+
+    def gen_except_table(self, exception_table_id):
+        self.buf += f"{exception_table_id}:\n" + \
+            "    .byte 0xff\n" + \
+            "    .byte 0xff\n" + \
+            "    .byte 1\n"
 
     def gen(self, nodes):
+        # 0x9b = DW_EH_PE_pcrel | DW_EH_PE_indirect | DW_EH_PE_sdata4
         for node in nodes:
             match node:
-                case FnDef(name, _, ret_ty, basic_blocks):
+                case FnDef(name, args, ret_ty, basic_blocks):
+                    exception_table = self.except_table
                     self.fns[name] = node
-                    self.buf += f"\n{name}:\n"
+                    if self.unwinding_tables:
+                        self.buf += f"\n    .section .text.{name}, \"ax\", @progbits\n"
+                        self.buf += "    .p2align 4, 0x90\n"
+                        self.buf += f"    .type {name}, @function\n"
+                    self.buf += f"{name}:\n"
+                    if self.unwinding_tables:
+                        self.buf += "    .cfi_startproc\n" + \
+                            "    .cfi_personality 0, ray_eh_personality\n" + \
+                            f"    .cfi_lsda 0, {exception_table}\n"
                     size = 0
                     for block in basic_blocks:
                         for inst in block.instructions:
                             if isinstance(inst, Alloc):
                                 size += inst.ty.get_size()
                     alignment = (size + 15) & ~15
+                    for arg in args:
+                        self.reg_map[arg] = alloc_arg_reg(8)
+                    used_regs.clear()
                     self.buf += \
-                        "    push rbp\n" + \
-                        "    mov rbp, rsp\n"
+                        "    push rbp\n"
+                    if self.unwinding_tables:
+                        self.buf += \
+                            "    .cfi_def_cfa_offset 16\n" + \
+                            "    .cfi_offset rbp, -16\n"
+                    self.buf += "    mov rbp, rsp\n"
+                    if self.unwinding_tables:
+                        self.buf += "    .cfi_def_cfa_register rbp\n"
                     if alignment:
                         self.buf += f"    sub rsp, {alignment}\n"
+                        if self.unwinding_tables:
+                            self.buf += f"    .cfi_adjust_cfa_offset {alignment}\n"
                     self.fn_ctx = node
                     for block in basic_blocks:
                         self.gen_block(block)
                     if alignment:
                         self.buf += f"    add rsp, {alignment}\n"
+                        if self.unwinding_tables:
+                            self.buf += f"    .cfi_adjust_cfa_offset -{alignment}\n"
                     match ret_ty:
                         case PrimTy(PrimTyKind.Unit):
                             self.buf += f"    xor rax, rax\n"
                     self.buf += "    pop rbp\n"
+                    if self.unwinding_tables:
+                        self.buf += "    .cfi_def_cfa rsp, 8\n"
                     self.buf += "    ret\n"
+                    if self.unwinding_tables:
+                        self.buf += f".L{name}_end:\n" + \
+                            f"    .size {name}, .L{name}_end - {name}\n" + \
+                            "    .cfi_endproc\n" + \
+                            f"    .section .gcc_except_table.{name}, \"a\", @progbits\n" + \
+                            "    .p2align 2\n"
+
+                    if self.unwinding_tables:
+                        self.gen_except_table(exception_table)
                 case FnDecl():
                     pass
                 case _:
@@ -294,5 +389,5 @@ class Gen:
             f.write(self.buf)
         from subprocess import call
         call(["as", f"{self.output}.asm", "-o", f"{self.output}.o"])
-        call(["gcc", f"{self.output}.o", "-o", self.output])
+        call(["gcc", "-lunwind", f"{self.output}.o", "-o", self.output])
         # call(["rm", "-f", f"{self.output}.o", f"{self.output}.asm"])

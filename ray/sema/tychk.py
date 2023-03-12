@@ -36,7 +36,7 @@ class TyEnv:
             return self.bindings[name]['ty']
         elif self.parent:
             return self.parent.find_local(name)
-        assert False
+        assert False, name
 
     def def_local(self, name, ty, val=None):
         if self.search_local(name):
@@ -253,7 +253,8 @@ class TyCheck:
             case Ident(name):
                 if name in self.consts:
                     return self.consts[name]
-                elif ty := self.env.find_local(name):
+                elif self.env.search_local(name):
+                    ty = self.env.find_local(name)
                     if ty != expected_ty:
                         self.add_err(TypesMismatchError(
                             f"expected `{expected_ty}`, found `{ty}`"), span)
@@ -288,14 +289,16 @@ class TyCheck:
                                     self.add_err(TypesMismatchError(
                                         f"expected `{expected_ty}`, found number"), span)
                     case UnaryKind.AddrOf:
-                        if type(expr.kind) != Ident:
+                        if type(expr) != Ident:
                             panic(
                                 f"cannot use & on {expr.kind.__class__.__name__}")
                         match expected_ty:
                             case RefTy(ty):
                                 self.check(expr, ty)
                             case _:
-                                panic(f"expected {expected_ty} but got Raw")
+                                ty = RefTy(self.infer(expr))
+                                self.add_err(TypesMismatchError(
+                                    f"expected `{expected_ty}`, found {ty}"), span)
                     case UnaryKind.Deref:
                         self.check(expr, PtrTy(expected_ty))
                     case _:
@@ -310,7 +313,7 @@ class TyCheck:
             case Cast(cast_expr, ty):
                 cast_expr.ty = self.infer(cast_expr)
                 match cast_expr.ty, ty:
-                    case RefTy(_) | PrimTy(PrimTyKind.Raw), PrimTy(PrimTyKind.Raw):
+                    case RefTy(_) | PrimTy(PrimTyKind.Raw) | FnTy(), PrimTy(PrimTyKind.Raw):
                         pass
                     case PrimTy(_), PrimTy(PrimTyKind.Raw):
                         self.add_err(CastError(

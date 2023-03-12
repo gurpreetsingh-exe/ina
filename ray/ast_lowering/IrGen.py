@@ -84,6 +84,7 @@ class IRGen:
         self.instructions = []
         self.ctx = LoweringContext()
         self._bb_id = 0
+        self.globls = {}
 
     def add_inst(self, inst: Inst) -> Inst:
         self.instructions.append(inst)
@@ -116,9 +117,11 @@ class IRGen:
                         assert False
                 return self.add_inst(binary)
             case Ident(name):
-                bind = self.env.find(name)
+                try:
+                    bind = self.env.find(name)
+                except AssertionError:
+                    bind = self.globls[name]
                 load = Load(bind)
-                load.ty = bind.ty
                 return self.add_inst(load)
             case If(cond, then, elze):
                 c = self.lower_expr(cond)
@@ -144,6 +147,15 @@ class IRGen:
             case Call(name, args):
                 lowered_args = [self.lower_expr(arg) for arg in args]
                 return self.add_inst(FnCall(name, lowered_args))
+            case Cast(expr, _):
+                return self.lower_expr(expr)
+            case Unary(kind, expr):
+                match kind:
+                    case UnaryKind.AddrOf:
+                        assert isinstance(expr, Ident)
+                        return self.env.find(expr.name)
+                    case _:
+                        assert False
             case _:
                 assert False, expr
 
@@ -173,6 +185,7 @@ class IRGen:
     def lower_fn(self, fn: Fn) -> FnDef | FnDecl:
         match fn:
             case Fn(name, args, ret_ty, body, is_extern, abi):
+                self.globls[name] = name
                 self.off = 0
                 ir_args = []
                 for arg in args:
