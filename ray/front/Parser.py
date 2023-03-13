@@ -319,6 +319,11 @@ class Parser:
                 self.advance()
                 self.eat_if_present(TokenKind.SEMI)
                 stmt = Break()
+            case TokenKind.Return:
+                self.advance()
+                expr = self.parse_expr()
+                stmt = Return(expr)
+                self.expect(TokenKind.SEMI)
             case _:
                 stmt = self.parse_expr()
                 if isinstance(stmt, If):

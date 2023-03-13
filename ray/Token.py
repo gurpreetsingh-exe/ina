@@ -20,6 +20,7 @@ class TokenKind(Enum):
     As = auto()
     Loop = auto()
     Break = auto()
+    Return = auto()
     Const = auto()
     Struct = auto()
 
@@ -74,6 +75,7 @@ Keywords = {
     "as": TokenKind.As,
     "loop": TokenKind.Loop,
     "break": TokenKind.Break,
+    "return": TokenKind.Return,
     "const": TokenKind.Const,
     "struct": TokenKind.Struct,
 }

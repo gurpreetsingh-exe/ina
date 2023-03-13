@@ -457,6 +457,14 @@ class Break:
         self.label = 0
 
 
+class Return:
+    __match_args__ = ('expr', )
+
+    def __init__(self, expr: Expr) -> None:
+        self.expr = expr
+        self.span: Span | None = None
+
+
 class Stmt:
     __match_args__ = ('kind', )
 

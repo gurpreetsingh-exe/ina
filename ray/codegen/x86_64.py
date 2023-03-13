@@ -22,7 +22,7 @@ def __offset(self, args):
 
 
 intrinsics: Dict[str, Callable] = {
-    "offset":  __offset
+    "offset":  __offset,
 }
 
 
@@ -62,8 +62,8 @@ cmp = {
 jmp = {
     CmpKind.Lt: "jge",
     CmpKind.Gt: "jle",
-    CmpKind.Eq: "je",
-    CmpKind.NotEq: "jne",
+    CmpKind.Eq: "jne",
+    CmpKind.NotEq: "je",
 }
 
 
@@ -131,6 +131,7 @@ class DataSection:
         self.strings[label] = const
 
     def emit(self, buf: str) -> str:
+        buf += "\n.section .rodata\n"
         for label, data in self.floats.items():
             bytez = len(data)
             data = int.from_bytes(data, 'little')
@@ -147,6 +148,8 @@ class DataSection:
         for label, data in self.ints.items():
             buf += f"\n{label}:\n"
             buf += f"    .quad {data}\n"
+        buf += "\n.section .bss\n"
+        buf += "__jmp_buf:\n    .zero 200\n"
         return buf
 
 
@@ -192,13 +195,7 @@ class Gen:
         self.data_sec = DataSection(self.label_manager)
         self.reg_map: Dict[Value, Register | StackVar] = {}
         self.globls: Dict[str, str] = {}
-        self.unwinding_tables = 1
-        self.exception_table_id = 0
-
-    @property
-    def except_table(self):
-        self.exception_table_id += 1
-        return f".LException{self.exception_table_id}"
+        self.func_id = 0
 
     def render_val(self, val: Register | StackVar | IConst | None) -> str:
         match val:
@@ -293,11 +290,11 @@ class Gen:
                 assert isinstance(l, Register)
                 self.reg_map[inst] = l
             case Jmp():
-                self.buf += f"    jmp .LBB_{inst.br_id}\n"
+                self.buf += f"    jmp .LBB{self.func_id}_{inst.br_id}\n"
             case Br():
                 match inst.cond:
                     case Cmp():
-                        self.buf += f"    {jmp[inst.cond.kind]} .LBB_{inst.bfalse}\n"
+                        self.buf += f"    {jmp[inst.cond.kind]} .LBB{self.func_id}_{inst.bfalse}\n"
                     case _:
                         pass
             case FnCall():
@@ -317,38 +314,35 @@ class Gen:
                     used_regs.clear()
                     reg = alloc_reg(8)
                     self.reg_map[inst] = reg
+            case Ret():
+                reg = Register("rax", 8)
+                if inst.val:
+                    value = self.lookup(inst.val)
+                    if isinstance(value, Register) and value.kind == "rax":
+                        self.buf += "    ret\n"
+                        return value
+                    val = self.render_val(value)
+                    self.buf += f"    mov {reg.name}, {val}\n"
+                else:
+                    self.buf += f"    xor {reg.name}, {reg.name}\n"
+                self.buf += "    ret\n"
             case _:
                 assert False, inst
 
     def gen_block(self, block: BasicBlock):
         self.fn_ctx = None
-        self.buf += f".LBB_{block.bb_id}:\n"
+        self.buf += f".LBB{self.func_id}_{block.bb_id}:\n"
         for inst in block.instructions:
             self.gen_inst(inst)
         used_regs.clear()
-
-    def gen_except_table(self, exception_table_id):
-        self.buf += f"{exception_table_id}:\n" + \
-            "    .byte 0xff\n" + \
-            "    .byte 0xff\n" + \
-            "    .byte 1\n"
 
     def gen(self, nodes):
         # 0x9b = DW_EH_PE_pcrel | DW_EH_PE_indirect | DW_EH_PE_sdata4
         for node in nodes:
             match node:
                 case FnDef(name, args, ret_ty, basic_blocks):
-                    exception_table = self.except_table
                     self.fns[name] = node
-                    if self.unwinding_tables:
-                        self.buf += f"\n    .section .text.{name}, \"ax\", @progbits\n"
-                        self.buf += "    .p2align 4, 0x90\n"
-                        self.buf += f"    .type {name}, @function\n"
-                    self.buf += f"{name}:\n"
-                    if self.unwinding_tables:
-                        self.buf += "    .cfi_startproc\n" + \
-                            "    .cfi_personality 0, ray_eh_personality\n" + \
-                            f"    .cfi_lsda 0, {exception_table}\n"
+                    self.buf += f"\n{name}:\n"
                     size = 0
                     for block in basic_blocks:
                         for inst in block.instructions:
@@ -360,40 +354,20 @@ class Gen:
                     used_regs.clear()
                     self.buf += \
                         "    push rbp\n"
-                    if self.unwinding_tables:
-                        self.buf += \
-                            "    .cfi_def_cfa_offset 16\n" + \
-                            "    .cfi_offset rbp, -16\n"
                     self.buf += "    mov rbp, rsp\n"
-                    if self.unwinding_tables:
-                        self.buf += "    .cfi_def_cfa_register rbp\n"
                     if alignment:
                         self.buf += f"    sub rsp, {alignment}\n"
-                        if self.unwinding_tables:
-                            self.buf += f"    .cfi_adjust_cfa_offset {alignment}\n"
                     self.fn_ctx = node
                     for block in basic_blocks:
                         self.gen_block(block)
                     if alignment:
                         self.buf += f"    add rsp, {alignment}\n"
-                        if self.unwinding_tables:
-                            self.buf += f"    .cfi_adjust_cfa_offset -{alignment}\n"
                     match ret_ty:
                         case PrimTy(PrimTyKind.Unit):
                             self.buf += f"    xor rax, rax\n"
                     self.buf += "    pop rbp\n"
-                    if self.unwinding_tables:
-                        self.buf += "    .cfi_def_cfa rsp, 8\n"
                     self.buf += "    ret\n"
-                    if self.unwinding_tables:
-                        self.buf += f".L{name}_end:\n" + \
-                            f"    .size {name}, .L{name}_end - {name}\n" + \
-                            "    .cfi_endproc\n" + \
-                            f"    .section .gcc_except_table.{name}, \"a\", @progbits\n" + \
-                            "    .p2align 2\n"
-
-                    if self.unwinding_tables:
-                        self.gen_except_table(exception_table)
+                    self.func_id += 1
                 case FnDecl():
                     pass
                 case _:
@@ -412,5 +386,5 @@ class Gen:
             f.write(self.buf)
         from subprocess import call
         call(["as", f"{self.output}.asm", "-o", f"{self.output}.o"])
-        call(["gcc", "-lunwind", f"{self.output}.o", "-o", self.output])
+        call(["gcc", f"{self.output}.o", "-o", self.output])
         # call(["rm", "-f", f"{self.output}.o", f"{self.output}.asm"])

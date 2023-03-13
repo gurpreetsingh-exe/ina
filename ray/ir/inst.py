@@ -91,7 +91,7 @@ class Store(Inst):
 
 
 class Load(Inst):
-    def __init__(self, src: Inst) -> None:
+    def __init__(self, src: Value) -> None:
         super().__init__()
         self.src = src
 
@@ -232,6 +232,21 @@ class Jmp(Inst):
 
     def __str__(self) -> str:
         return "    jmp %bb{}".format(self.br_id)
+
+
+class Ret(Inst):
+    def __init__(self, val: Value | None = None) -> None:
+        super().__init__()
+        self.val = val
+
+    def uses(self, inst: Inst) -> bool:
+        return inst == self.val
+
+    def __str__(self) -> str:
+        if self.val:
+            return "    ret {}".format(repr(self.val))
+        else:
+            return "    ret"
 
 
 class Phi(Inst):

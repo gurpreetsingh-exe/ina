@@ -160,6 +160,9 @@ class IRGen:
                 inst = self.add_inst(Alloc(ty, self.off, name))
                 self.add_inst(Store(inst, p, name))
                 self.env.bind(name, inst)
+            case Return(expr):
+                val = self.lower_expr(expr)
+                return self.add_inst(Ret(val))
             case Break():
                 assert False
             case _:
@@ -200,6 +203,8 @@ class IRGen:
                     return
                 if body:
                     self.lower_block(body)
+                self._bb_id = 0
+                BasicBlock._id = 0
                 basic_blocks = BasicBlockBuilder(self.instructions).run()
                 self.instructions.clear()
                 self.ir_module.defs.append(

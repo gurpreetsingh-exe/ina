@@ -447,6 +447,8 @@ class TyCheck:
                 self.env.def_local(name, ty)
             case Break():
                 pass
+            case Return(expr):
+                self.infer(expr)
             case _:
                 self.infer(stmt.kind)
 
