@@ -21,6 +21,10 @@ def __offset(self, args):
     return ptr
 
 
+def align(num: int, align: int) -> int:
+    return (num + align - 1) & ~(align - 1)
+
+
 intrinsics: Dict[str, Callable] = {
     "offset":  __offset,
 }
@@ -343,12 +347,18 @@ class Gen:
                 case FnDef(name, args, ret_ty, basic_blocks):
                     self.fns[name] = node
                     self.buf += f"\n{name}:\n"
-                    size = 0
+                    alignment = 0
                     for block in basic_blocks:
                         for inst in block.instructions:
                             if isinstance(inst, Alloc):
-                                size += inst.ty.get_size()
-                    alignment = (size + 15) & ~15
+                                if isinstance(inst.ty, ArrayTy):
+                                    alignment = align(
+                                        alignment + inst.ty.get_size(), 8)
+                                else:
+                                    size = inst.ty.get_size()
+                                    alignment = (
+                                        alignment + size * 2 - 1) & ~(size - 1)
+                    alignment = align(alignment, 16)
                     for arg in args:
                         self.reg_map[arg] = alloc_arg_reg(8)
                     used_regs.clear()
@@ -386,5 +396,7 @@ class Gen:
             f.write(self.buf)
         from subprocess import call
         call(["as", f"{self.output}.asm", "-o", f"{self.output}.o"])
-        call(["gcc", f"{self.output}.o", "-o", self.output])
+        call(
+            ["gcc", "-lunwind", f"{self.output}.o", "-o", self.output])
+        # call(["gcc", f"{self.output}.o", "-o", self.output])
         # call(["rm", "-f", f"{self.output}.o", f"{self.output}.asm"])

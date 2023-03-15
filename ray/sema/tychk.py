@@ -207,8 +207,22 @@ class TyCheck:
                         self.add_err(MissingStructFieldError(
                             f"missing `{f}`", f, name), span)
                 return StructTy(name, field_tys)
+            case ArrayRepeat(item, length):
+                return ArrayTy(self.infer(item), length)
+            case ArrayNor(items):
+                items_ty = [self.infer(item) for item in items]
+                if not items_ty:
+                    self.add_err(MissingTyAnnError(
+                        "type annotation required"), span).emit(self.file, True)
+                first = items_ty[0]
+                for item in items:
+                    ty = self.infer(item)
+                    if first != ty:
+                        self.add_err(TypesMismatchError(
+                            f"expected `{first}`, found `{ty}`"), item.span).emit(self.file, True)
+                return ArrayTy(first, len(items_ty))
             case _:
-                assert False, f"{expr.kind}"
+                assert False, f"{expr}"
 
     def check(self, expr: Expr, expected_ty: Ty):
         span = expr.span
@@ -291,7 +305,7 @@ class TyCheck:
                     case UnaryKind.AddrOf:
                         if type(expr) != Ident:
                             panic(
-                                f"cannot use & on {expr.kind.__class__.__name__}")
+                                f"cannot use & on {expr.__class__.__name__}")
                         match expected_ty:
                             case RefTy(ty):
                                 self.check(expr, ty)

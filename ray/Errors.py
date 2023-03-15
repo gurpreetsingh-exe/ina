@@ -103,6 +103,17 @@ class MissingStructFieldError(Error):
             exit(1)
 
 
+class MissingTyAnnError(Error):
+    def __init__(self, msg: str) -> None:
+        super().__init__(msg)
+
+    def emit(self, file: File, _exit=False):
+        emit(
+            self, file, f": missing type annotation\n")
+        if _exit:
+            exit(1)
+
+
 def c(format: str) -> str:
     return f"\033[30;1m{format}\033[0m"
 

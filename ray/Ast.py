@@ -265,6 +265,31 @@ class FnTy(Ty):
         return "fn ({}) -> {}".format(", ".join(map(repr, self.args)), self.ret_ty)
 
 
+class ArrayTy(Ty):
+    __match_args__ = ("ty", "length", )
+
+    def __init__(self, ty: Ty, length: int):
+        self.ty = ty
+        self.length = length
+        self.span = None
+
+    def get_size(self) -> int:
+        return self.ty.get_size() * self.length
+
+    def __eq__(self, __o: Ty) -> bool:
+        match __o:
+            case ArrayTy(ty, length):
+                return ty == self.ty and length == self.length
+            case _:
+                return False
+
+    def __ne__(self, __o: Ty) -> bool:
+        return not self.__eq__(__o)
+
+    def __repr__(self) -> str:
+        return f"[{repr(self.ty)}; {self.length}]"
+
+
 class FnArg:
     pass
 
@@ -522,6 +547,24 @@ class Cast:
         self.span: Span | None = None
 
 
+class ArrayNor:
+    __match_args__ = ('items', )
+
+    def __init__(self, items: List[Expr]) -> None:
+        self.items = items
+
+
+class ArrayRepeat:
+    __match_args__ = ('item', 'length', )
+
+    def __init__(self, item: Expr, length: int) -> None:
+        self.item = item
+        self.length = length
+
+
+Array = ArrayNor | ArrayRepeat
+
+
 class StructField:
     __match_args__ = ("name", "ty", )
 
@@ -599,7 +642,8 @@ class Module:
         raise StopIteration()
 
 
-Expr = Binary \
+Expr = Array \
+    | Binary \
     | Unary \
     | Call \
     | Literal \

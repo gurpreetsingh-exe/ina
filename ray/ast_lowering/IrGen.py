@@ -65,6 +65,8 @@ class IRGen:
         self.off = 0
         self.env = Env()
         self.instructions = []
+        Inst.reset()
+        BasicBlock.reset()
         self.ir_module: IRModule = IRModule()
         self._bb_id = 0
         self.globls = {}
@@ -148,6 +150,17 @@ class IRGen:
                         return self.env.find(expr.name)
                     case _:
                         assert False
+            case ArrayRepeat(item, length):
+                ty = ArrayTy(item.ty, length)
+                size = ty.get_size()
+                self.off += size
+                self.off = (self.off + 7) & ~7
+                ptr = self.add_inst(
+                    Alloc(ty, self.off, ""))
+                val = self.lower_expr(item)
+                self.add_inst(
+                    FnCall("memset", [ptr, val, IConst(ConstKind.Int, str(length))]))
+                return ptr
             case _:
                 assert False, expr
 
@@ -155,6 +168,9 @@ class IRGen:
         match stmt.kind:
             case Let(name, ty, init):
                 p = self.lower_expr(init)
+                if isinstance(p, Alloc):
+                    self.env.bind(name, p)
+                    return
                 size = ty.get_size()
                 self.off = (self.off + size * 2 - 1) & ~(size - 1)
                 inst = self.add_inst(Alloc(ty, self.off, name))

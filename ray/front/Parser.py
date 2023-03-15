@@ -91,6 +91,15 @@ class Parser:
                     self.advance()
                     ret_ty = self.parse_ty()
                 return FnTy(args, ret_ty)
+            case TokenKind.LBRACKET:
+                self.advance()
+                ty = self.parse_ty()
+                self.expect(TokenKind.SEMI)
+                length = self.parse_expr()
+                assert isinstance(length, Literal) and length.kind == Lit.Int
+                length = int(length.value)
+                self.expect(TokenKind.RBRACKET)
+                return ArrayTy(ty, length)
             case _:
                 panic("unexpected type")
 
@@ -154,6 +163,9 @@ class Parser:
             args.append(self.parse_expr())
             if self.t.kind == TokenKind.COMMA:
                 self.advance()
+            else:
+                break
+        self.eat_if_present(TokenKind.COMMA)
         self.expect(TokenKind.RPAREN)
         return Call(name, args)
 
@@ -176,8 +188,39 @@ class Parser:
                 self.advance()
             else:
                 break
+        self.eat_if_present(TokenKind.COMMA)
         self.expect(TokenKind.RCURLY)
         return StructExpr(name, fields)
+
+    @spanned
+    def parse_array(self) -> Array:
+        assert self.t != None
+        self.expect(TokenKind.LBRACKET)
+        if self.t.kind == TokenKind.RBRACKET:
+            self.advance()
+            return ArrayNor([])
+        item = self.parse_expr()
+        arr = None
+        if self.t.kind == TokenKind.SEMI:
+            self.advance()
+            length = self.parse_expr()
+            assert isinstance(length, Literal) and length.kind == Lit.Int
+            length = int(length.value)
+            arr = ArrayRepeat(item, length)
+        else:
+            items = []
+            items.append(item)
+            self.eat_if_present(TokenKind.COMMA)
+            while self.check() and self.t.kind != TokenKind.RBRACKET:
+                items.append(self.parse_expr())
+                if self.t.kind == TokenKind.COMMA:
+                    self.advance()
+                else:
+                    break
+            self.eat_if_present(TokenKind.COMMA)
+            arr = ArrayNor(items)
+        self.expect(TokenKind.RBRACKET)
+        return arr
 
     @spanned
     def parse_primary(self) -> Expr:
@@ -194,6 +237,8 @@ class Parser:
                 lit_kind = self.token_to_lit()
                 self.advance()
                 return Literal(lit_kind, value)
+            case TokenKind.LBRACKET:
+                return self.parse_array()
             case TokenKind.If:
                 self.advance()
                 cond = self.parse_expr()
@@ -346,19 +391,6 @@ class Parser:
         last = None
         while self.check() and self.t.kind != TokenKind.RCURLY:
             stmt = self.parse_stmt()
-            """
-            if not stmt.semi:
-                match last:
-                    case Stmt(If()):
-                        stmts.append(last)
-                        last = stmt
-                    case None:
-                        last = stmt
-                    case _:
-                        assert False, last
-            else:
-                stmts.append(stmt)
-            """
             match last:
                 case Stmt(_):
                     stmts.append(last)

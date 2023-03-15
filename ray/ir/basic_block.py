@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Dict, List, Set
+from typing import List, Set
 from .inst import *
 
 
@@ -21,6 +21,10 @@ class BasicBlock:
         self.live_ins: Set[Inst] = set()
         self.live_outs: Set[Inst] = set()
         BasicBlock._id += 1
+
+    @staticmethod
+    def reset():
+        BasicBlock._id = 0
 
     def is_root(self) -> bool:
         return self.bb_id == 0
