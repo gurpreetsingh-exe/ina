@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Dict, List
-from ..Ast import Literal, Ty, BinaryKind, Lit
+from ..Ast import ArrayRepeat, Literal, Ty, BinaryKind, Lit, Expr
 from enum import Enum, auto
 from .basic_block import BasicBlock
 
@@ -278,12 +278,23 @@ class ConstKind(Enum):
     Float = auto()
     Str = auto()
     Bool = auto()
+    Array = auto()
 
 
 class IConst(Value):
     def __init__(self, kind, value) -> None:
         self.kind = kind
         self.value = value
+
+    @staticmethod
+    def from_expr(expr: Expr) -> IConst:
+        match expr:
+            case Literal():
+                return IConst.from_lit(expr)
+            case ArrayRepeat(item, length):
+                return ConstArray(item.ty, [IConst.from_expr(item)] * length)
+            case _:
+                assert False
 
     @staticmethod
     def from_lit(lit: Literal) -> IConst:
@@ -303,6 +314,29 @@ class IConst(Value):
         return False
 
     def __str__(self) -> str:
-        return self.value
+        if self.kind == ConstKind.Array:
+            return f"{self.ty} {self.value}"
+        else:
+            return self.value
+
+    def render(self, buf: str) -> str:
+        sz = {1: '.byte', 2: '.short', 4: '.long',
+              8: '.quad'}[self.ty.get_size()]
+        match self.kind:
+            case ConstKind.Array:
+                if int(self.value[0].value):
+                    for val in self.value:
+                        buf += f"    {sz} {val}\n"
+                else:
+                    buf += f"    .zero {self.ty.get_size() * len(self.value)}\n"
+            case _:
+                buf += f"    {sz} {self.value}\n"
+        return buf
 
     __repr__ = __str__
+
+
+class ConstArray(IConst):
+    def __init__(self, ty, values) -> None:
+        self.ty = ty
+        super().__init__(ConstKind.Array, values)

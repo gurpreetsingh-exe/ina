@@ -53,6 +53,7 @@ class TyCheck:
         self.fn_ctx = None
         self.errors = []
         self.consts = {}
+        self.globls = {}
         self.types = {}
         self.tychk()
 
@@ -124,6 +125,8 @@ class TyCheck:
                 if name in self.consts:
                     expr.ty = self.consts[name]
                     return self.consts[name]
+                elif name in self.globls:
+                    return self.globls[name]
                 elif self.env.search_local(name):
                     ty = self.env.find_local(name)
                     expr.ty = ty
@@ -267,6 +270,8 @@ class TyCheck:
             case Ident(name):
                 if name in self.consts:
                     return self.consts[name]
+                elif name in self.globls:
+                    return self.globls[name]
                 elif self.env.search_local(name):
                     ty = self.env.find_local(name)
                     if ty != expected_ty:
@@ -356,6 +361,17 @@ class TyCheck:
                     self.add_err(TypesMismatchError(
                         f"expected `{expected_ty}`, found `{ty}`"), span)
                 expr.ty = ty
+            case ArrayRepeat(item, length):
+                match expected_ty:
+                    case ArrayTy(ty, _len):
+                        if length != _len:
+                            self.add_err(TypesMismatchError(
+                                f"expected `{expected_ty}`, found `{ty}`"), span).emit(self.file, True)
+                        self.check(item, ty)
+                    case _:
+                        ty = ArrayTy(self.infer(item), length)
+                        self.add_err(TypesMismatchError(
+                            f"expected `{expected_ty}`, found `{ty}`"), span).emit(self.file, True)
             case _:
                 assert False, expr
 
@@ -518,6 +534,16 @@ class TyCheck:
                         ty = self.infer(init)
                         node.ty = ty
                     self.consts[name] = ty
+                case Let(name, ty, init):
+                    if name in self.globls:
+                        self.add_err(Redefinition(
+                            f"{name} is already defined"), span)
+                    if ty:
+                        self.check(init, ty)
+                    else:
+                        ty = self.infer(init)
+                        node.ty = ty
+                    self.globls[name] = ty
                 case Struct(name, _):
                     if name in self.types:
                         assert False

@@ -152,8 +152,6 @@ class DataSection:
         for label, data in self.ints.items():
             buf += f"\n{label}:\n"
             buf += f"    .quad {data}\n"
-        buf += "\n.section .bss\n"
-        buf += "__jmp_buf:\n    .zero 200\n"
         return buf
 
 
@@ -259,7 +257,7 @@ class Gen:
                         self.reg_map[inst] = reg
                     case Label():
                         reg = alloc_reg(8)
-                        self.buf += f"    mov {reg.name}, [rip + {alloc}]\n"
+                        self.buf += f"    lea {reg.name}, [rip + {alloc}]\n"
                         self.reg_map[inst] = reg
                     case _:
                         reg = alloc_reg(8)
@@ -314,7 +312,11 @@ class Gen:
                         else:
                             reg = alloc_arg_reg(8)
                         self.buf += f"    mov {reg.name}, {rendered_arg}\n"
-                    self.buf += f"    call {inst.fn_name}\n"
+                    self.buf += "    xor rax, rax\n"
+                    if isinstance(inst.fn_name, Alloc):
+                        self.buf += f"    call qword ptr [rbp - {inst.fn_name.off}]\n"
+                    else:
+                        self.buf += f"    call {inst.fn_name}\n"
                     used_regs.clear()
                     reg = alloc_reg(8)
                     self.reg_map[inst] = reg
@@ -392,11 +394,15 @@ class Gen:
             self.data_sec.strings[label] = const
         self.gen(self.mod.defs)
         self.buf = self.data_sec.emit(self.buf)
+        self.buf += "\n.section .bss\n"
+        for _, data in self.mod.globls.items():
+            label, globl = data
+            self.buf += f"\n{label}:\n"
+            self.buf = globl.render(self.buf)
         with open(f"{self.output}.asm", "w") as f:
             f.write(self.buf)
         from subprocess import call
         call(["as", f"{self.output}.asm", "-o", f"{self.output}.o"])
-        call(
-            ["gcc", "-lunwind", f"{self.output}.o", "-o", self.output])
+        call(["gcc", "-lunwind", f"{self.output}.o", "-o", self.output])
         # call(["gcc", f"{self.output}.o", "-o", self.output])
         # call(["rm", "-f", f"{self.output}.o", f"{self.output}.asm"])

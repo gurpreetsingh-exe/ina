@@ -55,6 +55,7 @@ class IRModule:
         self.defs: List[FnDef] = []
         self.decls: List[FnDecl] = []
         self.consts: Dict[str, Tuple[Label, IConst]] = {}
+        self.globls: Dict[str, Tuple[Label, IConst]] = {}
         self.anon_consts: Dict[Label, IConst] = {}
 
     def __repr__(self) -> str:
@@ -64,5 +65,7 @@ class IRModule:
             consts += "const {} = {} ;; {}\n".format(const[0], const[1], name)
         for name, const in self.anon_consts.items():
             consts += "const {} = {}\n".format(name, const)
+        for name, globl in self.globls.items():
+            consts += "globl {} = {} ;; {}\n".format(globl[0], globl[1], name)
         defs = "\n".join(map(str, self.defs))
         return "\n{}\n{}\n{}".format(decls, consts, defs)

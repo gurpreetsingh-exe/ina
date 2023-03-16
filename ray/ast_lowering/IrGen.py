@@ -107,8 +107,10 @@ class IRGen:
                 except AssertionError:
                     if name in self.globls:
                         bind = self.globls[name]
-                    else:
+                    elif name in self.ir_module.consts:
                         bind = self.ir_module.consts[name][0]
+                    else:
+                        bind = self.ir_module.globls[name][0]
                 load = Load(bind)
                 return self.add_inst(load)
             case If(cond, then, elze):
@@ -139,8 +141,13 @@ class IRGen:
                 self.add_inst(Store(var, p, name))
                 return var
             case Call(name, args):
+                func = None
+                try:
+                    func = self.env.find(name)
+                except AssertionError:
+                    func = name
                 lowered_args = [self.lower_expr(arg) for arg in args]
-                return self.add_inst(FnCall(name, lowered_args))
+                return self.add_inst(FnCall(func, lowered_args))
             case Cast(expr, _):
                 return self.lower_expr(expr)
             case Unary(kind, expr):
@@ -240,6 +247,10 @@ class IRGen:
                     const = IConst.from_lit(init)
                     label = Label()
                     self.ir_module.consts[name] = (label, const, )
+                case Let(name, _, init):
+                    label = Label()
+                    globl = IConst.from_expr(init)
+                    self.ir_module.globls[name] = (label, globl, )
                 case _:
                     assert False, node
         return self.ir_module

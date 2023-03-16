@@ -488,6 +488,9 @@ class Parser:
                     items.append(self.parse_fn())
                 case TokenKind.Const:
                     items.append(self.parse_const())
+                case TokenKind.Let:
+                    items.append(self.parse_let())
+                    self.expect(TokenKind.SEMI)
                 case TokenKind.Struct:
                     items.append(self.parse_struct())
                 case TokenKind.EOF:
