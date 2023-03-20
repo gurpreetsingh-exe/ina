@@ -224,6 +224,9 @@ class TyCheck:
                         self.add_err(TypesMismatchError(
                             f"expected `{first}`, found `{ty}`"), item.span).emit(self.file, True)
                 return ArrayTy(first, len(items_ty))
+            case Return(expr):
+                self.infer(expr)
+                return self.mk_unit()
             case _:
                 assert False, f"{expr}"
 

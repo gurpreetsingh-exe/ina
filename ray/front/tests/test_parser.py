@@ -9,8 +9,6 @@ def parse_expr(src: str) -> Expr:
     lexer = lexer_from_src(src, '')
     tokens = list(lexer.lexfile())
     parser = Parser(src, tokens)
-    # advance to set initial state
-    parser.advance()
     return parser.parse_expr()
 
 
@@ -18,8 +16,6 @@ def parse_stmt(src: str) -> Stmt:
     lexer = lexer_from_src(src, '')
     tokens = list(lexer.lexfile())
     parser = Parser(src, tokens)
-    # advance to set initial state
-    parser.advance()
     return parser.parse_stmt()
 
 

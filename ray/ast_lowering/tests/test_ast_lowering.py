@@ -11,13 +11,12 @@ def parse_stmt(src: str):
     lexer = lexer_from_src(src, '')
     tokens = list(lexer.lexfile())
     parser = Parser(src, tokens)
-    parser.advance()
     return parser.parse_stmt()
 
 
 def parse_stmt_lowered(src: str):
     stmt = parse_stmt(src)
-    dummy = Module([])
+    dummy = Module([], "")
     typeck = TyCheck(dummy, File("", src))
     typeck.env = TyEnv()
     typeck.visit_stmt(stmt)

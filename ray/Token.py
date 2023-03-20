@@ -23,6 +23,7 @@ class TokenKind(Enum):
     Return = auto()
     Const = auto()
     Struct = auto()
+    Mod = auto()
 
     PLUS = auto()  # `+`
     MINUS = auto()  # `-`
@@ -57,6 +58,7 @@ class TokenKind(Enum):
     EQ2 = auto()  # `==`
     BANGEQ = auto()  # `!=`
     ARROW = auto()  # `->`
+    COLON2 = auto()  # `::`
 
     DOT3 = auto()  # `...`
 
@@ -78,6 +80,7 @@ Keywords = {
     "return": TokenKind.Return,
     "const": TokenKind.Const,
     "struct": TokenKind.Struct,
+    "mod": TokenKind.Mod,
 }
 
 Punctuators = {
@@ -113,6 +116,7 @@ Punctuators = {
     '==': TokenKind.EQ2,
     '!=': TokenKind.BANGEQ,
     '->': TokenKind.ARROW,
+    '::': TokenKind.COLON2,
     '...': TokenKind.DOT3,
 }
 

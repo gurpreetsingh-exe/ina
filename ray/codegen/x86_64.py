@@ -195,6 +195,12 @@ class Gen:
         self.fn_ctx = None
         self.label_manager = LabelManager()
         self.data_sec = DataSection(self.label_manager)
+        self.alignment = 0
+
+        # TODO: use this to keep track of registers.
+        #  register is live when it's added to the
+        #  map and it's dead when it's accessed or
+        #  looked up by other instructions.
         self.reg_map: Dict[Value, Register | StackVar] = {}
         self.globls: Dict[str, str] = {}
         self.func_id = 0
@@ -215,7 +221,7 @@ class Gen:
                         return reg.name
                 return val.value
             case StackVar(size, off):
-                reg = alloc_reg(8)
+                reg = alloc_reg(size)
                 self.buf += f"    lea {reg.name}, [rbp - {off}]\n"
                 return reg.name
             case _:
@@ -244,7 +250,7 @@ class Gen:
                 const.value = func(int(const.value))
         return const
 
-    def gen_inst(self, inst: Inst) -> Register | IConst | None:
+    def gen_inst(self, inst: Inst):
         match inst:
             case Alloc():
                 self.reg_map[inst] = StackVar.from_alloc(inst)
@@ -260,10 +266,9 @@ class Gen:
                         self.buf += f"    lea {reg.name}, [rip + {alloc}]\n"
                         self.reg_map[inst] = reg
                     case _:
-                        reg = alloc_reg(8)
-                        self.buf += f"    lea {reg.name}, [rip + {alloc}]\n"
+                        reg = self.reg_map[alloc]
+                        self.buf += f"    mov {reg.name}, [{reg.name}]\n"
                         self.reg_map[inst] = reg
-                return reg
             case Store():
                 alloc = inst.dst
                 assert isinstance(alloc, Alloc)
@@ -318,8 +323,11 @@ class Gen:
                     else:
                         self.buf += f"    call {inst.fn_name}\n"
                     used_regs.clear()
-                    reg = alloc_reg(8)
-                    self.reg_map[inst] = reg
+                    fn = self.fns[inst.fn_name]
+                    if fn.ret_ty and fn.ret_ty != PrimTy(PrimTyKind.Unit):
+                        sz = fn.ret_ty.get_size()
+                        reg = alloc_reg(sz)
+                        self.reg_map[inst] = reg
             case Ret():
                 reg = Register("rax", 8)
                 if inst.val:
@@ -331,6 +339,7 @@ class Gen:
                     self.buf += f"    mov {reg.name}, {val}\n"
                 else:
                     self.buf += f"    xor {reg.name}, {reg.name}\n"
+                self.buf += f"    add rsp, {self.alignment}\n    pop rbp\n"
                 self.buf += "    ret\n"
             case _:
                 assert False, inst
@@ -349,31 +358,31 @@ class Gen:
                 case FnDef(name, args, ret_ty, basic_blocks):
                     self.fns[name] = node
                     self.buf += f"\n{name}:\n"
-                    alignment = 0
+                    self.alignment = 0
                     for block in basic_blocks:
                         for inst in block.instructions:
                             if isinstance(inst, Alloc):
                                 if isinstance(inst.ty, ArrayTy):
-                                    alignment = align(
-                                        alignment + inst.ty.get_size(), 8)
+                                    self.alignment = align(
+                                        self.alignment + inst.ty.get_size(), 8)
                                 else:
                                     size = inst.ty.get_size()
-                                    alignment = (
-                                        alignment + size * 2 - 1) & ~(size - 1)
-                    alignment = align(alignment, 16)
+                                    self.alignment = (
+                                        self.alignment + size * 2 - 1) & ~(size - 1)
+                    self.alignment = align(self.alignment, 16)
                     for arg in args:
                         self.reg_map[arg] = alloc_arg_reg(8)
                     used_regs.clear()
                     self.buf += \
                         "    push rbp\n"
                     self.buf += "    mov rbp, rsp\n"
-                    if alignment:
-                        self.buf += f"    sub rsp, {alignment}\n"
+                    if self.alignment:
+                        self.buf += f"    sub rsp, {self.alignment}\n"
                     self.fn_ctx = node
                     for block in basic_blocks:
                         self.gen_block(block)
-                    if alignment:
-                        self.buf += f"    add rsp, {alignment}\n"
+                    if self.alignment:
+                        self.buf += f"    add rsp, {self.alignment}\n"
                     match ret_ty:
                         case PrimTy(PrimTyKind.Unit):
                             self.buf += f"    xor rax, rax\n"
@@ -381,7 +390,7 @@ class Gen:
                     self.buf += "    ret\n"
                     self.func_id += 1
                 case FnDecl():
-                    pass
+                    self.fns[node.name] = node
                 case _:
                     assert False, f"{node} is not implemented"
 
@@ -392,6 +401,7 @@ class Gen:
             self.data_sec.ints[label] = const
         for label, const in self.mod.anon_consts.items():
             self.data_sec.strings[label] = const
+        self.gen(self.mod.decls)
         self.gen(self.mod.defs)
         self.buf = self.data_sec.emit(self.buf)
         self.buf += "\n.section .bss\n"

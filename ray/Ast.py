@@ -626,8 +626,9 @@ Item = Const | Fn | ExternBlock
 class Module:
     __match_args__ = ("items", )
 
-    def __init__(self, items: List[Item]) -> None:
+    def __init__(self, items: List[Item], name: str) -> None:
         self.items = items
+        self.name = name
         self._itr_index = 0
 
     def __iter__(self) -> Module:

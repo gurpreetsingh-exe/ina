@@ -23,6 +23,7 @@ class Parser:
         self.id = -1
         self.prev: Token | None = None
         self.t: Token | None = None
+        self.advance()
 
     def check(self) -> bool:
         return self.id < len(self.tokens) - 1
@@ -466,10 +467,17 @@ class Parser:
         self.expect(TokenKind.RCURLY)
         return Struct(name, fields)
 
-    def parse(self) -> Module:
+    def parse_module(self) -> Module:
+        self.expect(TokenKind.Mod)
+        name = self.expect(TokenKind.Ident).raw(self.src)
+        self.expect(TokenKind.LCURLY)
+        mod = self.parse(name)
+        self.expect(TokenKind.RCURLY)
+        return mod
+
+    def parse(self, mod_name=None) -> Module:
         items = []
-        mod = Module(items)
-        self.advance()
+        mod = Module(items, mod_name if mod_name else "<module>")
         if not self.t:
             return mod
         while self.check():
@@ -493,8 +501,10 @@ class Parser:
                     self.expect(TokenKind.SEMI)
                 case TokenKind.Struct:
                     items.append(self.parse_struct())
-                case TokenKind.EOF:
+                case TokenKind.Mod:
+                    items.append(self.parse_module())
+                case TokenKind.EOF | TokenKind.RCURLY:
                     break
                 case _:
                     panic(f"{self.t.kind} not implemented")
-        return Module(items)
+        return Module(items, mod_name if mod_name else "<module>")

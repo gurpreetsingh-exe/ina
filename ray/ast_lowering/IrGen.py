@@ -109,6 +109,8 @@ class IRGen:
                         bind = self.globls[name]
                     elif name in self.ir_module.consts:
                         bind = self.ir_module.consts[name][0]
+                        # HACK: additional load for constants
+                        bind = self.add_inst(Load(bind))
                     else:
                         bind = self.ir_module.globls[name][0]
                 load = Load(bind)
@@ -155,6 +157,9 @@ class IRGen:
                     case UnaryKind.AddrOf:
                         assert isinstance(expr, Ident)
                         return self.env.find(expr.name)
+                    case UnaryKind.Deref:
+                        ptr = self.lower_expr(expr)
+                        return self.add_inst(Load(ptr))
                     case _:
                         assert False
             case ArrayRepeat(item, length):
@@ -168,6 +173,9 @@ class IRGen:
                 self.add_inst(
                     FnCall("memset", [ptr, val, IConst(ConstKind.Int, str(length))]))
                 return ptr
+            case Return(expr):
+                ret = self.lower_expr(expr)
+                return self.add_inst(Ret(ret))
             case _:
                 assert False, expr
 
