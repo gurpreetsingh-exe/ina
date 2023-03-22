@@ -475,6 +475,12 @@ class Parser:
         self.expect(TokenKind.RCURLY)
         return mod
 
+    def parse_import(self) -> Import:
+        self.expect(TokenKind.Import)
+        name = self.expect(TokenKind.Ident).raw(self.src)
+        self.expect(TokenKind.SEMI)
+        return Import(name)
+
     def parse(self, mod_name=None) -> Module:
         items = []
         mod = Module(items, mod_name if mod_name else "<module>")
@@ -503,6 +509,8 @@ class Parser:
                     items.append(self.parse_struct())
                 case TokenKind.Mod:
                     items.append(self.parse_module())
+                case TokenKind.Import:
+                    items.append(self.parse_import())
                 case TokenKind.EOF | TokenKind.RCURLY:
                     break
                 case _:

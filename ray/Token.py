@@ -24,6 +24,7 @@ class TokenKind(Enum):
     Const = auto()
     Struct = auto()
     Mod = auto()
+    Import = auto()
 
     PLUS = auto()  # `+`
     MINUS = auto()  # `-`
@@ -81,6 +82,7 @@ Keywords = {
     "const": TokenKind.Const,
     "struct": TokenKind.Struct,
     "mod": TokenKind.Mod,
+    "import": TokenKind.Import,
 }
 
 Punctuators = {
@@ -170,6 +172,7 @@ def get_token_name(ty):
         case TokenKind.BANGEQ: return "!="
         case TokenKind.ARROW: return "->"
         case TokenKind.DOT3: return "..."
+        case _: assert ty
 
 
 class Token:

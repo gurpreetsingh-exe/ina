@@ -643,6 +643,14 @@ class Module:
         raise StopIteration()
 
 
+class Import:
+    __match_args__ = ("name", )
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.span = None
+
+
 Expr = Array \
     | Binary \
     | Unary \

@@ -8,6 +8,7 @@ from ..utils import *
 from ..front.Parser import Parser
 from ..front.fmt import *
 from ..sema.tychk import TyCheck
+from ..sema.resolve import ImportResolver
 from ..codegen.x86_64 import Gen
 from ..builtin.intrinsics import builtins_
 from ..optimize.constant_fold import ConstantFolder
@@ -752,6 +753,7 @@ def entry(argv):
                     tokens = list(lexer.lexfile())
                     parser = Parser(src, tokens)
                     module = parser.parse()
+                    ImportResolver(module).resolve()
                     tychk = TyCheck(module, file)
                     if tychk.errors:
                         for err in tychk.errors:

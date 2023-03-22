@@ -55,7 +55,26 @@ class TyCheck:
         self.consts = {}
         self.globls = {}
         self.types = {}
+        self.prep_defs()
         self.tychk()
+
+    def def_fn(self, fn):
+        name = fn.name
+        args = fn.args
+        ret_ty = fn.ret_ty
+        abi = fn.abi
+
+        fn_dict = {'args': args, 'ret_ty': ret_ty, 'abi': abi}
+        self.defs[name] = Def(DefKind.Fn, fn_dict)
+
+    def prep_defs(self):
+        for node in self.ast:
+            match node:
+                case Fn():
+                    self.def_fn(node)
+                case ExternBlock(items):
+                    for fn in items:
+                        self.def_fn(fn)
 
     def mk_bool(self) -> PrimTy:
         return PrimTy(PrimTyKind.Bool)
@@ -505,13 +524,7 @@ class TyCheck:
 
     def visit_fn(self, fn: Fn):
         name = fn.name
-        args = fn.args
-        ret_ty = fn.ret_ty
-        abi = fn.abi
         body = fn.body
-
-        fn_dict = {'args': args, 'ret_ty': ret_ty, 'abi': abi}
-        self.defs[name] = Def(DefKind.Fn, fn_dict)
         if fn.is_extern:
             return
         self.fn_ctx = name
@@ -556,5 +569,7 @@ class TyCheck:
                         size = field.ty.get_size()
                         offset += ((size + 3) // 4) * 4
                     self.types[name] = node
+                case Import(name):
+                    pass
                 case _:
                     assert False, f"{node}"

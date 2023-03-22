@@ -265,6 +265,10 @@ class Gen:
                         reg = alloc_reg(8)
                         self.buf += f"    lea {reg.name}, [rip + {alloc}]\n"
                         self.reg_map[inst] = reg
+                    case str():
+                        reg = alloc_reg(8)
+                        self.buf += f"    lea {reg.name}, [rip + {alloc}]\n"
+                        self.reg_map[inst] = reg
                     case _:
                         reg = self.reg_map[alloc]
                         self.buf += f"    mov {reg.name}, [{reg.name}]\n"
@@ -323,11 +327,12 @@ class Gen:
                     else:
                         self.buf += f"    call {inst.fn_name}\n"
                     used_regs.clear()
-                    fn = self.fns[inst.fn_name]
-                    if fn.ret_ty and fn.ret_ty != PrimTy(PrimTyKind.Unit):
-                        sz = fn.ret_ty.get_size()
-                        reg = alloc_reg(sz)
-                        self.reg_map[inst] = reg
+                    if inst.fn_name in self.fns:
+                        fn = self.fns[inst.fn_name]
+                        if fn.ret_ty and fn.ret_ty != PrimTy(PrimTyKind.Unit):
+                            sz = fn.ret_ty.get_size()
+                            reg = alloc_reg(sz)
+                            self.reg_map[inst] = reg
             case Ret():
                 reg = Register("rax", 8)
                 if inst.val:
@@ -356,7 +361,6 @@ class Gen:
         for node in nodes:
             match node:
                 case FnDef(name, args, ret_ty, basic_blocks):
-                    self.fns[name] = node
                     self.buf += f"\n{name}:\n"
                     self.alignment = 0
                     for block in basic_blocks:
@@ -390,7 +394,7 @@ class Gen:
                     self.buf += "    ret\n"
                     self.func_id += 1
                 case FnDecl():
-                    self.fns[node.name] = node
+                    pass
                 case _:
                     assert False, f"{node} is not implemented"
 
@@ -401,6 +405,11 @@ class Gen:
             self.data_sec.ints[label] = const
         for label, const in self.mod.anon_consts.items():
             self.data_sec.strings[label] = const
+
+        for fn in self.mod.defs:
+            self.fns[fn.name] = fn
+        for fn in self.mod.decls:
+            self.fns[fn.name] = fn
         self.gen(self.mod.decls)
         self.gen(self.mod.defs)
         self.buf = self.data_sec.emit(self.buf)
