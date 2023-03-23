@@ -628,6 +628,7 @@ class Module:
 
     def __init__(self, items: List[Item], name: str) -> None:
         self.items = items
+        self._imported = []
         self.name = name
         self._itr_index = 0
 

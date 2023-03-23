@@ -752,7 +752,8 @@ def entry(argv):
                     file = File(filename, src)
                     tokens = list(lexer.lexfile())
                     parser = Parser(src, tokens)
-                    module = parser.parse()
+                    output = filename.split('.')[0]
+                    module = parser.parse(output)
                     ImportResolver(module).resolve()
                     tychk = TyCheck(module, file)
                     if tychk.errors:
@@ -765,7 +766,6 @@ def entry(argv):
                     gen = IRGen(module)
                     mod = gen.lower()
                     print(mod)
-                    output = filename.split('.')[0]
                     # for f in ir:
                     #     print(f)
                     # dominance_frontier(ir)

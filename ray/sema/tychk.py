@@ -75,6 +75,16 @@ class TyCheck:
                 case ExternBlock(items):
                     for fn in items:
                         self.def_fn(fn)
+                case Const(name, ty, _):
+                    if name in self.consts:
+                        self.add_err(Redefinition(
+                            f"{name} is already defined"), node.span)
+                    self.consts[name] = ty
+                case Let(name, ty, _):
+                    if name in self.globls:
+                        self.add_err(Redefinition(
+                            f"{name} is already defined"), node.span)
+                    self.globls[name] = ty
 
     def mk_bool(self) -> PrimTy:
         return PrimTy(PrimTyKind.Bool)
@@ -370,6 +380,8 @@ class TyCheck:
                         if rty != pty:
                             self.add_err(CastError(
                                 f"invalid cast of `{cast_expr.ty}`"), span)
+                    case PtrTy(lty), PrimTy(_):
+                        pass
                     case PrimTy(_), PrimTy(_):
                         pass
                     case PtrTy(_), PrimTy(PrimTyKind.Str | PrimTyKind.Raw):
@@ -541,25 +553,17 @@ class TyCheck:
                     for fn in items:
                         self.visit_fn(fn)
                 case Const(name, ty, init):
-                    if name in self.consts:
-                        self.add_err(Redefinition(
-                            f"{name} is already defined"), span)
                     if ty:
                         self.check(init, ty)
                     else:
                         ty = self.infer(init)
                         node.ty = ty
-                    self.consts[name] = ty
                 case Let(name, ty, init):
-                    if name in self.globls:
-                        self.add_err(Redefinition(
-                            f"{name} is already defined"), span)
                     if ty:
                         self.check(init, ty)
                     else:
                         ty = self.infer(init)
                         node.ty = ty
-                    self.globls[name] = ty
                 case Struct(name, _):
                     if name in self.types:
                         assert False

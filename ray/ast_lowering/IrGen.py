@@ -220,6 +220,7 @@ class IRGen:
                             size = ty.get_size()
                             self.off = (self.off + size * 2 - 1) & ~(size - 1)
                             p = Inst(param)
+                            p.ty = ty
                             ir_args.append(p)
                             if not is_extern:
                                 inst = self.add_inst(
@@ -245,11 +246,6 @@ class IRGen:
     def lower(self) -> IRModule:
         for node in self.ast:
             match node:
-                case Fn():
-                    self.lower_fn(node)
-                case ExternBlock(fns):
-                    for fn in fns:
-                        self.lower_fn(fn)
                 case Const(name, _, init):
                     assert isinstance(init, Literal)
                     const = IConst.from_lit(init)
@@ -259,6 +255,15 @@ class IRGen:
                     label = Label()
                     globl = IConst.from_expr(init)
                     self.ir_module.globls[name] = (label, globl, )
+
+        for node in self.ast:
+            match node:
+                case Fn():
+                    self.lower_fn(node)
+                case ExternBlock(fns):
+                    for fn in fns:
+                        self.lower_fn(fn)
+                case Const() | Let(): pass
                 case _:
                     assert False, node
         return self.ir_module

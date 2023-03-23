@@ -21,12 +21,33 @@ def __offset(self, args):
     return ptr
 
 
+def __syscall(self, args):
+    assert len(args) == 7
+    syscall_args = ["rdi", "rsi", "rdx", "r10", "r8", "r9"]
+    rax = self.lookup(args[0])
+    if isinstance(rax, Register):
+        rax.size = 8
+    rax = self.render_val(rax)
+    used_regs.clear()
+    for i in range(1, 7):
+        lookup_val = self.lookup(args[i])
+        if isinstance(lookup_val, Register):
+            lookup_val.size = 8
+        rendered_arg = self.render_val(lookup_val)
+        self.buf += f"    mov {syscall_args[i - 1]}, {rendered_arg}\n"
+    if rax != "rax":
+        self.buf += f"    mov rax, {rax}\n"
+    self.buf += f"    syscall\n"
+    return Register("rax", 8)
+
+
 def align(num: int, align: int) -> int:
     return (num + align - 1) & ~(align - 1)
 
 
 intrinsics: Dict[str, Callable] = {
     "offset":  __offset,
+    "syscall": __syscall,
 }
 
 
@@ -338,6 +359,7 @@ class Gen:
                 if inst.val:
                     value = self.lookup(inst.val)
                     if isinstance(value, Register) and value.kind == "rax":
+                        self.buf += f"    add rsp, {self.alignment}\n    pop rbp\n"
                         self.buf += "    ret\n"
                         return value
                     val = self.render_val(value)
@@ -375,7 +397,11 @@ class Gen:
                                         self.alignment + size * 2 - 1) & ~(size - 1)
                     self.alignment = align(self.alignment, 16)
                     for arg in args:
-                        self.reg_map[arg] = alloc_arg_reg(8)
+                        if not hasattr(arg, 'ty'):
+                            # WARNING: it should only break in case of variadic arg
+                            break
+                        size = arg.ty.get_size()
+                        self.reg_map[arg] = alloc_arg_reg(size)
                     used_regs.clear()
                     self.buf += \
                         "    push rbp\n"

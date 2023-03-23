@@ -18,12 +18,12 @@ def search_mod(name) -> pathlib.Path:
 def parse_file(filepath: pathlib.Path) -> Module:
     lexer = lexer_from_file(str(filepath))
     tokens = list(lexer.lexfile())
-    mod = Parser(lexer.program, tokens).parse()
-    # try:
-    #     ImportResolver(mod).resolve()
-    # except RecursionError:
-    #     print(f"recursive imports in {filepath}")
-    #     exit(1)
+    mod = Parser(lexer.program, tokens).parse(filepath.stem)
+    try:
+        ImportResolver(mod).resolve()
+    except RecursionError:
+        print(f"recursive imports in {filepath}")
+        exit(1)
     return mod
 
 
@@ -35,9 +35,13 @@ class ImportResolver:
         items = []
         for item in self.mod:
             match item:
-                case Import(name):
+                case Import(name) if name not in self.mod._imported:
+                    print(f"importing {name} in {self.mod.name}")
                     mod = search_mod(name + ".ray")
-                    items += parse_file(mod.absolute()).items
+                    imported_mod = parse_file(mod.absolute())
+                    items += imported_mod.items
+                    self.mod._imported += imported_mod._imported
+                    self.mod._imported.append(name)
         self.mod.items += items
         self.mod.items = [
             item for item in self.mod.items if not isinstance(item, Import)]
