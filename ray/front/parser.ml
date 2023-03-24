@@ -1,3 +1,1 @@
-let parser () =
-    print_endline "parser";
-
+let parser () = print_endline "parser"

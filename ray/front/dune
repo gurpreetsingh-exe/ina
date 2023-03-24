@@ -1,4 +1,3 @@
 (library
-  (name front)
-  (modules lexer parser))
-
+ (name front)
+ (modules lexer parser))
