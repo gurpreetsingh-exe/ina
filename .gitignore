@@ -1,9 +1,13 @@
 *
 !*.*
 !/**/
+!dune
+!dune-project
 /.**/
 Makefile
 __pycache__/
+_build/
+*.opam
 *.o
 *.asm
 *.s
