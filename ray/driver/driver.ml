@@ -1,14 +1,16 @@
 open Front
+open Printf
+open Tokenizer
 
 type command =
   | Build
   | Test
   | Nan
 
-let compiler_command = { contents = Nan }
+let compiler_command = ref Nan
 
 let print_command (cmd : command) =
-  Printf.printf "%s\n"
+  printf "%s\n"
     (match cmd with Build -> "build" | Test -> "test" | Nan -> "none")
 
 type context = {
@@ -19,17 +21,19 @@ type context = {
 let ctx = { file_name = None; file_source = "" }
 
 let usage arg0 =
-  Printf.printf "Usage: %s [command] [options] input...\n" arg0;
-  Printf.printf "\nCommands:\n";
-  Printf.printf "    build            compile the file\n";
-  Printf.printf "\nOptions:\n";
-  Printf.printf "    -h, --help       print help information\n\n";
+  printf "Usage: %s [command] [options] input...\n" arg0;
+  printf "\nCommands:\n";
+  printf "    build            compile the file\n";
+  printf "\nOptions:\n";
+  printf "    -h, --help       print help information\n\n";
   exit 1
+
+exception Invalid_token
 
 let () =
   let argc = Array.length Sys.argv in
   let arg0 = if argc > 1 then Sys.argv.(0) else exit 1 in
-  let i = { contents = argc - 1 } in
+  let i = ref (argc - 1) in
   while !i > 0 do
     let arg = Sys.argv.(argc - !i) in
     if String.starts_with ~prefix:"-" arg then
@@ -37,7 +41,7 @@ let () =
         match arg with
         | "--help" -> usage arg0
         | _ ->
-            Printf.printf "Unknown option `%s`\n" arg;
+            printf "Unknown option `%s`\n" arg;
             usage arg0)
       else usage arg0
     else if !compiler_command == Nan then (
@@ -46,7 +50,7 @@ let () =
         | "build" -> Build
         | "test" -> Test
         | _ ->
-            Printf.printf "Unknown command `%s`\n" arg;
+            printf "Unknown command `%s`\n" arg;
             usage arg0)
     else (
       match !compiler_command with
@@ -61,14 +65,18 @@ let () =
       ignore (ctx.file_source <- s);
       close_in ic;
       let tokenizer = Tokenizer.tokenize name s in
+      let i = ref 0 in
       try
         while true do
           let tok = Tokenizer.next tokenizer in
           match tok with
+          | Some { kind = Eof; _ } -> raise Exit
           | Some t ->
-              let filename, pos = t.span.start in
-              Printf.printf "%s: %d\n" filename pos
-          | None -> raise Exit
+              i := !i + 1;
+              let { start = _, st; ending = _, e } = t.span in
+              printf "%s\n" (String.sub s st (e - st));
+              (* printf "%d %d %d\n" st e (e - st) *)
+          | None -> raise Invalid_token
         done
-      with Exit -> ())
+      with Exit -> printf "%d\n" !i)
   | None -> exit 1

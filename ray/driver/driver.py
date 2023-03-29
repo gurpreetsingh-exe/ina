@@ -694,6 +694,7 @@ def usage(arg0):
 class Command(Enum):
     Nan = auto()
     Build = auto()
+    PrintTokens = auto()
 
 
 def entry(argv):
@@ -726,6 +727,8 @@ def entry(argv):
             match arg:
                 case "build":
                     command = Command.Build
+                case "print-tokens":
+                    command = Command.PrintTokens
                 case _:
                     print(f"Unknown command \"{arg}\"")
         else:
@@ -739,37 +742,45 @@ def entry(argv):
                         usage(arg0)
         argv = argv[1:]
 
+    if not filename:
+        usage(arg0)
+
     match command:
         case Command.Nan:
             usage(arg0)
+        case Command.PrintTokens:
+            lexer = lexer_from_file(filename)
+            src = lexer.program
+            file = File(filename, src)
+            tokens = list(lexer.lexfile())
+            print(len(tokens))
+            for token in tokens:
+                print(token)
+
+        case Command.Build:
+            lexer = lexer_from_file(filename)
+            src = lexer.program
+            file = File(filename, src)
+            tokens = list(lexer.lexfile())
+            parser = Parser(src, tokens)
+            output = filename.split('.')[0]
+            module = parser.parse(output)
+            ImportResolver(module).resolve()
+            tychk = TyCheck(module, file)
+            if tychk.errors:
+                for err in tychk.errors:
+                    err.emit(file)
+                exit(1)
+            ConstantFolder(module).fold()
+            if skip_codegen:
+                return
+            gen = IRGen(module)
+            mod = gen.lower()
+            print(mod)
+            # for f in ir:
+            #     print(f)
+            # dominance_frontier(ir)
+            # dump_cfg(ir, output)
+            Gen(mod, output).emit()
         case _:
-            if not filename:
-                usage(arg0)
-            match command:
-                case Command.Build:
-                    lexer = lexer_from_file(filename)
-                    src = lexer.program
-                    file = File(filename, src)
-                    tokens = list(lexer.lexfile())
-                    parser = Parser(src, tokens)
-                    output = filename.split('.')[0]
-                    module = parser.parse(output)
-                    ImportResolver(module).resolve()
-                    tychk = TyCheck(module, file)
-                    if tychk.errors:
-                        for err in tychk.errors:
-                            err.emit(file)
-                        exit(1)
-                    ConstantFolder(module).fold()
-                    if skip_codegen:
-                        return
-                    gen = IRGen(module)
-                    mod = gen.lower()
-                    print(mod)
-                    # for f in ir:
-                    #     print(f)
-                    # dominance_frontier(ir)
-                    # dump_cfg(ir, output)
-                    Gen(mod, output).emit()
-                case _:
-                    assert False, "unreachable"
+            assert False, "unreachable"
