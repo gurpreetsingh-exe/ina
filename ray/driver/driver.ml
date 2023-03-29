@@ -74,7 +74,7 @@ let () =
           | Some t ->
               i := !i + 1;
               let { start = _, st; ending = _, e } = t.span in
-              printf "%s\n" (String.sub s st (e - st));
+              printf "%s\n" (String.sub s st (e - st))
               (* printf "%d %d %d\n" st e (e - st) *)
           | None -> raise Invalid_token
         done

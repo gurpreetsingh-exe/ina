@@ -74,66 +74,61 @@ let next tokenizer : token option =
   try
     while true do
       match tokenizer.c with
-      | Some c -> (
-        match c with
-        | ' ' | '\n' | '\t' | '\r' -> bump tokenizer
-        | '0' .. '9' -> (
-            let start = (tokenizer.filename, tokenizer.id) in
-            let exception I in
-            let is_float = ref false in
-            let buf : string ref = ref "" in
-            try
-              while true do
-                match tokenizer.c with
-                | Some (('0' .. '9' | '.') as c) ->
-                    buf := !buf ^ String.make 1 c;
-                    bump tokenizer;
-                    if (not !is_float) && c == '.' then is_float := true
-                | Some _ | None -> raise I
-              done
-            with I ->
-              if !is_float then (
-                let value = float_of_string !buf in
-                mk_tok tokenizer (Lit (Float value)) tok start)
-              else (
-                let value = int_of_string !buf in
-                mk_tok tokenizer (Lit (Int value)) tok start);
-              raise Exit)
-        | 'a' .. 'z' | 'A' .. 'Z' | '_' -> (
-            let start = (tokenizer.filename, tokenizer.id) in
-            let exception I in
-            try
-              while true do
-                match tokenizer.c with
-                | Some ('a' .. 'z' | 'A' .. 'Z' | '_' | '0' .. '9') ->
-                    bump tokenizer
-                | Some _ | None -> raise I
-              done
-            with I ->
-              mk_tok tokenizer Ident tok start;
-              raise Exit)
-        | '"' -> (
-            let start = (tokenizer.filename, tokenizer.id) in
-            bump tokenizer;
-            let exception I in
-            try
-              while true do
-                match tokenizer.c with
-                | Some '"' -> bump tokenizer; raise I
-                | Some _ -> bump tokenizer
-                | None -> raise I
-              done
-            with I ->
-              mk_tok tokenizer (Lit String) tok start;
-              raise Exit)
-        | ';' | '(' | ')' | '[' | ']' | '{' | '}' | ':' | '=' | ',' | '/' ->
-            let start = (tokenizer.filename, tokenizer.id) in
-            bump tokenizer;
-            mk_tok tokenizer (get_token_type c) tok start;
-            raise Exit
-        | _ ->
-            Printf.printf "unknown char `%c`\n" c;
-            exit 1)
+      | Some (' ' | '\n' | '\t' | '\r') -> bump tokenizer
+      | Some '0' .. '9' -> (
+          let start = (tokenizer.filename, tokenizer.id) in
+          let exception I in
+          let is_float = ref false in
+          let buf : string ref = ref "" in
+          try
+            while true do
+              match tokenizer.c with
+              | Some (('0' .. '9' | '.') as c) ->
+                  buf := !buf ^ String.make 1 c;
+                  bump tokenizer;
+                  if (not !is_float) && c == '.' then is_float := true
+              | Some _ | None -> raise I
+            done
+          with I ->
+            if !is_float then (
+              let value = float_of_string !buf in
+              mk_tok tokenizer (Lit (Float value)) tok start)
+            else (
+              let value = int_of_string !buf in
+              mk_tok tokenizer (Lit (Int value)) tok start);
+            raise Exit)
+      | Some ('a' .. 'z' | 'A' .. 'Z' | '_') -> (
+          let start = (tokenizer.filename, tokenizer.id) in
+          let exception I in
+          try
+            while true do
+              match tokenizer.c with
+              | Some ('a' .. 'z' | 'A' .. 'Z' | '_' | '0' .. '9') ->
+                  bump tokenizer
+              | Some _ | None -> raise I
+            done
+          with I ->
+            mk_tok tokenizer Ident tok start;
+            raise Exit)
+      | Some '"' -> (
+          let start = (tokenizer.filename, tokenizer.id) in
+          bump tokenizer;
+          let exception I in
+          try
+            while true do
+              match tokenizer.c with
+              | Some '"' -> bump tokenizer; raise I
+              | Some _ -> bump tokenizer
+              | None -> raise I
+            done
+          with I ->
+            mk_tok tokenizer (Lit String) tok start;
+            raise Exit)
+      | Some c ->
+          let start = (tokenizer.filename, tokenizer.id) in
+          bump tokenizer;
+          mk_tok tokenizer (get_token_type c) tok start;
+          raise Exit
       | None ->
           let start = (tokenizer.filename, tokenizer.id) in
           mk_tok tokenizer Eof tok start;
