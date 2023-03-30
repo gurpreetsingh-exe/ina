@@ -48,7 +48,15 @@ let%expect_test "single tokens" =
     a
     "string"
     ;
-  |}]
+  |}];
+  single_token "/";
+  [%expect {|/|}];
+  single_token "//";
+  [%expect {|//|}];
+  single_token "///";
+  [%expect {|///|}];
+  single_token "//!";
+  [%expect {|//!|}]
 
 let%expect_test "tokens" =
   do_test "fn main()" "%s\n";

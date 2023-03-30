@@ -72,11 +72,10 @@ let () =
           match tok with
           | Some { kind = Eof; _ } -> raise Exit
           | Some t ->
-              i := !i + 1;
-              let { start = _, st; ending = _, e } = t.span in
-              printf "%s\n" (String.sub s st (e - st))
-              (* printf "%d %d %d\n" st e (e - st) *)
+              display_token t s;
+              i := !i + 1 (* printf "%d %d %d\n" st e (e - st) *)
           | None -> raise Invalid_token
         done
-      with Exit -> printf "%d\n" !i)
+        (* with Exit -> printf "%d\n" !i) *)
+      with Exit -> ())
   | None -> exit 1

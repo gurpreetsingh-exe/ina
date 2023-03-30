@@ -1,13 +1,27 @@
 type literal =
-  | Int of int
-  | Float of float
-  | Char of char
-  | Bool of bool
+  | Int
+  | Float
+  | Char
+  | Bool
   | String
+
+let display_literal = function
+  | Int -> "Int"
+  | Float -> "Float"
+  | String -> "String"
+  | Char -> "Char"
+  | Bool -> "Bool"
+
+type comment_style =
+  | Inner
+  | Outer
+
+let display_comment_style = function Inner -> "Inner" | Outer -> "Outer"
 
 type token_kind =
   | Ident
   | Lit of literal
+  | Comment of comment_style option
   | Semi
   | LParen
   | RParen
@@ -33,6 +47,28 @@ type token = {
   span : span;
 }
 
+let display_token t s =
+  let { kind; span = { start = _, st; ending = _, e } } = t in
+  Printf.printf "%s: %s\n"
+    (match kind with
+    | Ident -> "Ident"
+    | Lit lit -> display_literal lit
+    | Comment (Some style) -> display_comment_style style
+    | Comment None -> "Comment"
+    | Semi -> ";"
+    | LParen -> "("
+    | RParen -> ")"
+    | LBrace -> "{"
+    | RBrace -> "}"
+    | LBracket -> "["
+    | RBracket -> "]"
+    | Colon -> ":"
+    | Eq -> "="
+    | Comma -> ","
+    | Slash -> "/"
+    | Eof -> "Eof")
+    (String.sub s st (e - st))
+
 type tokenizer = {
   mutable c : char option;
   mutable id : int;
@@ -54,7 +90,14 @@ let bump tokenizer =
     tokenizer.c <- None;
     tokenizer.id <- tokenizer.id + 1)
 
-let get_token_type c : token_kind =
+let peek tokenizer =
+  if tokenizer.id < String.length !(tokenizer.src) - 1 then
+    Some !(tokenizer.src).[tokenizer.id + 1]
+  else None
+
+exception Invalid_token
+
+let get_token_type c tokenizer : token_kind =
   match c with
   | ';' -> Semi
   | '(' -> LParen
@@ -66,8 +109,18 @@ let get_token_type c : token_kind =
   | ':' -> Colon
   | '=' -> Eq
   | ',' -> Comma
-  | '/' -> Slash
-  | _ -> raise Exit
+  | '/' -> (
+    match peek tokenizer with
+    | Some '/' ->
+        bump tokenizer;
+        Comment
+          (match peek tokenizer with
+          | Some '/' -> Some Outer
+          | Some '!' -> Some Inner
+          | Some _ | None -> None)
+    | Some _ | None -> Slash)
+  | '\000' -> Eof
+  | _ -> raise Invalid_token
 
 let next tokenizer : token option =
   let tok = ref None in
@@ -90,12 +143,9 @@ let next tokenizer : token option =
               | Some _ | None -> raise I
             done
           with I ->
-            if !is_float then (
-              let value = float_of_string !buf in
-              mk_tok tokenizer (Lit (Float value)) tok start)
-            else (
-              let value = int_of_string !buf in
-              mk_tok tokenizer (Lit (Int value)) tok start);
+            mk_tok tokenizer
+              (Lit (if !is_float then Float else Int))
+              tok start;
             raise Exit)
       | Some ('a' .. 'z' | 'A' .. 'Z' | '_') -> (
           let start = (tokenizer.filename, tokenizer.id) in
@@ -126,8 +176,20 @@ let next tokenizer : token option =
             raise Exit)
       | Some c ->
           let start = (tokenizer.filename, tokenizer.id) in
-          bump tokenizer;
-          mk_tok tokenizer (get_token_type c) tok start;
+          let kind = get_token_type c tokenizer in
+          (match kind with
+          (* TODO: strip the `//*` from comments *)
+          | Comment _ -> (
+              let exception I in
+              try
+                while true do
+                  match tokenizer.c with
+                  | Some '\n' | None -> raise I
+                  | Some _ -> bump tokenizer
+                done
+              with I -> ())
+          | _ -> bump tokenizer);
+          mk_tok tokenizer kind tok start;
           raise Exit
       | None ->
           let start = (tokenizer.filename, tokenizer.id) in
