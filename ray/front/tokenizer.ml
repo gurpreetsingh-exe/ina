@@ -1,73 +1,4 @@
-type literal =
-  | Int
-  | Float
-  | Char
-  | Bool
-  | String
-
-let display_literal = function
-  | Int -> "Int"
-  | Float -> "Float"
-  | String -> "String"
-  | Char -> "Char"
-  | Bool -> "Bool"
-
-type comment_style =
-  | Inner
-  | Outer
-
-let display_comment_style = function Inner -> "Inner" | Outer -> "Outer"
-
-type token_kind =
-  | Ident
-  | Lit of literal
-  | Comment of comment_style option
-  | Semi
-  | LParen
-  | RParen
-  | LBrace
-  | RBrace
-  | LBracket
-  | RBracket
-  | Colon
-  | Eq
-  | Comma
-  | Slash
-  | Eof
-
-type pos = string * int
-
-type span = {
-  start : pos;
-  ending : pos;
-}
-
-type token = {
-  kind : token_kind;
-  span : span;
-}
-
-let display_token t s =
-  let { kind; span = { start = _, st; ending = _, e } } = t in
-  Printf.printf "%s: %s\n"
-    (match kind with
-    | Ident -> "Ident"
-    | Lit lit -> display_literal lit
-    | Comment (Some style) -> display_comment_style style
-    | Comment None -> "Comment"
-    | Semi -> ";"
-    | LParen -> "("
-    | RParen -> ")"
-    | LBrace -> "{"
-    | RBrace -> "}"
-    | LBracket -> "["
-    | RBracket -> "]"
-    | Colon -> ":"
-    | Eq -> "="
-    | Comma -> ","
-    | Slash -> "/"
-    | Eof -> "Eof")
-    (String.sub s st (e - st))
+open Token
 
 type tokenizer = {
   mutable c : char option;
@@ -75,6 +6,11 @@ type tokenizer = {
   src : string ref;
   filename : string;
 }
+
+let keywords = Hashtbl.create 2;;
+
+Hashtbl.add keywords "fn" Fn;
+Hashtbl.add keywords "extern" Extern
 
 let mk_tok (tokenizer : tokenizer) (kind : token_kind)
     (tok : token option ref) (start : pos) =
@@ -149,16 +85,21 @@ let next tokenizer : token option =
             raise Exit)
       | Some ('a' .. 'z' | 'A' .. 'Z' | '_') -> (
           let start = (tokenizer.filename, tokenizer.id) in
+          let buf = ref "" in
           let exception I in
           try
             while true do
               match tokenizer.c with
-              | Some ('a' .. 'z' | 'A' .. 'Z' | '_' | '0' .. '9') ->
+              | Some (('a' .. 'z' | 'A' .. 'Z' | '_' | '0' .. '9') as c) ->
+                  buf := !buf ^ String.make 1 c;
                   bump tokenizer
               | Some _ | None -> raise I
             done
           with I ->
-            mk_tok tokenizer Ident tok start;
+            mk_tok tokenizer
+              (if Hashtbl.mem keywords !buf then Hashtbl.find keywords !buf
+              else Ident)
+              tok start;
             raise Exit)
       | Some '"' -> (
           let start = (tokenizer.filename, tokenizer.id) in

@@ -1,6 +1,5 @@
 open Front
 open Printf
-open Tokenizer
 
 type command =
   | Build
@@ -27,8 +26,6 @@ let usage arg0 =
   printf "\nOptions:\n";
   printf "    -h, --help       print help information\n\n";
   exit 1
-
-exception Invalid_token
 
 let () =
   let argc = Array.length Sys.argv in
@@ -59,23 +56,14 @@ let () =
     decr i
   done;
   match ctx.file_name with
-  | Some name -> (
+  | Some name ->
       let ic = open_in name in
       let s = really_input_string ic (in_channel_length ic) in
       ignore (ctx.file_source <- s);
       close_in ic;
       let tokenizer = Tokenizer.tokenize name s in
-      let i = ref 0 in
-      try
-        while true do
-          let tok = Tokenizer.next tokenizer in
-          match tok with
-          | Some { kind = Eof; _ } -> raise Exit
-          | Some t ->
-              display_token t s;
-              i := !i + 1 (* printf "%d %d %d\n" st e (e - st) *)
-          | None -> raise Invalid_token
-        done
-        (* with Exit -> printf "%d\n" !i) *)
-      with Exit -> ())
+      let pctx = Parser.parse_ctx_create tokenizer s in
+      let modd = Parser.parse_mod pctx in
+      printf "%d\n" (List.length modd.items);
+      ()
   | None -> exit 1

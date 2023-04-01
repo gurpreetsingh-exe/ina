@@ -1,5 +1,5 @@
 (executable
  (public_name ray)
  (name driver)
- (libraries front)
+ (libraries front token)
  (modules driver))

@@ -1,12 +1,16 @@
 open Printf
 open Front
 open Tokenizer
+open Token
 
 exception Invalid_token
 
-let single_token s =
+let helper s =
   let tokenizer = tokenize "<test>" s in
-  let t = next tokenizer in
+  (tokenizer, next tokenizer)
+
+let single_token s =
+  let tokenizer, t = helper s in
   (match t with
   | Some { kind = Eof; _ } -> raise Exit
   | Some t ->
@@ -35,6 +39,10 @@ let do_test s sep =
 let do_test_multiline s = do_test s "%s\n"
 
 let do_test_singleline s = do_test s "%s"
+
+let%test "keywords" =
+  let _, t = helper "fn" in
+  (Option.get t).kind = Fn
 
 let%expect_test "single tokens" =
   single_token "20";
