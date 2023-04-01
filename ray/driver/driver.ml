@@ -1,5 +1,6 @@
 open Front
 open Printf
+open Codegen
 
 type command =
   | Build
@@ -7,10 +8,6 @@ type command =
   | Nan
 
 let compiler_command = ref Nan
-
-let print_command (cmd : command) =
-  printf "%s\n"
-    (match cmd with Build -> "build" | Test -> "test" | Nan -> "none")
 
 type context = {
   mutable file_name : string option;
@@ -29,7 +26,8 @@ let usage arg0 =
 
 let () =
   let argc = Array.length Sys.argv in
-  let arg0 = if argc > 1 then Sys.argv.(0) else exit 1 in
+  let arg0 = Sys.argv.(0) in
+  if argc < 2 then usage arg0;
   let i = ref (argc - 1) in
   while !i > 0 do
     let arg = Sys.argv.(argc - !i) in
@@ -64,6 +62,6 @@ let () =
       let tokenizer = Tokenizer.tokenize name s in
       let pctx = Parser.parse_ctx_create tokenizer s in
       let modd = Parser.parse_mod pctx in
-      printf "%d\n" (List.length modd.items);
-      ()
-  | None -> exit 1
+      Llvm_gen.gen_module name modd;
+      printf "%s" (Fmt.render_mod modd)
+  | None -> usage arg0
