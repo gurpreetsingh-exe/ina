@@ -64,8 +64,11 @@ and constant = {
 
 and import = ident
 
-and ty =
-  | Int
+and ty = Prim of prim_ty
+
+and prim_ty =
+  | I32
+  | I64
   | Bool
 
 and expr = Lit of lit

@@ -1,6 +1,6 @@
 open Front
 open Printf
-open Codegen
+(* open Codegen *)
 
 type command =
   | Build
@@ -62,6 +62,6 @@ let () =
       let tokenizer = Tokenizer.tokenize name s in
       let pctx = Parser.parse_ctx_create tokenizer s in
       let modd = Parser.parse_mod pctx in
-      Llvm_gen.gen_module name modd;
+      (* Llvm_gen.gen_module name modd; *)
       printf "%s" (Fmt.render_mod modd)
   | None -> usage arg0

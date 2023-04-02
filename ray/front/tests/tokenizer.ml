@@ -44,6 +44,40 @@ let%test "keywords" =
   let _, t = helper "fn" in
   (Option.get t).kind = Fn
 
+let%test "symbols" =
+  let test_sym (s, kind) =
+    let _, t = helper s in
+    (Option.get t).kind = kind
+  in
+  List.length
+    (List.filter
+       (fun c -> not (test_sym c))
+       [
+         (";", Semi);
+         ("(", LParen);
+         (")", RParen);
+         ("{", LBrace);
+         ("}", RBrace);
+         ("[", LBracket);
+         ("]", RBracket);
+         (":", Colon);
+         ("=", Eq);
+         ("==", EqEq);
+         ("!", Bang);
+         ("!=", BangEq);
+         (",", Comma);
+         ("+", Plus);
+         ("-", Minus);
+         ("*", Star);
+         ("/", Slash);
+         ("|", Pipe);
+         ("||", Pipe2);
+         ("&", Ampersand);
+         ("&&", Ampersand2);
+         ("->", Arrow);
+       ])
+  = 0
+
 let%expect_test "single tokens" =
   single_token "20";
   single_token "20.20";
@@ -75,4 +109,14 @@ let%expect_test "tokens" =
     )
   |}];
   do_test "(:)[=]{,}" "%s";
-  [%expect {|(:)[=]{,}|}]
+  [%expect {|(:)[=]{,}|}];
+  do_test "++-->-==!=" "%s\n";
+  [%expect {|
+    +
+    +
+    -
+    ->
+    -
+    ==
+    !=
+  |}]

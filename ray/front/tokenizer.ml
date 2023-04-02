@@ -43,7 +43,14 @@ let get_token_type c tokenizer : token_kind =
   | '{' -> LBrace
   | '}' -> RBrace
   | ':' -> Colon
-  | '=' -> Eq
+  | '=' -> (
+    match peek tokenizer with
+    | Some '=' -> bump tokenizer; EqEq
+    | Some _ | None -> Eq)
+  | '!' -> (
+    match peek tokenizer with
+    | Some '=' -> bump tokenizer; BangEq
+    | Some _ | None -> Bang)
   | ',' -> Comma
   | '/' -> (
     match peek tokenizer with
@@ -55,6 +62,20 @@ let get_token_type c tokenizer : token_kind =
           | Some '!' -> Some Inner
           | Some _ | None -> None)
     | Some _ | None -> Slash)
+  | '+' -> Plus
+  | '-' -> (
+    match peek tokenizer with
+    | Some '>' -> bump tokenizer; Arrow
+    | Some _ | None -> Minus)
+  | '*' -> Star
+  | '|' -> (
+    match peek tokenizer with
+    | Some '|' -> bump tokenizer; Pipe2
+    | Some _ | None -> Pipe)
+  | '&' -> (
+    match peek tokenizer with
+    | Some '&' -> bump tokenizer; Ampersand2
+    | Some _ | None -> Ampersand)
   | '\000' -> Eof
   | _ -> raise Invalid_token
 

@@ -33,8 +33,19 @@ type token_kind =
   | RBracket
   | Colon
   | Eq
+  | EqEq
+  | Bang
+  | BangEq
   | Comma
+  | Plus
+  | Minus
+  | Star
   | Slash
+  | Pipe
+  | Pipe2
+  | Ampersand
+  | Ampersand2
+  | Arrow
   | Eof
 
 let display_token_kind = function
@@ -53,8 +64,19 @@ let display_token_kind = function
   | RBracket -> "]"
   | Colon -> ":"
   | Eq -> "="
+  | EqEq -> "=="
+  | Bang -> "!"
+  | BangEq -> "!="
   | Comma -> ","
+  | Plus -> "+"
+  | Minus -> "-"
+  | Star -> "*"
   | Slash -> "/"
+  | Pipe -> "|"
+  | Pipe2 -> "||"
+  | Ampersand -> "&"
+  | Ampersand2 -> "&&"
+  | Arrow -> "->"
   | Eof -> "eof"
 
 type pos = string * int

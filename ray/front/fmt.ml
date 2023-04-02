@@ -5,7 +5,9 @@ let render (items : 'a list) (func : 'a -> string) (sep : string) : string =
   String.concat sep (List.map (fun item -> func item) items)
 
 let render_ty (ty : ty) : string =
-  match ty with Int -> "int" | Bool -> "bool"
+  match ty with
+  | Prim ty -> (
+    match ty with I32 -> "i32" | I64 -> "i64" | Bool -> "bool")
 
 let render_fn_sig (fn_sig : fn_sig) : string =
   sprintf "fn %s(%s)%s" fn_sig.name
