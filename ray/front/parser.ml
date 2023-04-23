@@ -69,6 +69,12 @@ let parse_outer_attrs pctx : attr list =
     while not pctx.stop do
       let attr_kind =
         match pctx.curr_tok.kind with
+        | Bang ->
+            raise
+              (ParseError
+                 (UnexpectedToken
+                    ( "unexpected inner attribute after outer attribute",
+                      pctx.curr_tok.span )))
         | LBracket -> Some (NormalAttr (parse_attr pctx))
         | Comment style -> (
           match style with
@@ -97,7 +103,9 @@ let parse_inner_attrs pctx : attr list =
     while not pctx.stop do
       let attr_kind =
         match pctx.curr_tok.kind with
-        | LBracket -> Some (NormalAttr (parse_attr pctx))
+        | Bang ->
+            advance pctx;
+            Some (NormalAttr (parse_attr pctx))
         | Comment style -> (
           match style with
           | Some Inner ->

@@ -28,7 +28,10 @@ let render_fn (func : func) : string =
     (match func.body with Some body -> render_block body | None -> ";")
 
 let render_attr (attr : attr) : string =
-  match attr.kind with NormalAttr attr -> attr.name | Doc doc -> doc
+  match attr.kind, attr.style with
+  | NormalAttr attr, Outer -> sprintf "[%s]" attr.name
+  | NormalAttr attr, Inner -> sprintf "![%s]" attr.name
+  | Doc doc, _ -> doc
 
 let render_const (constant : constant) : string = constant.const_name
 
