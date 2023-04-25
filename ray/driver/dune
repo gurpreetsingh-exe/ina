@@ -1,5 +1,5 @@
 (executable
  (public_name ray)
  (name driver)
- (libraries front token codegen)
+ (libraries front token codegen sema)
  (modules driver))

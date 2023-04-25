@@ -4,10 +4,15 @@ open Printf
 let render (items : 'a list) (func : 'a -> string) (sep : string) : string =
   String.concat sep (List.map (fun item -> func item) items)
 
-let render_ty (ty : ty) : string =
+let rec render_ty (ty : ty) : string =
   match ty with
   | Prim ty -> (
     match ty with I32 -> "i32" | I64 -> "i64" | Bool -> "bool")
+  | Unit -> "()"
+  | FnTy (ty_list, ret_ty) ->
+      sprintf "fn(%s) -> %s"
+        (render ty_list (fun ty -> render_ty ty) ", ")
+        (render_ty ret_ty)
 
 let render_fn_sig (fn_sig : fn_sig) : string =
   sprintf "fn %s(%s)%s" fn_sig.name
@@ -28,7 +33,7 @@ let render_fn (func : func) : string =
     (match func.body with Some body -> render_block body | None -> ";")
 
 let render_attr (attr : attr) : string =
-  match attr.kind, attr.style with
+  match (attr.kind, attr.style) with
   | NormalAttr attr, Outer -> sprintf "[%s]" attr.name
   | NormalAttr attr, Inner -> sprintf "![%s]" attr.name
   | Doc doc, _ -> doc
@@ -47,9 +52,7 @@ let render_item (item : item) : string =
       assert false
 
 let render_mod modd : string =
-  let rendered_items =
-    render modd.items (fun item -> render_item item) "\n"
-  in
+  let rendered_items = render modd.items (fun item -> render_item item) "" in
   if List.length modd.attrs > 0 then
     sprintf "%s\n\n%s"
       (render modd.attrs (fun attr -> render_attr attr) "\n")

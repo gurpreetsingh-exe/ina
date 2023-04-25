@@ -9,6 +9,7 @@ type parse_ctx = {
   mutable prev_tok : token option;
   mutable stop : bool;
   mutable extern_block : bool;
+  mutable node_id : node_id;
 }
 
 type perr = UnexpectedToken of (string * span)
@@ -31,9 +32,22 @@ let eat pctx kind =
     raise
       (ParseError
          (UnexpectedToken
-            ( "expected " ^ display_token_kind kind ^ "found "
-              ^ display_token_kind pctx.curr_tok.kind,
+            ( Printf.sprintf " expected `%s` found `%s`"
+                (display_token_kind kind)
+                (display_token_kind pctx.curr_tok.kind),
               pctx.curr_tok.span )))
+
+let unexpected_token pctx expected =
+  ParseError
+    (UnexpectedToken
+       ( Printf.sprintf " expected `%s` found `%s`"
+           (display_token_kind expected)
+           (display_token_kind pctx.curr_tok.kind),
+         pctx.curr_tok.span ))
+
+let gen_id pctx : node_id =
+  pctx.node_id <- pctx.node_id + 1;
+  pctx.node_id
 
 let parse_ctx_create tokenizer s =
   match next tokenizer with
@@ -45,6 +59,7 @@ let parse_ctx_create tokenizer s =
         prev_tok = None;
         stop = false;
         extern_block = false;
+        node_id = 0;
       }
   | None -> exit 0
 
@@ -128,7 +143,20 @@ let parse_fn_args pctx : (ty * ident option) list =
   ignore (eat pctx RParen);
   []
 
-let parse_ret_ty _ : ty option = None
+let parse_ty pctx : ty =
+  match pctx.curr_tok.kind with
+  | Ident -> (
+    match get_token_str (eat pctx Ident) pctx.src with
+    | "i64" -> Prim I64
+    | _ -> raise (unexpected_token pctx Ident))
+  | _ -> raise (unexpected_token pctx Ident)
+
+let parse_ret_ty pctx : ty option =
+  match pctx.curr_tok.kind with
+  | Arrow ->
+      advance pctx;
+      Some (parse_ty pctx)
+  | _ -> None
 
 let parse_fn_sig pctx : fn_sig =
   let ident = parse_ident pctx in
@@ -137,10 +165,9 @@ let parse_fn_sig pctx : fn_sig =
   { name = ident; args; ret_ty }
 
 let parse_block pctx : block =
-  assert (pctx.curr_tok.kind == LBrace);
   ignore (eat pctx LBrace);
   ignore (eat pctx RBrace);
-  { block_stmts = []; last_expr = None }
+  { block_stmts = []; last_expr = None; block_id = gen_id pctx }
 
 let parse_fn pctx : func =
   let is_extern =
@@ -150,10 +177,10 @@ let parse_fn pctx : func =
   let sign = parse_fn_sig pctx in
   if pctx.curr_tok.kind == Semi then (
     advance pctx;
-    { is_extern; fn_sig = sign; body = None })
+    { is_extern; fn_sig = sign; body = None; func_id = gen_id pctx })
   else (
     let body = parse_block pctx in
-    { is_extern; fn_sig = sign; body = Some body })
+    { is_extern; fn_sig = sign; body = Some body; func_id = gen_id pctx })
 
 let parse_extern pctx attrs : item =
   advance pctx;
@@ -170,7 +197,7 @@ let parse_item pctx : item =
 
 let parse_mod pctx : modd =
   let mod_attrs = parse_inner_attrs pctx in
-  let modd = { items = []; attrs = mod_attrs } in
+  let modd = { items = []; attrs = mod_attrs; mod_id = gen_id pctx } in
   while not pctx.stop do
     try modd.items <- modd.items @ [parse_item pctx]
     with ParseError err -> emit_err err

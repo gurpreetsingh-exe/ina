@@ -1,7 +1,7 @@
 (library
-  (name token)
-  (modules token))
+ (name token)
+ (modules token))
 
 (library
-  (name ast)
-  (modules ast))
+ (name ast)
+ (modules ast))

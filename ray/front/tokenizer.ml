@@ -119,7 +119,7 @@ let next tokenizer : token option =
           with I ->
             mk_tok tokenizer
               (if Hashtbl.mem keywords !buf then Hashtbl.find keywords !buf
-              else Ident)
+               else Ident)
               tok start;
             raise Exit)
       | Some '"' -> (

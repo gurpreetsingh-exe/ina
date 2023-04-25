@@ -1,5 +1,6 @@
 open Front
 open Printf
+open Sema
 (* open Codegen *)
 
 type command =
@@ -62,6 +63,8 @@ let () =
       let tokenizer = Tokenizer.tokenize name s in
       let pctx = Parser.parse_ctx_create tokenizer s in
       let modd = Parser.parse_mod pctx in
+      let ty_ctx = Tychk.ty_ctx_create () in
+      ignore (Tychk.tychk ty_ctx modd);
       (* Llvm_gen.gen_module name modd; *)
       printf "%s" (Fmt.render_mod modd)
   | None -> usage arg0
