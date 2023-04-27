@@ -51,6 +51,7 @@ and block = {
 
 and stmt =
   | Stmt of expr
+  | Expr of expr
   | Binding of binding
 
 and binding = {
@@ -60,7 +61,7 @@ and binding = {
   binding_id : node_id;
 }
 
-and pat = Ident of ident
+and pat = PatIdent of ident
 
 and constant = {
   const_name : ident;
@@ -81,7 +82,13 @@ and prim_ty =
   | I64
   | Bool
 
-and expr = Lit of lit
+and expr = {
+  expr_kind : expr_kind;
+  mutable expr_ty : ty option;
+  expr_id : node_id;
+}
+
+and expr_kind = Lit of lit
 
 and lit =
   | LitInt of int

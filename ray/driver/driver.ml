@@ -66,5 +66,6 @@ let () =
       let ty_ctx = Tychk.ty_ctx_create () in
       ignore (Tychk.tychk ty_ctx modd);
       (* Llvm_gen.gen_module name modd; *)
-      printf "%s" (Fmt.render_mod modd)
+      (* printf "%s" (Fmt.render_mod modd); *)
+      printf "%s\n" (Fmt.display_mod modd)
   | None -> usage arg0

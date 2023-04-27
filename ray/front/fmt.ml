@@ -58,3 +58,46 @@ let render_mod modd : string =
       (render modd.attrs (fun attr -> render_attr attr) "\n")
       rendered_items
   else rendered_items
+
+(* debug utils *)
+
+let display_lit (lit : lit) : string =
+  match lit with
+  | LitInt value -> sprintf "%d" value
+  | LitBool value -> sprintf "%b" value
+
+let display_expr_kind (expr_kind : expr_kind) =
+  match expr_kind with Lit lit -> "Lit " ^ display_lit lit
+
+let display_expr (expr : expr) =
+  sprintf "{ id: %d, ty: %s, kind: %s }" expr.expr_id
+    (match expr.expr_ty with Some ty -> render_ty ty | None -> "<none>")
+    (display_expr_kind expr.expr_kind)
+
+let display_stmt (stmt : stmt) indent =
+  String.make indent ' '
+  ^
+  match stmt with
+  | Stmt expr | Expr expr -> display_expr expr
+  | Binding _ -> "binding"
+
+let display_item (item : item) =
+  match item with
+  | Fn (func, _) ->
+      let { fn_sig = { args; ret_ty; _ }; body; func_id; _ } = func in
+      sprintf "func_id:%d\n  args: %s\n  ret_ty: %s\n  body: %s" func_id
+        (render args (fun (ty, _) -> render_ty ty) ", ")
+        (render_ty (Option.value ret_ty ~default:Unit))
+        (match body with
+        | Some block -> (
+            render block.block_stmts (fun stmt -> display_stmt stmt 4) "\n"
+            ^ "\n"
+            ^
+            match block.last_expr with
+            | Some expr -> "    " ^ display_expr expr
+            | None -> "    last_expr: None")
+        | None -> "<none>")
+  | _ -> ""
+
+let display_mod (modd : modd) =
+  render modd.items (fun item -> display_item item) "\n"

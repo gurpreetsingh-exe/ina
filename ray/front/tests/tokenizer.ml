@@ -98,7 +98,9 @@ let%expect_test "single tokens" =
   single_token "///";
   [%expect {|///|}];
   single_token "//!";
-  [%expect {|//!|}]
+  [%expect {|//!|}];
+  single_token "i64";
+  [%expect {|i64|}]
 
 let%expect_test "tokens" =
   do_test "fn main()" "%s\n";

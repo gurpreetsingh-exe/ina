@@ -117,10 +117,14 @@ let next tokenizer : token option =
               | Some _ | None -> raise I
             done
           with I ->
-            mk_tok tokenizer
-              (if Hashtbl.mem keywords !buf then Hashtbl.find keywords !buf
-               else Ident)
-              tok start;
+            (match !buf with
+            | "true" | "false" -> mk_tok tokenizer (Lit Bool) tok start
+            | _ ->
+                mk_tok tokenizer
+                  (if Hashtbl.mem keywords !buf then
+                   Hashtbl.find keywords !buf
+                  else Ident)
+                  tok start);
             raise Exit)
       | Some '"' -> (
           let start = (tokenizer.filename, tokenizer.id) in

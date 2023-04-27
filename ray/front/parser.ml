@@ -24,19 +24,6 @@ let advance pctx =
       pctx.curr_tok <- t
   | None -> assert false
 
-let eat pctx kind =
-  if pctx.curr_tok.kind == kind then (
-    let t = pctx.curr_tok in
-    advance pctx; t)
-  else
-    raise
-      (ParseError
-         (UnexpectedToken
-            ( Printf.sprintf " expected `%s` found `%s`"
-                (display_token_kind kind)
-                (display_token_kind pctx.curr_tok.kind),
-              pctx.curr_tok.span )))
-
 let unexpected_token pctx expected =
   ParseError
     (UnexpectedToken
@@ -44,6 +31,12 @@ let unexpected_token pctx expected =
            (display_token_kind expected)
            (display_token_kind pctx.curr_tok.kind),
          pctx.curr_tok.span ))
+
+let eat pctx kind =
+  if pctx.curr_tok.kind == kind then (
+    let t = pctx.curr_tok in
+    advance pctx; t)
+  else raise (unexpected_token pctx kind)
 
 let gen_id pctx : node_id =
   pctx.node_id <- pctx.node_id + 1;
@@ -148,6 +141,8 @@ let parse_ty pctx : ty =
   | Ident -> (
     match get_token_str (eat pctx Ident) pctx.src with
     | "i64" -> Prim I64
+    | "i32" -> Prim I32
+    | "bool" -> Prim Bool
     | _ -> raise (unexpected_token pctx Ident))
   | _ -> raise (unexpected_token pctx Ident)
 
@@ -164,10 +159,50 @@ let parse_fn_sig pctx : fn_sig =
   let ret_ty = parse_ret_ty pctx in
   { name = ident; args; ret_ty }
 
+let parse_expr pctx : expr =
+  let expr_kind =
+    match pctx.curr_tok.kind with
+    | Lit lit as kind ->
+        let buf = get_token_str (eat pctx kind) pctx.src in
+        Ast.Lit
+          (match lit with
+          | Int -> LitInt (int_of_string buf)
+          | Bool -> LitBool (bool_of_string buf)
+          | lit_kind ->
+              ignore (Printf.printf "%s\n" (display_literal lit_kind));
+              assert false)
+    | kind ->
+        ignore (Printf.printf "%s\n" (display_token_kind kind));
+        assert false
+  in
+  { expr_kind; expr_ty = None; expr_id = gen_id pctx }
+
+let parse_stmt pctx : stmt =
+  let expr = parse_expr pctx in
+  if pctx.curr_tok.kind = Semi then (advance pctx; Stmt expr) else Expr expr
+
 let parse_block pctx : block =
   ignore (eat pctx LBrace);
+  let stmt_list = ref [] in
+  let last_expr = ref None in
+  (try
+     while not pctx.stop do
+       let stmt =
+         match pctx.curr_tok.kind with
+         | RBrace -> raise Exit
+         | _ -> parse_stmt pctx
+       in
+       match stmt with
+       | Expr expr -> last_expr := Some expr
+       | stmt -> stmt_list := !stmt_list @ [stmt]
+     done
+   with Exit -> ());
   ignore (eat pctx RBrace);
-  { block_stmts = []; last_expr = None; block_id = gen_id pctx }
+  {
+    block_stmts = !stmt_list;
+    last_expr = !last_expr;
+    block_id = gen_id pctx;
+  }
 
 let parse_fn pctx : func =
   let is_extern =
