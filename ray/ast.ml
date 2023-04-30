@@ -80,6 +80,7 @@ and ty =
 and prim_ty =
   | I32
   | I64
+  | F32
   | Bool
 
 and expr = {

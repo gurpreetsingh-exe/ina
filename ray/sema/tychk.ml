@@ -37,7 +37,7 @@ let tychk_func _ty_ctx (func : func) =
     | Some expr -> (
       match expr.expr_ty with
       | Some ty ->
-          if ty = ret_ty then () else ty_err_emit (MismatchTy (ty, ret_ty))
+          if ty = ret_ty then () else ty_err_emit (MismatchTy (ret_ty, ty))
       | None -> assert false)
     | None -> (
       match ret_ty with Unit -> () | _ -> ty_err_emit (NoReturn func)))

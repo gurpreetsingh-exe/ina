@@ -7,7 +7,11 @@ let render (items : 'a list) (func : 'a -> string) (sep : string) : string =
 let rec render_ty (ty : ty) : string =
   match ty with
   | Prim ty -> (
-    match ty with I32 -> "i32" | I64 -> "i64" | Bool -> "bool")
+    match ty with
+    | I32 -> "i32"
+    | I64 -> "i64"
+    | F32 -> "f32"
+    | Bool -> "bool")
   | Unit -> "()"
   | FnTy (ty_list, ret_ty) ->
       sprintf "fn(%s) -> %s"
@@ -74,12 +78,18 @@ let display_expr (expr : expr) =
     (match expr.expr_ty with Some ty -> render_ty ty | None -> "<none>")
     (display_expr_kind expr.expr_kind)
 
+let display_pat = function PatIdent ident -> ident
+
 let display_stmt (stmt : stmt) indent =
   String.make indent ' '
   ^
   match stmt with
   | Stmt expr | Expr expr -> display_expr expr
-  | Binding _ -> "binding"
+  | Binding { binding_pat; binding_ty; binding_expr; binding_id } ->
+      sprintf "{ id: %d, pat: %s, ty: %s, expr: %s }" binding_id
+        (display_pat binding_pat)
+        (match binding_ty with Some ty -> render_ty ty | None -> "<none>")
+        (display_expr binding_expr)
 
 let display_item (item : item) =
   match item with
