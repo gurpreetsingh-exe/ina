@@ -177,9 +177,39 @@ let parse_expr pctx : expr =
   in
   { expr_kind; expr_ty = None; expr_id = gen_id pctx }
 
+let parse_pat pctx : pat =
+  let kind = pctx.curr_tok.kind in
+  match kind with
+  | Ident -> PatIdent (get_token_str (eat pctx kind) pctx.src)
+  | _ -> assert false
+
+let parse_let pctx : binding =
+  ignore (eat pctx Let);
+  let binding_create pat ty =
+    ignore (eat pctx Eq);
+    let binding_expr = parse_expr pctx in
+    ignore (eat pctx Semi);
+    {
+      binding_pat = pat;
+      binding_ty = ty;
+      binding_expr;
+      binding_id = gen_id pctx;
+    }
+  in
+  let pat = parse_pat pctx in
+  match pctx.curr_tok.kind with
+  | Eq -> binding_create pat None
+  | Colon ->
+      advance pctx;
+      binding_create pat (Some (parse_ty pctx))
+  | _ -> assert false
+
 let parse_stmt pctx : stmt =
-  let expr = parse_expr pctx in
-  if pctx.curr_tok.kind = Semi then (advance pctx; Stmt expr) else Expr expr
+  if pctx.curr_tok.kind = Let then Binding (parse_let pctx)
+  else (
+    let expr = parse_expr pctx in
+    if pctx.curr_tok.kind = Semi then (advance pctx; Stmt expr)
+    else Expr expr)
 
 let parse_block pctx : block =
   ignore (eat pctx LBrace);

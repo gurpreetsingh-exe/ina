@@ -7,10 +7,11 @@ type tokenizer = {
   filename : string;
 }
 
-let keywords = Hashtbl.create 2;;
+let keywords = Hashtbl.create 0;;
 
 Hashtbl.add keywords "fn" Fn;
-Hashtbl.add keywords "extern" Extern
+Hashtbl.add keywords "extern" Extern;
+Hashtbl.add keywords "let" Let
 
 let mk_tok (tokenizer : tokenizer) (kind : token_kind)
     (tok : token option ref) (start : pos) =
