@@ -89,7 +89,9 @@ let infer_func infer_ctx (func : func) =
               expr.expr_ty <- Some ret_ty)
             else infer_err_emit (MismatchInfer (ret_ty, ty))
           else assert false
-      | Float id -> if Hashtbl.mem infer_ctx.unresolved id then () else ())
+      | Float id ->
+          ignore (assert false);
+          if Hashtbl.mem infer_ctx.unresolved id then () else assert false)
   | None -> ()
 
 let infer_begin infer_ctx (modd : modd) =
