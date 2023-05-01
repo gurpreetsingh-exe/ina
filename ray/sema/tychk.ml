@@ -24,8 +24,6 @@ let ty_err_emit ty_err =
         func.fn_sig.name
         (render_ty (ty_unwrap func.fn_sig.ret_ty))
 
-let ty_ctx_create () = { func_map = Hashtbl.create 0 }
-
 let ty_ctx_create (infer_ctx : infer_ctx) = { func_map = infer_ctx.func_map }
 
 let tychk_func _ty_ctx (func : func) =

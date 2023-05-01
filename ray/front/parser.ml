@@ -171,6 +171,7 @@ let parse_expr pctx : expr =
           | lit_kind ->
               ignore (Printf.printf "%s\n" (display_literal lit_kind));
               assert false)
+    | Ident -> Ident (parse_ident pctx)
     | kind ->
         ignore (Printf.printf "%s\n" (display_token_kind kind));
         assert false

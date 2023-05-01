@@ -89,7 +89,9 @@ and expr = {
   expr_id : node_id;
 }
 
-and expr_kind = Lit of lit
+and expr_kind =
+  | Lit of lit
+  | Ident of ident
 
 and lit =
   | LitInt of int

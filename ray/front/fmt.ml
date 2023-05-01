@@ -4,6 +4,11 @@ open Printf
 let render (items : 'a list) (func : 'a -> string) (sep : string) : string =
   String.concat sep (List.map (fun item -> func item) items)
 
+let render_expr (expr : expr) : string =
+    match expr.expr_kind with
+    | Ident ident -> ident
+    | _ -> "lit"
+
 let rec render_ty (ty : ty) : string =
   match ty with
   | Prim ty -> (
@@ -71,7 +76,9 @@ let display_lit (lit : lit) : string =
   | LitBool value -> sprintf "%b" value
 
 let display_expr_kind (expr_kind : expr_kind) =
-  match expr_kind with Lit lit -> "Lit " ^ display_lit lit
+  match expr_kind with
+  | Lit lit -> "Lit " ^ display_lit lit
+  | Ident ident -> "Ident " ^ ident
 
 let display_expr (expr : expr) =
   sprintf "{ id: %d, ty: %s, kind: %s }" expr.expr_id
