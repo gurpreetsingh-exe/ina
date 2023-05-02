@@ -1,5 +1,7 @@
 open Ast
 open Llvm
+open Llvm_target
+open Llvm_all_backends
 
 let ctx = global_context ()
 
@@ -71,7 +73,21 @@ let gen_func (func : func) (ll_mod : llmodule) =
 let gen_item (item : item) (ll_mod : llmodule) =
   match item with Fn (func, _) -> gen_func func ll_mod | _ -> assert false
 
-let gen_module (name : string) (modd : modd) =
+let gen_module (name : string) (modd : modd) : llmodule =
   let ll_mod = create_module ctx name in
   ignore (List.map (fun item -> gen_item item ll_mod) modd.items);
-  dump_module ll_mod
+  ll_mod
+
+let emit (modd : llmodule) =
+  initialize ();
+  let triple = Target.default_triple () in
+  set_target_triple triple modd;
+  let target = Target.by_triple triple in
+  let machine =
+    TargetMachine.create ~triple ?cpu:(Some "generic") ?features:None
+      ?level:(Some CodeGenOptLevel.Default)
+      ?reloc_mode:(Some RelocMode.Static)
+      ?code_model:(Some CodeModel.Default) target
+  in
+  TargetMachine.emit_to_file modd CodeGenFileType.AssemblyFile "testllvm.asm"
+    machine

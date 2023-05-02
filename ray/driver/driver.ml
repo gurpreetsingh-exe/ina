@@ -67,7 +67,8 @@ let () =
       ignore (Infer.infer_begin infer_ctx modd);
       let ty_ctx = Tychk.ty_ctx_create infer_ctx in
       ignore (Tychk.tychk ty_ctx modd);
-      Llvm_gen.gen_module name modd
+      let modd = Llvm_gen.gen_module name modd in
+      Llvm_gen.emit modd
       (* printf "%s" (Fmt.render_mod modd); *)
       (* printf "%s\n" (Fmt.display_mod modd) *)
   | None -> usage arg0
