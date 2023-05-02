@@ -1,7 +1,7 @@
 open Front
 open Printf
 open Sema
-(* open Codegen *)
+open Codegen
 
 type command =
   | Build
@@ -66,8 +66,8 @@ let () =
       let infer_ctx = Infer.infer_ctx_create () in
       ignore (Infer.infer_begin infer_ctx modd);
       let ty_ctx = Tychk.ty_ctx_create infer_ctx in
-      ignore (Tychk.tychk ty_ctx modd)
-      (* Llvm_gen.gen_module name modd; *)
+      ignore (Tychk.tychk ty_ctx modd);
+      Llvm_gen.gen_module name modd
       (* printf "%s" (Fmt.render_mod modd); *)
       (* printf "%s\n" (Fmt.display_mod modd) *)
   | None -> usage arg0
