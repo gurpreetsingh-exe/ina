@@ -56,7 +56,7 @@ and stmt =
 
 and binding = {
   binding_pat : pat;
-  binding_ty : ty option;
+  mutable binding_ty : ty option;
   binding_expr : expr;
   binding_id : node_id;
 }

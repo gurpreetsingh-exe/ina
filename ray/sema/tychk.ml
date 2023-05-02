@@ -4,7 +4,17 @@ open Front.Fmt
 
 let ty_unwrap (ty : ty option) = Option.value ty ~default:Unit
 
-type ty_ctx = { func_map : (node_id, ty) Hashtbl.t }
+type env = {
+  parent : env option;
+  bindings : (string, ty) Hashtbl.t;
+}
+
+let env_create parent : env = { parent; bindings = Hashtbl.create 0 }
+
+type ty_ctx = {
+  ty_env : env;
+  func_map : (node_id, ty) Hashtbl.t;
+}
 
 type ty_err =
   | MismatchTy of ty * ty
@@ -24,21 +34,36 @@ let ty_err_emit ty_err =
         func.fn_sig.name
         (render_ty (ty_unwrap func.fn_sig.ret_ty))
 
-let ty_ctx_create (infer_ctx : infer_ctx) = { func_map = infer_ctx.func_map }
+let ty_ctx_create (infer_ctx : infer_ctx) =
+  { ty_env = env_create None; func_map = infer_ctx.func_map }
 
-let tychk_func _ty_ctx (func : func) =
+let tychk_func (ty_ctx : ty_ctx) (func : func) =
   let { fn_sig = { ret_ty; _ }; body; _ } = func in
+  let f stmt =
+    match stmt with
+    | Stmt _ | Expr _ -> ()
+    | Binding ({ binding_pat; binding_ty; binding_expr; _ } as binding) -> (
+      match binding_pat with
+      | PatIdent ident -> (
+          let ty =
+            match binding_expr.expr_ty with
+            | Some ty ->
+                Hashtbl.add ty_ctx.ty_env.bindings ident ty;
+                ty
+            | None -> assert false
+          in
+          match binding_ty with
+          | Some expected -> assert (expected = ty)
+          | None -> binding.binding_ty <- Some ty))
+  in
   let ret_ty = Option.value ret_ty ~default:Unit in
   match body with
   | Some body -> (
-    match body.last_expr with
-    | Some expr -> (
-      match expr.expr_ty with
-      | Some ty ->
-          if ty = ret_ty then () else ty_err_emit (MismatchTy (ret_ty, ty))
-      | None -> assert false)
-    | None -> (
-      match ret_ty with Unit -> () | _ -> ty_err_emit (NoReturn func)))
+      ignore (List.map f body.block_stmts);
+      match body.last_expr with
+      | Some _ -> ()
+      | None -> (
+        match ret_ty with Unit -> () | _ -> ty_err_emit (NoReturn func)))
   | None -> ()
 
 let tychk ty_ctx (modd : modd) =

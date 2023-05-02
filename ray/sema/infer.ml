@@ -7,6 +7,11 @@ type infer_kind =
   | Normal of ty
 
 let display_infer_kind = function
+  | Int _ -> "int"
+  | Float _ -> "float"
+  | Normal ty -> render_ty ty
+
+let debug_display_infer_kind = function
   | Int id -> Printf.sprintf "int %d" id
   | Float id -> Printf.sprintf "float %d" id
   | Normal ty -> render_ty ty
@@ -33,6 +38,21 @@ let rec find_ty (ty_env : env) ident : infer_kind =
   else (
     match ty_env.parent with
     | Some env -> find_ty env ident
+    | None -> assert false)
+
+let rec bindings_id_exists (ty_env : env) id : bool =
+  if not (Hashtbl.mem ty_env.bindings_id id) then (
+    match ty_env.parent with
+    | Some env -> bindings_id_exists env id
+    | None -> false)
+  else true
+
+let rec find_binding_id (ty_env : env) id : string =
+  if Hashtbl.mem ty_env.bindings_id id then
+    Hashtbl.find ty_env.bindings_id id
+  else (
+    match ty_env.parent with
+    | Some env -> find_binding_id env id
     | None -> assert false)
 
 let ty_is_int (ty : ty) : bool =
@@ -75,11 +95,15 @@ let print_unresolved unresolved =
       Printf.printf "%d: %s\n" key (display_infer_kind value))
     unresolved
 
-let print_bindings bindings =
+let rec print_bindings ty_env =
   Hashtbl.iter
     (fun key value ->
       Printf.printf "%s: %s\n" key (display_infer_kind value))
-    bindings
+    ty_env.bindings;
+  Hashtbl.iter
+    (fun key value -> Printf.printf "%d: %s\n" key value)
+    ty_env.bindings_id;
+  match ty_env.parent with Some env -> print_bindings env | None -> ()
 
 let infer (infer_ctx : infer_ctx) (expr : expr) : infer_kind =
   Hashtbl.add infer_ctx.env expr.expr_id expr;
@@ -111,10 +135,10 @@ let rec unify infer_ctx ty expected =
         if ty_is_int expected then (
           Hashtbl.remove infer_ctx.unresolved id;
           let expr = Hashtbl.find infer_ctx.env id in
-          if Hashtbl.mem infer_ctx.ty_env.bindings_id id then (
-            let binding = Hashtbl.find infer_ctx.ty_env.bindings_id id in
-            if Hashtbl.mem infer_ctx.ty_env.bindings binding then (
-              let ty = Hashtbl.find infer_ctx.ty_env.bindings binding in
+          if bindings_id_exists infer_ctx.ty_env id then (
+            let binding = find_binding_id infer_ctx.ty_env id in
+            if ty_exists infer_ctx.ty_env binding then (
+              let ty = find_ty infer_ctx.ty_env binding in
               unify infer_ctx ty expected;
               Hashtbl.replace infer_ctx.ty_env.bindings binding
                 (Normal expected)));
@@ -144,15 +168,12 @@ let infer_block infer_ctx block : infer_kind =
                  Hashtbl.add infer_ctx.ty_env.bindings ident ty));
         Normal Unit
   in
-  (* let tmp_env = infer_ctx.ty_env in *)
-  (* infer_ctx.ty_env <- env_create (Some tmp_env); *)
   ignore (List.map f block.block_stmts);
   let ty =
     match block.last_expr with
     | Some expr -> infer infer_ctx expr
     | None -> Normal Unit
   in
-  (* infer_ctx.ty_env <- tmp_env; *)
   ty
 
 let resolve infer_ctx node_id infer_kind =
@@ -170,12 +191,15 @@ let infer_func infer_ctx (func : func) =
   let ret_ty = Option.value ret_ty ~default:Unit in
   Hashtbl.add infer_ctx.func_map func_id
     (FnTy (List.map (fun (ty, _) -> ty) args, ret_ty));
-  match body with
+  (match body with
   | Some body ->
+      let tmp_env = infer_ctx.ty_env in
+      infer_ctx.ty_env <- env_create (Some tmp_env);
       let ty = infer_block infer_ctx body in
-      unify infer_ctx ty ret_ty
-  | None -> ()
-(* Hashtbl.iter (resolve infer_ctx) infer_ctx.unresolved *)
+      unify infer_ctx ty ret_ty;
+      infer_ctx.ty_env <- tmp_env
+  | None -> ());
+  Hashtbl.iter (resolve infer_ctx) infer_ctx.unresolved
 
 let infer_begin infer_ctx (modd : modd) =
   let f (item : item) =
