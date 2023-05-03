@@ -1,9 +1,12 @@
 open Ast
 open Llvm
 open Llvm_target
-open Llvm_all_backends
+open Llvm_X86
 
 let ctx = global_context ()
+
+(* we define our own *)
+external x86AsmPrinterInit : unit -> unit = "LLVMInitializeX86AsmPrinter"
 
 type env = { mutable bindings : (string, llvalue) Hashtbl.t }
 
@@ -80,6 +83,7 @@ let gen_module (name : string) (modd : modd) : llmodule =
 
 let emit (modd : llmodule) =
   initialize ();
+  x86AsmPrinterInit ();
   let triple = Target.default_triple () in
   set_target_triple triple modd;
   let target = Target.by_triple triple in

@@ -1,4 +1,4 @@
 (library
  (name codegen)
- (libraries ast llvm llvm.target llvm.all_backends)
+ (libraries ast llvm llvm.target llvm_X86)
  (modules llvm_gen))
