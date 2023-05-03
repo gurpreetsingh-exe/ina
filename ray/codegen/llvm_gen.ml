@@ -81,7 +81,7 @@ let gen_module (name : string) (modd : modd) : llmodule =
   ignore (List.map (fun item -> gen_item item ll_mod) modd.items);
   ll_mod
 
-let emit (modd : llmodule) =
+let emit (modd : llmodule) (out : string) =
   initialize ();
   x86AsmPrinterInit ();
   let triple = Target.default_triple () in
@@ -93,5 +93,8 @@ let emit (modd : llmodule) =
       ?reloc_mode:(Some RelocMode.Static)
       ?code_model:(Some CodeModel.Default) target
   in
-  TargetMachine.emit_to_file modd CodeGenFileType.AssemblyFile "testllvm.asm"
-    machine
+  let objfile = out ^ ".o" in
+  TargetMachine.emit_to_file modd CodeGenFileType.ObjectFile objfile machine;
+  let command = Sys.command ("clang " ^ objfile ^ " -o " ^ out) in
+  ignore (Sys.command ("rm " ^ objfile));
+  if command <> 0 then Printf.fprintf stderr "cannot emit executable\n"
