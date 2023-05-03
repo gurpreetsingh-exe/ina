@@ -8,9 +8,19 @@ let ctx = global_context ()
 (* we define our own *)
 external x86AsmPrinterInit : unit -> unit = "LLVMInitializeX86AsmPrinter"
 
-type env = { mutable bindings : (string, llvalue) Hashtbl.t }
+type env = {
+  mutable bindings : (string, llvalue) Hashtbl.t;
+  parent : env option;
+}
 
-let scope = ref { bindings = Hashtbl.create 0 }
+let scope = ref { bindings = Hashtbl.create 0; parent = None }
+
+let rec find_val scope ident =
+  if Hashtbl.mem scope.bindings ident then Hashtbl.find scope.bindings ident
+  else (
+    match scope.parent with
+    | Some s -> find_val s ident
+    | None -> assert false)
 
 let get_llvm_ty (ty : ty) : lltype =
   (match ty with
@@ -37,7 +47,7 @@ let gen_expr (builder : llbuilder) (expr : expr) : llvalue =
     | LitInt value -> const_int ty value
     | LitBool value -> const_int ty (if value then 1 else 0))
   | Ident ident ->
-      let ptr = Hashtbl.find !scope.bindings ident in
+      let ptr = find_val !scope ident in
       build_load ty ptr "" builder
 
 let gen_block (builder : llbuilder) (block : block) =
@@ -50,12 +60,12 @@ let gen_block (builder : llbuilder) (block : block) =
             build_alloca (get_llvm_ty (Option.get binding_ty)) "" builder
           in
           let expr = gen_expr builder binding_expr in
-          ignore (build_store ptr expr builder);
+          ignore (build_store expr ptr builder);
           Hashtbl.add !scope.bindings ident ptr)
     | _ -> assert false
   in
   let tmp_scope = !scope in
-  scope := { bindings = Hashtbl.create 0 };
+  scope := { bindings = Hashtbl.create 0; parent = Some tmp_scope };
   List.iter f block.block_stmts;
   ignore
     (match block.last_expr with
@@ -70,7 +80,16 @@ let gen_func (func : func) (ll_mod : llmodule) =
   if func.is_extern then assert false
   else (
     let fn = define_function func.fn_sig.name function_type ll_mod in
-    let builder = Llvm.builder_at_end ctx (Llvm.entry_block fn) in
+    let builder = builder_at_end ctx (entry_block fn) in
+    for i = 0 to Array.length (params fn) - 1 do
+      let _, name = List.nth func.fn_sig.args i in
+      let arg = Array.get (params fn) i in
+      let ty = type_of arg in
+      set_value_name name arg;
+      let ptr = build_alloca ty "" builder in
+      ignore (build_store arg ptr builder);
+      Hashtbl.add !scope.bindings name ptr
+    done;
     match func.body with Some body -> gen_block builder body | None -> ())
 
 let gen_item (item : item) (ll_mod : llmodule) =
@@ -93,6 +112,7 @@ let emit (modd : llmodule) (out : string) =
       ?reloc_mode:(Some RelocMode.Static)
       ?code_model:(Some CodeModel.Default) target
   in
+  dump_module modd;
   let objfile = out ^ ".o" in
   TargetMachine.emit_to_file modd CodeGenFileType.ObjectFile objfile machine;
   let command = Sys.command ("clang " ^ objfile ^ " -o " ^ out) in

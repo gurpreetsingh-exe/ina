@@ -195,6 +195,10 @@ let infer_func infer_ctx (func : func) =
   | Some body ->
       let tmp_env = infer_ctx.ty_env in
       infer_ctx.ty_env <- env_create (Some tmp_env);
+      List.iter
+        (fun (ty, ident) ->
+          Hashtbl.add infer_ctx.ty_env.bindings ident (Normal ty))
+        args;
       let ty = infer_block infer_ctx body in
       unify infer_ctx ty ret_ty;
       infer_ctx.ty_env <- tmp_env

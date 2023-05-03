@@ -32,7 +32,7 @@ and item =
 
 and fn_sig = {
   name : ident;
-  args : (ty * ident option) list;
+  args : (ty * ident) list;
   ret_ty : ty option;
 }
 

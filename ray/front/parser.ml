@@ -130,12 +130,6 @@ let parse_inner_attrs pctx : attr list =
     !attrs
   with Exit -> !attrs
 
-let parse_fn_args pctx : (ty * ident option) list =
-  assert (pctx.curr_tok.kind == LParen);
-  ignore (eat pctx LParen);
-  ignore (eat pctx RParen);
-  []
-
 let parse_ty pctx : ty =
   match pctx.curr_tok.kind with
   | Ident -> (
@@ -145,6 +139,29 @@ let parse_ty pctx : ty =
     | "bool" -> Prim Bool
     | _ -> raise (unexpected_token pctx Ident))
   | _ -> raise (unexpected_token pctx Ident)
+
+let parse_fn_args pctx : (ty * ident) list =
+  assert (pctx.curr_tok.kind == LParen);
+  ignore (eat pctx LParen);
+  let arg_list = ref [] in
+  (try
+     while not pctx.stop do
+       if pctx.curr_tok.kind = RParen then raise Exit;
+       let arg =
+         let ident = parse_ident pctx in
+         ignore (eat pctx Colon);
+         let ty = parse_ty pctx in
+         (ty, ident)
+       in
+       arg_list := !arg_list @ [arg];
+       match pctx.curr_tok.kind with
+       | Comma -> advance pctx
+       | RParen -> raise Exit
+       | _ -> assert false
+     done
+   with Exit -> ());
+  ignore (eat pctx RParen);
+  !arg_list
 
 let parse_ret_ty pctx : ty option =
   match pctx.curr_tok.kind with
