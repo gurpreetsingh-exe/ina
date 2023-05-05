@@ -4,33 +4,53 @@ open Llvm_target
 open Llvm_X86
 open Llvm_analysis
 
+type env = {
+  bindings : (string, llvalue) Hashtbl.t;
+  parent : env option;
+}
+
+type codegen_ctx = {
+  llctx : llcontext;
+  target : Target.t;
+  machine : TargetMachine.t;
+  data_layout : DataLayout.t;
+  mutable env : env;
+  global_strings : (string, llvalue) Hashtbl.t;
+  size_type : lltype;
+  mutable curr_mod : llmodule option;
+}
+
 (* we define our own *)
 external x86AsmPrinterInit : unit -> unit = "LLVMInitializeX86AsmPrinter"
-
-let ctx = global_context ()
 
 let _ =
   initialize ();
   x86AsmPrinterInit ();
   enable_pretty_stacktrace ()
 
-let target = Target.by_triple (Target.default_triple ())
+let codegen_ctx =
+  let ctx = global_context () in
+  let target = Target.by_triple (Target.default_triple ()) in
+  let machine =
+    TargetMachine.create
+      ~triple:(Target.default_triple ())
+      ?cpu:(Some "generic") ?features:None ?level:(Some CodeGenOptLevel.None)
+      ?reloc_mode:(Some RelocMode.Static)
+      ?code_model:(Some CodeModel.Default) target
+  in
+  let data_layout = TargetMachine.data_layout machine in
+  {
+    llctx = ctx;
+    target;
+    machine;
+    data_layout = TargetMachine.data_layout machine;
+    env = { bindings = Hashtbl.create 0; parent = None };
+    global_strings = Hashtbl.create 0;
+    size_type = DataLayout.intptr_type ctx data_layout;
+    curr_mod = None;
+  }
 
-let machine =
-  TargetMachine.create
-    ~triple:(Target.default_triple ())
-    ?cpu:(Some "generic") ?features:None
-    ?level:(Some CodeGenOptLevel.Default) ?reloc_mode:(Some RelocMode.Static)
-    ?code_model:(Some CodeModel.Default) target
-
-let data_layout = TargetMachine.data_layout machine
-
-type env = {
-  mutable bindings : (string, llvalue) Hashtbl.t;
-  parent : env option;
-}
-
-let scope = ref { bindings = Hashtbl.create 0; parent = None }
+let i32_c value = const_int (i32_type codegen_ctx.llctx) value
 
 let rec find_val scope ident =
   if Hashtbl.mem scope.bindings ident then Hashtbl.find scope.bindings ident
@@ -40,10 +60,11 @@ let rec find_val scope ident =
     | None -> assert false)
 
 let get_llvm_ty (ty : ty) : lltype =
+  let { llctx = ctx; data_layout; _ } = codegen_ctx in
   match ty with
   | Prim ty -> (
     match ty with
-    | Isize | Usize -> DataLayout.intptr_type ctx data_layout
+    | Isize | Usize -> codegen_ctx.size_type
     | I64 | U64 -> i64_type ctx
     | I32 | U32 -> i32_type ctx
     | I16 | U16 -> i16_type ctx
@@ -51,7 +72,9 @@ let get_llvm_ty (ty : ty) : lltype =
     | F32 -> float_type ctx
     | F64 -> double_type ctx
     | Bool -> i1_type ctx
-    | Str -> assert false)
+    | Str ->
+        struct_type ctx
+          [|pointer_type ctx; DataLayout.intptr_type ctx data_layout|])
   | Unit -> void_type ctx
   | _ -> assert false
 
@@ -68,27 +91,55 @@ let gen_expr (builder : llbuilder) (expr : expr) : llvalue =
     | LitInt value -> const_int ty value
     | LitFloat value -> const_float ty value
     | LitBool value -> const_int ty (if value then 1 else 0)
-    | LitStr _ -> assert false)
+    | LitStr value ->
+        let id =
+          Printf.sprintf "__unnamed_%d"
+            (Hashtbl.length codegen_ctx.global_strings)
+        in
+        let llvm_value =
+          define_global id
+            (const_string codegen_ctx.llctx value)
+            (Option.get codegen_ctx.curr_mod)
+        in
+        set_linkage Linkage.Private llvm_value;
+        set_unnamed_addr true llvm_value;
+        set_global_constant true llvm_value;
+        set_alignment 1 llvm_value;
+        Hashtbl.add codegen_ctx.global_strings id llvm_value;
+        llvm_value)
   | Ident ident ->
-      let ptr = find_val !scope ident in
+      let ptr = find_val codegen_ctx.env ident in
       build_load ty ptr "" builder
 
 let gen_block (builder : llbuilder) (block : block) =
   let f stmt =
     match stmt with
     | Binding { binding_pat; binding_ty; binding_expr; _ } -> (
-      match binding_pat with
-      | PatIdent ident ->
-          let ptr =
-            build_alloca (get_llvm_ty (Option.get binding_ty)) "" builder
-          in
-          let expr = gen_expr builder binding_expr in
-          ignore (build_store expr ptr builder);
-          Hashtbl.add !scope.bindings ident ptr)
+        let ty = Option.get binding_ty in
+        let ll_ty = get_llvm_ty ty in
+        match binding_pat with
+        | PatIdent ident ->
+            let ptr = build_alloca ll_ty ident builder in
+            let expr = gen_expr builder binding_expr in
+            (match binding_expr.expr_kind with
+            | Lit (LitStr value) ->
+                let cstr_ptr =
+                  build_gep ll_ty ptr [|i32_c 0; i32_c 0|] "" builder
+                in
+                ignore (build_store expr cstr_ptr builder);
+                let size_ptr =
+                  build_gep ll_ty ptr [|i32_c 0; i32_c 1|] "" builder
+                in
+                ignore
+                  (build_store
+                     (const_int codegen_ctx.size_type (String.length value))
+                     size_ptr builder)
+            | _ -> ignore (build_store expr ptr builder));
+            Hashtbl.add codegen_ctx.env.bindings ident ptr)
     | _ -> assert false
   in
-  let tmp_scope = !scope in
-  scope := { bindings = Hashtbl.create 0; parent = Some tmp_scope };
+  let tmp_scope = codegen_ctx.env in
+  codegen_ctx.env <- { bindings = Hashtbl.create 0; parent = Some tmp_scope };
   List.iter f block.block_stmts;
   ignore
     (match block.last_expr with
@@ -96,14 +147,14 @@ let gen_block (builder : llbuilder) (block : block) =
         let ret_expr = gen_expr builder expr in
         build_ret ret_expr builder
     | None -> build_ret_void builder);
-  scope := tmp_scope
+  codegen_ctx.env <- tmp_scope
 
 let gen_func (func : func) (ll_mod : llmodule) =
   let function_type = gen_function_type func.fn_sig in
   if func.is_extern then assert false
   else (
     let fn = define_function func.fn_sig.name function_type ll_mod in
-    let builder = builder_at_end ctx (entry_block fn) in
+    let builder = builder_at_end codegen_ctx.llctx (entry_block fn) in
     for i = 0 to Array.length (params fn) - 1 do
       let _, name = List.nth func.fn_sig.args i in
       let arg = Array.get (params fn) i in
@@ -111,7 +162,7 @@ let gen_func (func : func) (ll_mod : llmodule) =
       set_value_name name arg;
       let ptr = build_alloca ty "" builder in
       ignore (build_store arg ptr builder);
-      Hashtbl.add !scope.bindings name ptr
+      Hashtbl.add codegen_ctx.env.bindings name ptr
     done;
     (match func.body with Some body -> gen_block builder body | None -> ());
     if not (verify_function fn) then
@@ -122,7 +173,8 @@ let gen_item (item : item) (ll_mod : llmodule) =
   match item with Fn (func, _) -> gen_func func ll_mod | _ -> assert false
 
 let gen_module (name : string) (modd : modd) : llmodule =
-  let ll_mod = create_module ctx name in
+  let ll_mod = create_module codegen_ctx.llctx name in
+  codegen_ctx.curr_mod <- Some ll_mod;
   set_target_triple (Target.default_triple ()) ll_mod;
   ignore (List.map (fun item -> gen_item item ll_mod) modd.items);
   match verify_module ll_mod with
@@ -135,7 +187,9 @@ let emit (modd : llmodule) (out : string) =
   let ic = open_out (out ^ ".ll") in
   output_string ic (string_of_llmodule modd);
   let objfile = out ^ ".o" in
-  TargetMachine.emit_to_file modd CodeGenFileType.ObjectFile objfile machine;
+  TargetMachine.emit_to_file modd CodeGenFileType.ObjectFile objfile
+    codegen_ctx.machine;
+  TargetMachine.emit_to_file modd CodeGenFileType.AssemblyFile (out ^ ".s")
+    codegen_ctx.machine;
   let command = Sys.command ("clang " ^ objfile ^ " -o " ^ out) in
-  ignore (Sys.command ("rm " ^ objfile));
   if command <> 0 then Printf.fprintf stderr "cannot emit executable\n"

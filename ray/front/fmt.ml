@@ -24,7 +24,7 @@ let rec render_ty (ty : ty) : string =
     | F32 -> "f32"
     | F64 -> "f64"
     | Bool -> "bool"
-    | Str -> assert false)
+    | Str -> "str")
   | Unit -> "()"
   | FnTy (ty_list, ret_ty) ->
       sprintf "fn(%s) -> %s"
