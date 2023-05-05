@@ -91,6 +91,7 @@ and prim_ty =
   | F64
   | F32
   | Bool
+  | Str
 
 and expr = {
   expr_kind : expr_kind;
@@ -106,3 +107,4 @@ and lit =
   | LitInt of int
   | LitFloat of float
   | LitBool of bool
+  | LitStr of string

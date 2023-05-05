@@ -197,6 +197,7 @@ let parse_expr pctx : expr =
           | Int -> LitInt (int_of_string buf)
           | Float -> LitFloat (float_of_string buf)
           | Bool -> LitBool (bool_of_string buf)
+          | String -> LitStr buf
           | lit_kind ->
               ignore (Printf.printf "%s\n" (display_literal lit_kind));
               assert false)

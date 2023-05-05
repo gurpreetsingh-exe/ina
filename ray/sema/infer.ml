@@ -121,7 +121,8 @@ let infer (infer_ctx : infer_ctx) (expr : expr) : infer_kind =
       match lit with
       | LitInt _ -> Int expr.expr_id
       | LitFloat _ -> Float expr.expr_id
-      | LitBool _ -> Normal (Prim Bool))
+      | LitBool _ -> Normal (Prim Bool)
+      | LitStr _ -> Normal (Prim Str))
     | Ident ident -> (
         Hashtbl.add infer_ctx.ty_env.bindings_id expr.expr_id ident;
         let ty = find_ty infer_ctx.ty_env ident in

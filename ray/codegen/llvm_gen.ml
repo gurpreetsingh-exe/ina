@@ -50,7 +50,8 @@ let get_llvm_ty (ty : ty) : lltype =
     | I8 | U8 -> i8_type ctx
     | F32 -> float_type ctx
     | F64 -> double_type ctx
-    | Bool -> i1_type ctx)
+    | Bool -> i1_type ctx
+    | Str -> assert false)
   | Unit -> void_type ctx
   | _ -> assert false
 
@@ -66,7 +67,8 @@ let gen_expr (builder : llbuilder) (expr : expr) : llvalue =
     match lit with
     | LitInt value -> const_int ty value
     | LitFloat value -> const_float ty value
-    | LitBool value -> const_int ty (if value then 1 else 0))
+    | LitBool value -> const_int ty (if value then 1 else 0)
+    | LitStr _ -> assert false)
   | Ident ident ->
       let ptr = find_val !scope ident in
       build_load ty ptr "" builder

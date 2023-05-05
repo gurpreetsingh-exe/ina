@@ -23,7 +23,8 @@ let rec render_ty (ty : ty) : string =
     | Usize -> "usize"
     | F32 -> "f32"
     | F64 -> "f64"
-    | Bool -> "bool")
+    | Bool -> "bool"
+    | Str -> assert false)
   | Unit -> "()"
   | FnTy (ty_list, ret_ty) ->
       sprintf "fn(%s) -> %s"
@@ -82,6 +83,7 @@ let display_lit (lit : lit) : string =
   | LitInt value -> sprintf "%d" value
   | LitFloat value -> sprintf "%f" value
   | LitBool value -> sprintf "%b" value
+  | LitStr value -> sprintf "%s" value
 
 let display_expr_kind (expr_kind : expr_kind) =
   match expr_kind with

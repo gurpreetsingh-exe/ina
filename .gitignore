@@ -7,6 +7,11 @@
 Makefile
 __pycache__/
 _build/
+library/
+*.ll
+test*.ray
+*.txt
+*.c
 *.opam
 *.o
 *.asm
