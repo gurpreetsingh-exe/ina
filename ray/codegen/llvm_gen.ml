@@ -2,6 +2,7 @@ open Ast
 open Llvm
 open Llvm_target
 open Llvm_X86
+open Llvm_analysis
 
 (* we define our own *)
 external x86AsmPrinterInit : unit -> unit = "LLVMInitializeX86AsmPrinter"
@@ -110,7 +111,10 @@ let gen_func (func : func) (ll_mod : llmodule) =
       ignore (build_store arg ptr builder);
       Hashtbl.add !scope.bindings name ptr
     done;
-    match func.body with Some body -> gen_block builder body | None -> ())
+    (match func.body with Some body -> gen_block builder body | None -> ());
+    if not (verify_function fn) then
+      Printf.fprintf stderr "llvm error: function `%s` is not valid\n"
+        func.fn_sig.name)
 
 let gen_item (item : item) (ll_mod : llmodule) =
   match item with Fn (func, _) -> gen_func func ll_mod | _ -> assert false
@@ -119,19 +123,17 @@ let gen_module (name : string) (modd : modd) : llmodule =
   let ll_mod = create_module ctx name in
   set_target_triple (Target.default_triple ()) ll_mod;
   ignore (List.map (fun item -> gen_item item ll_mod) modd.items);
-  ll_mod
+  match verify_module ll_mod with
+  | Some reason ->
+      Printf.fprintf stderr "%s\n" reason;
+      assert false
+  | None -> ll_mod
 
 let emit (modd : llmodule) (out : string) =
   let ic = open_out (out ^ ".ll") in
   output_string ic (string_of_llmodule modd);
   let objfile = out ^ ".o" in
   TargetMachine.emit_to_file modd CodeGenFileType.ObjectFile objfile machine;
-  let buf =
-    TargetMachine.emit_to_memory_buffer modd CodeGenFileType.AssemblyFile
-      machine
-  in
-  Printf.printf "%s\n" (MemoryBuffer.as_string buf);
-  MemoryBuffer.dispose buf;
   let command = Sys.command ("clang " ^ objfile ^ " -o " ^ out) in
   ignore (Sys.command ("rm " ^ objfile));
   if command <> 0 then Printf.fprintf stderr "cannot emit executable\n"
