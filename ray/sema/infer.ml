@@ -57,7 +57,15 @@ let rec find_binding_id (ty_env : env) id : string =
 
 let ty_is_int (ty : ty) : bool =
   match ty with
-  | Prim ty -> ( match ty with I64 | I32 -> true | _ -> false)
+  | Prim ty -> (
+    match ty with
+    | I64 | I32 | I16 | I8 | Isize | U64 | U32 | U16 | U8 | Usize -> true
+    | _ -> false)
+  | _ -> false
+
+let ty_is_float (ty : ty) : bool =
+  match ty with
+  | Prim ty -> ( match ty with F32 | F64 -> true | _ -> false)
   | _ -> false
 
 type infer_ctx = {
@@ -112,6 +120,7 @@ let infer (infer_ctx : infer_ctx) (expr : expr) : infer_kind =
     | Lit lit -> (
       match lit with
       | LitInt _ -> Int expr.expr_id
+      | LitFloat _ -> Float expr.expr_id
       | LitBool _ -> Normal (Prim Bool))
     | Ident ident -> (
         Hashtbl.add infer_ctx.ty_env.bindings_id expr.expr_id ident;
@@ -127,27 +136,27 @@ let infer (infer_ctx : infer_ctx) (expr : expr) : infer_kind =
   ty
 
 let rec unify infer_ctx ty expected =
+  let f (check_ty : ty -> bool) (id : node_id) =
+    if Hashtbl.mem infer_ctx.unresolved id then
+      if check_ty expected then (
+        Hashtbl.remove infer_ctx.unresolved id;
+        let expr = Hashtbl.find infer_ctx.env id in
+        if bindings_id_exists infer_ctx.ty_env id then (
+          let binding = find_binding_id infer_ctx.ty_env id in
+          if ty_exists infer_ctx.ty_env binding then (
+            let ty = find_ty infer_ctx.ty_env binding in
+            unify infer_ctx ty expected;
+            Hashtbl.replace infer_ctx.ty_env.bindings binding
+              (Normal expected)));
+        expr.expr_ty <- Some expected)
+      else infer_err_emit (MismatchInfer (expected, ty))
+    else assert false
+  in
   match ty with
   | Normal ty ->
       if ty <> expected then infer_err_emit (MismatchTy (expected, ty))
-  | Int id ->
-      if Hashtbl.mem infer_ctx.unresolved id then
-        if ty_is_int expected then (
-          Hashtbl.remove infer_ctx.unresolved id;
-          let expr = Hashtbl.find infer_ctx.env id in
-          if bindings_id_exists infer_ctx.ty_env id then (
-            let binding = find_binding_id infer_ctx.ty_env id in
-            if ty_exists infer_ctx.ty_env binding then (
-              let ty = find_ty infer_ctx.ty_env binding in
-              unify infer_ctx ty expected;
-              Hashtbl.replace infer_ctx.ty_env.bindings binding
-                (Normal expected)));
-          expr.expr_ty <- Some expected)
-        else infer_err_emit (MismatchInfer (expected, ty))
-      else assert false
-  | Float id ->
-      ignore (assert false);
-      if Hashtbl.mem infer_ctx.unresolved id then () else assert false
+  | Int id -> f ty_is_int id
+  | Float id -> f ty_is_float id
 
 let infer_block infer_ctx block : infer_kind =
   let f stmt : infer_kind =

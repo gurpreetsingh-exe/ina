@@ -132,12 +132,23 @@ let parse_inner_attrs pctx : attr list =
 
 let parse_ty pctx : ty =
   match pctx.curr_tok.kind with
-  | Ident -> (
-    match get_token_str (eat pctx Ident) pctx.src with
-    | "i64" -> Prim I64
-    | "i32" -> Prim I32
-    | "bool" -> Prim Bool
-    | _ -> raise (unexpected_token pctx Ident))
+  | Ident ->
+      Prim
+        (match get_token_str (eat pctx Ident) pctx.src with
+        | "i8" -> I8
+        | "i16" -> I16
+        | "i32" -> I32
+        | "i64" -> I64
+        | "isize" -> Isize
+        | "u8" -> U8
+        | "u16" -> U16
+        | "u32" -> U32
+        | "u64" -> U64
+        | "usize" -> Usize
+        | "f32" -> F32
+        | "f64" -> F64
+        | "bool" -> Bool
+        | _ -> raise (unexpected_token pctx Ident))
   | _ -> raise (unexpected_token pctx Ident)
 
 let parse_fn_args pctx : (ty * ident) list =
@@ -184,6 +195,7 @@ let parse_expr pctx : expr =
         Ast.Lit
           (match lit with
           | Int -> LitInt (int_of_string buf)
+          | Float -> LitFloat (float_of_string buf)
           | Bool -> LitBool (bool_of_string buf)
           | lit_kind ->
               ignore (Printf.printf "%s\n" (display_literal lit_kind));

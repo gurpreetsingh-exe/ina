@@ -78,8 +78,17 @@ and ty =
   | Unit
 
 and prim_ty =
+  | I8
+  | I16
   | I32
   | I64
+  | Isize
+  | U8
+  | U16
+  | U32
+  | U64
+  | Usize
+  | F64
   | F32
   | Bool
 
@@ -95,4 +104,5 @@ and expr_kind =
 
 and lit =
   | LitInt of int
+  | LitFloat of float
   | LitBool of bool

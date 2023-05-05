@@ -11,9 +11,18 @@ let rec render_ty (ty : ty) : string =
   match ty with
   | Prim ty -> (
     match ty with
+    | I8 -> "i8"
+    | I16 -> "i16"
     | I32 -> "i32"
     | I64 -> "i64"
+    | Isize -> "isize"
+    | U8 -> "u8"
+    | U16 -> "u16"
+    | U32 -> "u32"
+    | U64 -> "u64"
+    | Usize -> "usize"
     | F32 -> "f32"
+    | F64 -> "f64"
     | Bool -> "bool")
   | Unit -> "()"
   | FnTy (ty_list, ret_ty) ->
@@ -71,6 +80,7 @@ let render_mod modd : string =
 let display_lit (lit : lit) : string =
   match lit with
   | LitInt value -> sprintf "%d" value
+  | LitFloat value -> sprintf "%f" value
   | LitBool value -> sprintf "%b" value
 
 let display_expr_kind (expr_kind : expr_kind) =

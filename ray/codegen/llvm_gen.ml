@@ -3,10 +3,26 @@ open Llvm
 open Llvm_target
 open Llvm_X86
 
-let ctx = global_context ()
-
 (* we define our own *)
 external x86AsmPrinterInit : unit -> unit = "LLVMInitializeX86AsmPrinter"
+
+let ctx = global_context ()
+
+let _ =
+  initialize ();
+  x86AsmPrinterInit ();
+  enable_pretty_stacktrace ()
+
+let target = Target.by_triple (Target.default_triple ())
+
+let machine =
+  TargetMachine.create
+    ~triple:(Target.default_triple ())
+    ?cpu:(Some "generic") ?features:None
+    ?level:(Some CodeGenOptLevel.Default) ?reloc_mode:(Some RelocMode.Static)
+    ?code_model:(Some CodeModel.Default) target
+
+let data_layout = TargetMachine.data_layout machine
 
 type env = {
   mutable bindings : (string, llvalue) Hashtbl.t;
@@ -23,16 +39,19 @@ let rec find_val scope ident =
     | None -> assert false)
 
 let get_llvm_ty (ty : ty) : lltype =
-  (match ty with
+  match ty with
   | Prim ty -> (
     match ty with
-    | I64 -> i64_type
-    | I32 -> i32_type
-    | F32 -> float_type
-    | Bool -> i1_type)
-  | Unit -> void_type
-  | _ -> assert false)
-    ctx
+    | Isize | Usize -> DataLayout.intptr_type ctx data_layout
+    | I64 | U64 -> i64_type ctx
+    | I32 | U32 -> i32_type ctx
+    | I16 | U16 -> i16_type ctx
+    | I8 | U8 -> i8_type ctx
+    | F32 -> float_type ctx
+    | F64 -> double_type ctx
+    | Bool -> i1_type ctx)
+  | Unit -> void_type ctx
+  | _ -> assert false
 
 let gen_function_type (fn_sig : fn_sig) : lltype =
   let args = List.map (fun (ty, _) -> get_llvm_ty ty) fn_sig.args in
@@ -45,6 +64,7 @@ let gen_expr (builder : llbuilder) (expr : expr) : llvalue =
   | Lit lit -> (
     match lit with
     | LitInt value -> const_int ty value
+    | LitFloat value -> const_float ty value
     | LitBool value -> const_int ty (if value then 1 else 0))
   | Ident ident ->
       let ptr = find_val !scope ident in
@@ -97,24 +117,21 @@ let gen_item (item : item) (ll_mod : llmodule) =
 
 let gen_module (name : string) (modd : modd) : llmodule =
   let ll_mod = create_module ctx name in
+  set_target_triple (Target.default_triple ()) ll_mod;
   ignore (List.map (fun item -> gen_item item ll_mod) modd.items);
   ll_mod
 
 let emit (modd : llmodule) (out : string) =
-  initialize ();
-  x86AsmPrinterInit ();
-  let triple = Target.default_triple () in
-  set_target_triple triple modd;
-  let target = Target.by_triple triple in
-  let machine =
-    TargetMachine.create ~triple ?cpu:(Some "generic") ?features:None
-      ?level:(Some CodeGenOptLevel.Default)
-      ?reloc_mode:(Some RelocMode.Static)
-      ?code_model:(Some CodeModel.Default) target
-  in
-  dump_module modd;
+  let ic = open_out (out ^ ".ll") in
+  output_string ic (string_of_llmodule modd);
   let objfile = out ^ ".o" in
   TargetMachine.emit_to_file modd CodeGenFileType.ObjectFile objfile machine;
+  let buf =
+    TargetMachine.emit_to_memory_buffer modd CodeGenFileType.AssemblyFile
+      machine
+  in
+  Printf.printf "%s\n" (MemoryBuffer.as_string buf);
+  MemoryBuffer.dispose buf;
   let command = Sys.command ("clang " ^ objfile ^ " -o " ^ out) in
   ignore (Sys.command ("rm " ^ objfile));
   if command <> 0 then Printf.fprintf stderr "cannot emit executable\n"
