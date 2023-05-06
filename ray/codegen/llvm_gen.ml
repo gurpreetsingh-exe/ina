@@ -23,6 +23,9 @@ type codegen_ctx = {
 (* we define our own *)
 external x86AsmPrinterInit : unit -> unit = "LLVMInitializeX86AsmPrinter"
 
+external run_passes : llmodule -> string -> TargetMachine.t -> unit
+  = "run_passes"
+
 let _ =
   initialize ();
   x86AsmPrinterInit ();
@@ -171,6 +174,7 @@ let gen_module (name : string) (modd : modd) : llmodule =
   | None -> ll_mod
 
 let emit (modd : llmodule) (out : string) =
+  run_passes modd "default<O3>" codegen_ctx.machine;
   let ic = open_out (out ^ ".ll") in
   output_string ic (string_of_llmodule modd);
   let objfile = out ^ ".o" in

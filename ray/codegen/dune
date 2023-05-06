@@ -1,4 +1,17 @@
 (library
  (name codegen)
  (libraries ast llvm llvm.target llvm.analysis llvm_X86)
- (modules llvm_gen))
+ (modules llvm_gen)
+ (foreign_stubs
+  (language c)
+  (names llvm_opt))
+ (c_library_flags
+   (-lLLVMPasses
+   -lLLVMCoroutines
+   -lLLVMipo
+   -lLLVMVectorize
+   -lLLVMLinker
+   -lLLVMFrontendOpenMP
+   -lLLVMIRPrinter))
+ (flags
+  (-cclib -lcodegen_stubs)))
