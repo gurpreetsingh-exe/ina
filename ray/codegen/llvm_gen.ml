@@ -34,8 +34,8 @@ let codegen_ctx =
   let machine =
     TargetMachine.create
       ~triple:(Target.default_triple ())
-      ?cpu:(Some "generic") ?features:None ?level:(Some CodeGenOptLevel.None)
-      ?reloc_mode:(Some RelocMode.Static)
+      ?cpu:(Some "generic") ?features:None
+      ?level:(Some CodeGenOptLevel.Default) ?reloc_mode:(Some RelocMode.PIC)
       ?code_model:(Some CodeModel.Default) target
   in
   let data_layout = TargetMachine.data_layout machine in
@@ -60,11 +60,11 @@ let rec find_val scope ident =
     | None -> assert false)
 
 let get_llvm_ty (ty : ty) : lltype =
-  let { llctx = ctx; data_layout; _ } = codegen_ctx in
+  let { llctx = ctx; size_type; _ } = codegen_ctx in
   match ty with
   | Prim ty -> (
     match ty with
-    | Isize | Usize -> codegen_ctx.size_type
+    | Isize | Usize -> size_type
     | I64 | U64 -> i64_type ctx
     | I32 | U32 -> i32_type ctx
     | I16 | U16 -> i16_type ctx
@@ -72,9 +72,7 @@ let get_llvm_ty (ty : ty) : lltype =
     | F32 -> float_type ctx
     | F64 -> double_type ctx
     | Bool -> i1_type ctx
-    | Str ->
-        struct_type ctx
-          [|pointer_type ctx; DataLayout.intptr_type ctx data_layout|])
+    | Str -> struct_type ctx [|pointer_type ctx; size_type|])
   | Unit -> void_type ctx
   | _ -> assert false
 
@@ -93,20 +91,22 @@ let gen_expr (builder : llbuilder) (expr : expr) : llvalue =
     | LitBool value -> const_int ty (if value then 1 else 0)
     | LitStr value ->
         let id =
-          Printf.sprintf "__unnamed_%d"
-            (Hashtbl.length codegen_ctx.global_strings)
+          Printf.sprintf "str%d" (Hashtbl.length codegen_ctx.global_strings)
         in
-        let llvm_value =
+        let global_ptr =
           define_global id
             (const_string codegen_ctx.llctx value)
             (Option.get codegen_ctx.curr_mod)
         in
-        set_linkage Linkage.Private llvm_value;
-        set_unnamed_addr true llvm_value;
-        set_global_constant true llvm_value;
-        set_alignment 1 llvm_value;
-        Hashtbl.add codegen_ctx.global_strings id llvm_value;
-        llvm_value)
+        set_linkage Linkage.Private global_ptr;
+        set_unnamed_addr true global_ptr;
+        set_global_constant true global_ptr;
+        set_alignment 1 global_ptr;
+        Hashtbl.add codegen_ctx.global_strings id global_ptr;
+        const_struct codegen_ctx.llctx
+          [|
+            global_ptr; const_int codegen_ctx.size_type (String.length value);
+          |])
   | Ident ident ->
       let ptr = find_val codegen_ctx.env ident in
       build_load ty ptr "" builder
@@ -121,20 +121,7 @@ let gen_block (builder : llbuilder) (block : block) =
         | PatIdent ident ->
             let ptr = build_alloca ll_ty ident builder in
             let expr = gen_expr builder binding_expr in
-            (match binding_expr.expr_kind with
-            | Lit (LitStr value) ->
-                let cstr_ptr =
-                  build_gep ll_ty ptr [|i32_c 0; i32_c 0|] "" builder
-                in
-                ignore (build_store expr cstr_ptr builder);
-                let size_ptr =
-                  build_gep ll_ty ptr [|i32_c 0; i32_c 1|] "" builder
-                in
-                ignore
-                  (build_store
-                     (const_int codegen_ctx.size_type (String.length value))
-                     size_ptr builder)
-            | _ -> ignore (build_store expr ptr builder));
+            ignore (build_store expr ptr builder);
             Hashtbl.add codegen_ctx.env.bindings ident ptr)
     | _ -> assert false
   in

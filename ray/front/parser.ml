@@ -148,6 +148,7 @@ let parse_ty pctx : ty =
         | "f32" -> F32
         | "f64" -> F64
         | "bool" -> Bool
+        | "str" -> Str
         | _ -> raise (unexpected_token pctx Ident))
   | _ -> raise (unexpected_token pctx Ident)
 
