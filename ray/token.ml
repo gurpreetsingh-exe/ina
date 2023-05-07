@@ -81,7 +81,7 @@ let display_token_kind = function
   | Arrow -> "->"
   | Eof -> "eof"
 
-type pos = string * int
+type pos = string * int * int * int
 
 type span = {
   start : pos;
@@ -94,10 +94,11 @@ type token = {
 }
 
 let display_token t s =
-  let { kind; span = { start = _, st; ending = _, e } } = t in
-  Printf.printf "%s: %s\n" (display_token_kind kind)
+  let { kind; span = { start = _, st, l, c; ending = _, e, _, _ } } = t in
+  Printf.printf "[%3d: %3d] [%3d: %3d] %10s: %10s\n" st e l c
+    (display_token_kind kind)
     (String.sub s st (e - st))
 
 let get_token_str t s : string =
-  let { span = { start = _, st; ending = _, e }; _ } = t in
+  let { span = { start = _, st, _, _; ending = _, e, _, _ }; _ } = t in
   String.sub s st (e - st)

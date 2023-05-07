@@ -24,19 +24,19 @@ let advance pctx =
       pctx.curr_tok <- t
   | None -> assert false
 
-let unexpected_token pctx expected =
+let unexpected_token _pctx expected t =
   ParseError
     (UnexpectedToken
        ( Printf.sprintf " expected `%s` found `%s`"
            (display_token_kind expected)
-           (display_token_kind pctx.curr_tok.kind),
-         pctx.curr_tok.span ))
+           (display_token_kind t.kind),
+         t.span ))
 
 let eat pctx kind =
   if pctx.curr_tok.kind == kind then (
     let t = pctx.curr_tok in
     advance pctx; t)
-  else raise (unexpected_token pctx kind)
+  else raise (unexpected_token pctx kind pctx.curr_tok)
 
 let gen_id pctx : node_id =
   pctx.node_id <- pctx.node_id + 1;
@@ -59,8 +59,8 @@ let parse_ctx_create tokenizer s =
 let emit_err e =
   match e with
   | UnexpectedToken (msg, span) ->
-      let filename, pos = span.start in
-      Printf.fprintf stderr "%s:%d:%s\n" filename pos msg;
+      let filename, _, line, col = span.start in
+      Printf.fprintf stderr "%s:%d:%d %s\n" filename line col msg;
       exit 1
 
 let parse_ident pctx = get_token_str (eat pctx Ident) pctx.src
@@ -131,7 +131,8 @@ let parse_inner_attrs pctx : attr list =
   with Exit -> !attrs
 
 let parse_ty pctx : ty =
-  match pctx.curr_tok.kind with
+  let t = pctx.curr_tok in
+  match t.kind with
   | Ident ->
       Prim
         (match get_token_str (eat pctx Ident) pctx.src with
@@ -149,8 +150,8 @@ let parse_ty pctx : ty =
         | "f64" -> F64
         | "bool" -> Bool
         | "str" -> Str
-        | _ -> raise (unexpected_token pctx Ident))
-  | _ -> raise (unexpected_token pctx Ident)
+        | _ -> raise (unexpected_token pctx Ident t))
+  | _ -> raise (unexpected_token pctx Ident t)
 
 let parse_fn_args pctx : (ty * ident) list =
   assert (pctx.curr_tok.kind == LParen);

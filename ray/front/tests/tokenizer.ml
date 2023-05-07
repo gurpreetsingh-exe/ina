@@ -14,7 +14,7 @@ let single_token s =
   (match t with
   | Some { kind = Eof; _ } -> raise Exit
   | Some t ->
-      let { start = _, st; ending = _, e } = t.span in
+      let { start = _, st, _, _; ending = _, e, _, _ } = t.span in
       printf "%s\n" (String.sub s st (e - st))
   | None -> raise Invalid_token);
   let t = next tokenizer in
@@ -30,7 +30,7 @@ let do_test s sep =
       match t with
       | Some { kind = Eof; _ } -> raise Exit
       | Some t ->
-          let { start = _, st; ending = _, e } = t.span in
+          let { start = _, st, _, _; ending = _, e, _, _ } = t.span in
           printf sep (String.sub s st (e - st))
       | None -> raise Invalid_token
     done

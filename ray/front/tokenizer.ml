@@ -2,8 +2,8 @@ open Token
 
 type tokenizer = {
   mutable c : char option;
-  mutable id : int;
   src : string ref;
+  mutable pos : pos;
   filename : string;
 }
 
@@ -15,21 +15,24 @@ Hashtbl.add keywords "let" Let
 
 let mk_tok (tokenizer : tokenizer) (kind : token_kind)
     (tok : token option ref) (start : pos) =
-  tok :=
-    Some
-      { kind; span = { start; ending = (tokenizer.filename, tokenizer.id) } }
+  tok := Some { kind; span = { start; ending = tokenizer.pos } }
 
 let bump tokenizer =
-  if tokenizer.id < String.length !(tokenizer.src) - 1 then (
-    tokenizer.id <- tokenizer.id + 1;
-    tokenizer.c <- Some !(tokenizer.src).[tokenizer.id])
+  let filename, id, line, col = tokenizer.pos in
+  if id < String.length !(tokenizer.src) - 1 then (
+    let c = !(tokenizer.src).[id + 1] in
+    tokenizer.pos <-
+      (if c = '\n' then (filename, id + 1, line + 1, 0)
+      else (filename, id + 1, line, col + 1));
+    tokenizer.c <- Some c)
   else (
     tokenizer.c <- None;
-    tokenizer.id <- tokenizer.id + 1)
+    tokenizer.pos <- (filename, id + 1, line, col + 1))
 
 let peek tokenizer =
-  if tokenizer.id < String.length !(tokenizer.src) - 1 then
-    Some !(tokenizer.src).[tokenizer.id + 1]
+  let _, id, _, _ = tokenizer.pos in
+  if id < String.length !(tokenizer.src) - 1 then
+    Some !(tokenizer.src).[id + 1]
   else None
 
 exception Invalid_token
@@ -87,7 +90,7 @@ let next tokenizer : token option =
       match tokenizer.c with
       | Some (' ' | '\n' | '\t' | '\r') -> bump tokenizer
       | Some '0' .. '9' -> (
-          let start = (tokenizer.filename, tokenizer.id) in
+          let start = tokenizer.pos in
           let exception I in
           let is_float = ref false in
           let buf : string ref = ref "" in
@@ -106,7 +109,7 @@ let next tokenizer : token option =
               tok start;
             raise Exit)
       | Some ('a' .. 'z' | 'A' .. 'Z' | '_') -> (
-          let start = (tokenizer.filename, tokenizer.id) in
+          let start = tokenizer.pos in
           let buf = ref "" in
           let exception I in
           try
@@ -128,7 +131,7 @@ let next tokenizer : token option =
                   tok start);
             raise Exit)
       | Some '"' -> (
-          let start = (tokenizer.filename, tokenizer.id) in
+          let start = tokenizer.pos in
           bump tokenizer;
           let exception I in
           try
@@ -142,7 +145,7 @@ let next tokenizer : token option =
             mk_tok tokenizer (Lit String) tok start;
             raise Exit)
       | Some c ->
-          let start = (tokenizer.filename, tokenizer.id) in
+          let start = tokenizer.pos in
           let kind = get_token_type c tokenizer in
           (match kind with
           (* TODO: strip the `//*` from comments *)
@@ -159,7 +162,7 @@ let next tokenizer : token option =
           mk_tok tokenizer kind tok start;
           raise Exit
       | None ->
-          let start = (tokenizer.filename, tokenizer.id) in
+          let start = tokenizer.pos in
           mk_tok tokenizer Eof tok start;
           raise Exit
     done;
@@ -167,5 +170,17 @@ let next tokenizer : token option =
   with Exit -> !tok
 
 let tokenize filename source : tokenizer =
-  let tokenizer = { c = None; id = -1; src = ref source; filename } in
+  let tokenizer =
+    { c = None; pos = (filename, -1, 1, 0); src = ref source; filename }
+  in
   bump tokenizer; tokenizer
+
+let print_all_tokens tokenizer s : tokenizer =
+  try
+    while true do
+      match next tokenizer with
+      | Some { kind = Eof; _ } | None -> raise Exit
+      | Some token -> display_token token s
+    done;
+    raise Exit
+  with Exit -> tokenize tokenizer.filename s
