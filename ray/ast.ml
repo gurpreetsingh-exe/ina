@@ -1,3 +1,5 @@
+open Token
+
 type ident = string
 
 type node_id = int
@@ -34,6 +36,7 @@ and fn_sig = {
   name : ident;
   args : (ty * ident) list;
   ret_ty : ty option;
+  fn_span : span;
 }
 
 and func = {
@@ -97,6 +100,7 @@ and expr = {
   expr_kind : expr_kind;
   mutable expr_ty : ty option;
   expr_id : node_id;
+  expr_span : span;
 }
 
 and expr_kind =

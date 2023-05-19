@@ -1,12 +1,16 @@
 open Sema
 open Ast
+open Token
 open Infer
 
-let mk_expr expr_kind id = { expr_kind; expr_ty = None; expr_id = id }
+let dummy_span = { start = ("", 0, 0, 0); ending = ("", 0, 0, 0) }
+
+let mk_expr expr_kind id =
+  { expr_kind; expr_ty = None; expr_id = id; expr_span = dummy_span }
 
 let infer_unify expr ty =
   let ctx = infer_ctx_create () in
-  unify ctx (infer ctx expr) ty;
+  ignore (unify ctx (infer ctx expr) ty);
   Option.get expr.expr_ty = ty
 
 let%test "infer literal int" =
@@ -36,5 +40,5 @@ let%test "unify let int binding" =
   assert (ty = Int 0);
   Hashtbl.add ctx.ty_env.bindings "a" ty;
   let ty2 = infer ctx expr2 in
-  unify ctx ty2 (Prim I64);
+  ignore (unify ctx ty2 (Prim I64));
   Hashtbl.find ctx.ty_env.bindings "a" = Normal (Prim I64)

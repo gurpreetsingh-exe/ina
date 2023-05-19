@@ -1,4 +1,5 @@
 open Ast
+open Token
 open Front.Fmt
 
 type infer_kind =
@@ -87,15 +88,15 @@ type infer_err =
   | MismatchInfer of ty * infer_kind
   | MismatchTy of ty * ty
 
-let infer_err_emit (ty_err : infer_err) =
+let infer_err_emit (ty_err : infer_err) (span : span) =
   match ty_err with
   | MismatchInfer (expected, infered_ty) ->
-      Printf.printf "\x1b[31;1merror\x1b[0m: expected `%s`, found `%s`\n"
-        (render_ty expected)
+      Printf.printf "\x1b[31;1m%s\x1b[0m: expected `%s`, found `%s`\n"
+        (display_span span) (render_ty expected)
         (display_infer_kind infered_ty)
   | MismatchTy (expected, ty) ->
-      Printf.printf "\x1b[31;1merror\x1b[0m: expected `%s`, found `%s`\n"
-        (render_ty expected) (render_ty ty)
+      Printf.printf "\x1b[31;1m%s\x1b[0m: expected `%s`, found `%s`\n"
+        (display_span span) (render_ty expected) (render_ty ty)
 
 let print_unresolved unresolved =
   Hashtbl.iter
@@ -136,30 +137,32 @@ let infer (infer_ctx : infer_ctx) (expr : expr) : infer_kind =
   | Normal ty -> expr.expr_ty <- Some ty);
   ty
 
-let rec unify infer_ctx ty expected =
+let rec unify (infer_ctx : infer_ctx) (ty : infer_kind) (expected : ty) :
+    infer_err option =
   let f (check_ty : ty -> bool) (id : node_id) =
+    let expr = Hashtbl.find infer_ctx.env id in
     if Hashtbl.mem infer_ctx.unresolved id then
       if check_ty expected then (
         Hashtbl.remove infer_ctx.unresolved id;
-        let expr = Hashtbl.find infer_ctx.env id in
         if bindings_id_exists infer_ctx.ty_env id then (
           let binding = find_binding_id infer_ctx.ty_env id in
           if ty_exists infer_ctx.ty_env binding then (
             let ty = find_ty infer_ctx.ty_env binding in
-            unify infer_ctx ty expected;
+            ignore (unify infer_ctx ty expected);
             Hashtbl.replace infer_ctx.ty_env.bindings binding
               (Normal expected)));
-        expr.expr_ty <- Some expected)
-      else infer_err_emit (MismatchInfer (expected, ty))
+        expr.expr_ty <- Some expected;
+        None)
+      else Some (MismatchInfer (expected, ty))
     else assert false
   in
   match ty with
   | Normal ty ->
-      if ty <> expected then infer_err_emit (MismatchTy (expected, ty))
+      if ty <> expected then Some (MismatchTy (expected, ty)) else None
   | Int id -> f ty_is_int id
   | Float id -> f ty_is_float id
 
-let infer_block infer_ctx block : infer_kind =
+let infer_block (infer_ctx : infer_ctx) (block : block) : infer_kind =
   let f stmt : infer_kind =
     match stmt with
     | Stmt expr | Expr expr -> infer infer_ctx expr
@@ -172,7 +175,7 @@ let infer_block infer_ctx block : infer_kind =
                if not (Hashtbl.mem infer_ctx.ty_env.bindings ident) then
                  Hashtbl.add infer_ctx.ty_env.bindings ident
                    (Normal expected);
-               unify infer_ctx ty expected
+               ignore (unify infer_ctx ty expected)
            | None ->
                if not (Hashtbl.mem infer_ctx.ty_env.bindings ident) then
                  Hashtbl.add infer_ctx.ty_env.bindings ident ty));
@@ -186,7 +189,8 @@ let infer_block infer_ctx block : infer_kind =
   in
   ty
 
-let resolve infer_ctx node_id infer_kind =
+let resolve (infer_ctx : infer_ctx) (node_id : node_id)
+    (infer_kind : infer_kind) =
   let ty =
     match infer_kind with
     | Int _ -> Prim I64
@@ -196,8 +200,8 @@ let resolve infer_ctx node_id infer_kind =
   let expr = Hashtbl.find infer_ctx.env node_id in
   expr.expr_ty <- Some ty
 
-let infer_func infer_ctx (func : func) =
-  let { fn_sig = { args; ret_ty; _ }; body; func_id; _ } = func in
+let infer_func (infer_ctx : infer_ctx) (func : func) =
+  let { fn_sig = { args; ret_ty; fn_span; _ }; body; func_id; _ } = func in
   let ret_ty = Option.value ret_ty ~default:Unit in
   Hashtbl.add infer_ctx.func_map func_id
     (FnTy (List.map (fun (ty, _) -> ty) args, ret_ty));
@@ -210,7 +214,10 @@ let infer_func infer_ctx (func : func) =
           Hashtbl.add infer_ctx.ty_env.bindings ident (Normal ty))
         args;
       let ty = infer_block infer_ctx body in
-      unify infer_ctx ty ret_ty;
+      (match (unify infer_ctx ty ret_ty, body.last_expr) with
+      | Some err, Some expr -> infer_err_emit err expr.expr_span
+      | None, (None | _) -> ()
+      | Some err, None -> infer_err_emit err fn_span);
       infer_ctx.ty_env <- tmp_env
   | None -> ());
   Hashtbl.iter (resolve infer_ctx) infer_ctx.unresolved

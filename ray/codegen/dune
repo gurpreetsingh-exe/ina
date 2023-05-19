@@ -6,7 +6,7 @@
   (language c)
   (names llvm_opt))
  (c_library_flags
-   (-lLLVMPasses
+  (-lLLVMPasses
    -lLLVMCoroutines
    -lLLVMipo
    -lLLVMVectorize

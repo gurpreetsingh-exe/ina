@@ -23,7 +23,7 @@ let bump tokenizer =
     let c = !(tokenizer.src).[id + 1] in
     tokenizer.pos <-
       (if c = '\n' then (filename, id + 1, line + 1, 0)
-      else (filename, id + 1, line, col + 1));
+       else (filename, id + 1, line, col + 1));
     tokenizer.c <- Some c)
   else (
     tokenizer.c <- None;
@@ -126,8 +126,8 @@ let next tokenizer : token option =
             | _ ->
                 mk_tok tokenizer
                   (if Hashtbl.mem keywords !buf then
-                   Hashtbl.find keywords !buf
-                  else Ident)
+                     Hashtbl.find keywords !buf
+                   else Ident)
                   tok start);
             raise Exit)
       | Some '"' -> (

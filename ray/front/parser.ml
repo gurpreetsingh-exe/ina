@@ -12,6 +12,11 @@ type parse_ctx = {
   mutable node_id : node_id;
 }
 
+let span (start : pos) (pctx : parse_ctx) =
+  match pctx.prev_tok with
+  | Some t -> { start; ending = t.span.ending }
+  | None -> assert false
+
 type perr = UnexpectedToken of (string * span)
 
 exception ParseError of perr
@@ -184,12 +189,14 @@ let parse_ret_ty pctx : ty option =
   | _ -> None
 
 let parse_fn_sig pctx : fn_sig =
+  let s = pctx.curr_tok.span.start in
   let ident = parse_ident pctx in
   let args = parse_fn_args pctx in
   let ret_ty = parse_ret_ty pctx in
-  { name = ident; args; ret_ty }
+  { name = ident; args; ret_ty; fn_span = span s pctx }
 
 let parse_expr pctx : expr =
+  let s = pctx.curr_tok.span.start in
   let expr_kind =
     match pctx.curr_tok.kind with
     | Lit lit as kind ->
@@ -208,7 +215,12 @@ let parse_expr pctx : expr =
         ignore (Printf.printf "%s\n" (display_token_kind kind));
         assert false
   in
-  { expr_kind; expr_ty = None; expr_id = gen_id pctx }
+  {
+    expr_kind;
+    expr_ty = None;
+    expr_id = gen_id pctx;
+    expr_span = span s pctx;
+  }
 
 let parse_pat pctx : pat =
   let kind = pctx.curr_tok.kind in

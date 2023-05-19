@@ -88,6 +88,10 @@ type span = {
   ending : pos;
 }
 
+let display_span span =
+  let { start = file, _, l, c; _ } = span in
+  Printf.sprintf "%s:%d:%d" file l c
+
 type token = {
   kind : token_kind;
   span : span;
