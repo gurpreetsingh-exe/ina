@@ -154,10 +154,16 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : infer_kind =
             | None -> ()
           in
           match func with
-          | FnTy (args_ty, ret_ty) ->
+          | FnTy (args_ty, ret_ty, is_variadic) ->
               let expr_len = List.length exprs in
               let ty_len = List.length args_ty in
-              if expr_len <> ty_len then
+              if is_variadic then
+                for i = 0 to expr_len - 1 do
+                  if i < ty_len then
+                    check (List.nth exprs i) (List.nth args_ty i)
+                  else ignore (infer infer_ctx (List.nth exprs i))
+                done
+              else if expr_len <> ty_len then
                 infer_err_emit
                   (MismatchArgs (ident, ty_len, expr_len))
                   expr.expr_span
@@ -237,10 +243,12 @@ let resolve (infer_ctx : infer_ctx) (node_id : node_id)
   expr.expr_ty <- Some ty
 
 let infer_func (infer_ctx : infer_ctx) (func : func) =
-  let { fn_sig = { name; args; ret_ty; fn_span; _ }; body; _ } = func in
+  let { fn_sig = { name; args; ret_ty; fn_span; is_variadic }; body; _ } =
+    func
+  in
   let ret_ty = Option.value ret_ty ~default:Unit in
   Hashtbl.add infer_ctx.func_map name
-    (FnTy (List.map (fun (ty, _) -> ty) args, ret_ty));
+    (FnTy (List.map (fun (ty, _) -> ty) args, ret_ty, is_variadic));
   (match body with
   | Some body ->
       let tmp_env = infer_ctx.ty_env in

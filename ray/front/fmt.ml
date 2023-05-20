@@ -26,9 +26,10 @@ let rec render_ty (ty : ty) : string =
     | Bool -> "bool"
     | Str -> "str")
   | Unit -> "()"
-  | FnTy (ty_list, ret_ty) ->
-      sprintf "fn(%s) -> %s"
+  | FnTy (ty_list, ret_ty, is_variadic) ->
+      sprintf "fn(%s%s) -> %s"
         (render ty_list (fun ty -> render_ty ty) ", ")
+        (if is_variadic then ", ..." else "")
         (render_ty ret_ty)
 
 let render_fn_sig (fn_sig : fn_sig) : string =

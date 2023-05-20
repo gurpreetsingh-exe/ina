@@ -37,6 +37,7 @@ and fn_sig = {
   args : (ty * ident) list;
   ret_ty : ty option;
   fn_span : span;
+  is_variadic : bool;
 }
 
 and func = {
@@ -77,7 +78,7 @@ and import = ident
 
 and ty =
   | Prim of prim_ty
-  | FnTy of (ty list * ty)
+  | FnTy of (ty list * ty * bool)
   | Unit
 
 and prim_ty =
@@ -103,10 +104,23 @@ and expr = {
   expr_span : span;
 }
 
+and binary_kind =
+  | Add
+  | Sub
+  | Mul
+  | Div
+  | Gt
+  | Lt
+  | Eq
+  | NotEq
+  | GtEq
+  | LtEq
+
 and expr_kind =
   | Lit of lit
   | Ident of ident
   | Call of ident * expr list
+(* | Binary of binary_kind * expr * expr *)
 
 and lit =
   | LitInt of int

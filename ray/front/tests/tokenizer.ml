@@ -75,6 +75,9 @@ let%test "symbols" =
          ("&", Ampersand);
          ("&&", Ampersand2);
          ("->", Arrow);
+         (".", Dot);
+         ("..", DotDot);
+         ("...", Dot3);
        ])
   = 0
 

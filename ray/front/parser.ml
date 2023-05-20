@@ -167,28 +167,36 @@ let parse_ty pctx : ty =
         | _ -> raise (unexpected_token pctx Ident t))
   | _ -> raise (unexpected_token pctx Ident t)
 
-let parse_fn_args pctx : (ty * ident) list =
+let parse_fn_args pctx : (ty * ident) list * bool =
   assert (pctx.curr_tok.kind == LParen);
   ignore (eat pctx LParen);
   let arg_list = ref [] in
+  let is_variadic = ref false in
   (try
      while not pctx.stop do
        if pctx.curr_tok.kind = RParen then raise Exit;
-       let arg =
-         let ident = parse_ident pctx in
-         ignore (eat pctx Colon);
-         let ty = parse_ty pctx in
-         (ty, ident)
-       in
-       arg_list := !arg_list @ [arg];
        match pctx.curr_tok.kind with
-       | Comma -> advance pctx
-       | RParen -> raise Exit
+       | Ident -> (
+           let arg =
+             let ident = parse_ident pctx in
+             ignore (eat pctx Colon);
+             let ty = parse_ty pctx in
+             (ty, ident)
+           in
+           arg_list := !arg_list @ [arg];
+           match pctx.curr_tok.kind with
+           | Comma -> advance pctx
+           | RParen -> raise Exit
+           | _ -> assert false)
+       | Dot3 ->
+           advance pctx;
+           is_variadic := true;
+           raise Exit
        | _ -> assert false
      done
    with Exit -> ());
   ignore (eat pctx RParen);
-  !arg_list
+  (!arg_list, !is_variadic)
 
 let parse_ret_ty pctx : ty option =
   match pctx.curr_tok.kind with
@@ -200,9 +208,9 @@ let parse_ret_ty pctx : ty option =
 let parse_fn_sig pctx : fn_sig =
   let s = pctx.curr_tok.span.start in
   let ident = parse_ident pctx in
-  let args = parse_fn_args pctx in
+  let args, is_variadic = parse_fn_args pctx in
   let ret_ty = parse_ret_ty pctx in
-  { name = ident; args; ret_ty; fn_span = span s pctx }
+  { name = ident; args; ret_ty; fn_span = span s pctx; is_variadic }
 
 let rec parse_expr pctx : expr =
   strip_comments pctx;

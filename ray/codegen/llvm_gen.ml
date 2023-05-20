@@ -84,7 +84,8 @@ let get_llvm_ty (ty : ty) : lltype =
 let gen_function_type (fn_sig : fn_sig) : lltype =
   let args = List.map (fun (ty, _) -> get_llvm_ty ty) fn_sig.args in
   let ret_ty = get_llvm_ty (Option.value fn_sig.ret_ty ~default:Unit) in
-  function_type ret_ty (Array.of_list args)
+  (if fn_sig.is_variadic then var_arg_function_type else function_type)
+    ret_ty (Array.of_list args)
 
 let rec gen_expr (builder : llbuilder) (expr : expr) : llvalue =
   let ty = get_llvm_ty (Option.get expr.expr_ty) in
@@ -131,12 +132,15 @@ let gen_block (builder : llbuilder) (block : block) =
     | Binding { binding_pat; binding_ty; binding_expr; _ } -> (
         let ty = Option.get binding_ty in
         let ll_ty = get_llvm_ty ty in
-        match binding_pat with
-        | PatIdent ident ->
-            let ptr = build_alloca ll_ty ident builder in
-            let expr = gen_expr builder binding_expr in
-            ignore (build_store expr ptr builder);
-            Hashtbl.add codegen_ctx.env.bindings ident ptr)
+        match ty with
+        | Unit -> ignore (gen_expr builder binding_expr)
+        | _ -> (
+          match binding_pat with
+          | PatIdent ident ->
+              let ptr = build_alloca ll_ty ident builder in
+              let expr = gen_expr builder binding_expr in
+              ignore (build_store expr ptr builder);
+              Hashtbl.add codegen_ctx.env.bindings ident ptr))
     | _ -> assert false
   in
   let tmp_scope = codegen_ctx.env in
@@ -153,7 +157,9 @@ let gen_block (builder : llbuilder) (block : block) =
 let gen_func (func : func) (ll_mod : llmodule) =
   let function_type = gen_function_type func.fn_sig in
   Hashtbl.add codegen_ctx.func_map func.fn_sig.name function_type;
-  if func.is_extern then assert false
+  if func.is_extern then (
+    let fn = declare_function func.fn_sig.name function_type ll_mod in
+    set_linkage Linkage.External fn)
   else (
     let fn = define_function func.fn_sig.name function_type ll_mod in
     let builder = builder_at_end codegen_ctx.llctx (entry_block fn) in

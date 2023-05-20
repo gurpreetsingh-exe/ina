@@ -47,6 +47,9 @@ type token_kind =
   | Ampersand
   | Ampersand2
   | Arrow
+  | Dot
+  | DotDot
+  | Dot3
   | Eof
 
 let display_token_kind = function
@@ -79,6 +82,9 @@ let display_token_kind = function
   | Ampersand -> "&"
   | Ampersand2 -> "&&"
   | Arrow -> "->"
+  | Dot -> "."
+  | DotDot -> ".."
+  | Dot3 -> "..."
   | Eof -> "eof"
 
 type pos = string * int * int * int

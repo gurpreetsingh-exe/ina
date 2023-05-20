@@ -1,4 +1,0 @@
-fn main() {
-    not_defined();
-}
-
