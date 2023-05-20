@@ -106,6 +106,7 @@ and expr = {
 and expr_kind =
   | Lit of lit
   | Ident of ident
+  | Call of ident * expr list
 
 and lit =
   | LitInt of int

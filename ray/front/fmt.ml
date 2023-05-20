@@ -85,12 +85,15 @@ let display_lit (lit : lit) : string =
   | LitBool value -> sprintf "%b" value
   | LitStr value -> sprintf "%s" value
 
-let display_expr_kind (expr_kind : expr_kind) =
+let rec display_expr_kind (expr_kind : expr_kind) =
   match expr_kind with
   | Lit lit -> "Lit " ^ display_lit lit
   | Ident ident -> "Ident " ^ ident
+  | Call (ident, exprs) ->
+      "Call " ^ ident ^ ", args: "
+      ^ String.concat "\n" (List.map (fun expr -> display_expr expr) exprs)
 
-let display_expr (expr : expr) =
+and display_expr (expr : expr) =
   sprintf "{ id: %d, ty: %s, kind: %s }" expr.expr_id
     (match expr.expr_ty with Some ty -> render_ty ty | None -> "<none>")
     (display_expr_kind expr.expr_kind)

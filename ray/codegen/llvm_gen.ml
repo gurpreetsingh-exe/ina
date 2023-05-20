@@ -18,6 +18,7 @@ type codegen_ctx = {
   global_strings : (string, llvalue) Hashtbl.t;
   size_type : lltype;
   mutable curr_mod : llmodule option;
+  func_map : (ident, lltype) Hashtbl.t;
 }
 
 (* we define our own *)
@@ -51,6 +52,7 @@ let codegen_ctx =
     global_strings = Hashtbl.create 0;
     size_type = DataLayout.intptr_type ctx data_layout;
     curr_mod = None;
+    func_map = Hashtbl.create 0;
   }
 
 let i32_c value = const_int (i32_type codegen_ctx.llctx) value
@@ -84,7 +86,7 @@ let gen_function_type (fn_sig : fn_sig) : lltype =
   let ret_ty = get_llvm_ty (Option.value fn_sig.ret_ty ~default:Unit) in
   function_type ret_ty (Array.of_list args)
 
-let gen_expr (builder : llbuilder) (expr : expr) : llvalue =
+let rec gen_expr (builder : llbuilder) (expr : expr) : llvalue =
   let ty = get_llvm_ty (Option.get expr.expr_ty) in
   match expr.expr_kind with
   | Lit lit -> (
@@ -113,6 +115,15 @@ let gen_expr (builder : llbuilder) (expr : expr) : llvalue =
   | Ident ident ->
       let ptr = find_val codegen_ctx.env ident in
       build_load ty ptr "" builder
+  | Call (ident, exprs) ->
+      let args =
+        Array.map (fun expr -> gen_expr builder expr) (Array.of_list exprs)
+      in
+      let function_type = Hashtbl.find codegen_ctx.func_map ident in
+      let fn =
+        Option.get (lookup_function ident (Option.get codegen_ctx.curr_mod))
+      in
+      build_call function_type fn args "" builder
 
 let gen_block (builder : llbuilder) (block : block) =
   let f stmt =
@@ -141,6 +152,7 @@ let gen_block (builder : llbuilder) (block : block) =
 
 let gen_func (func : func) (ll_mod : llmodule) =
   let function_type = gen_function_type func.fn_sig in
+  Hashtbl.add codegen_ctx.func_map func.fn_sig.name function_type;
   if func.is_extern then assert false
   else (
     let fn = define_function func.fn_sig.name function_type ll_mod in
@@ -174,7 +186,7 @@ let gen_module (name : string) (modd : modd) : llmodule =
   | None -> ll_mod
 
 let emit (modd : llmodule) (out : string) =
-  run_passes modd "default<O3>" codegen_ctx.machine;
+  (* run_passes modd "default<O3>" codegen_ctx.machine; *)
   let ic = open_out (out ^ ".ll") in
   output_string ic (string_of_llmodule modd);
   let objfile = out ^ ".o" in

@@ -73,7 +73,7 @@ type infer_ctx = {
   mutable ty_env : env;
   env : (node_id, expr) Hashtbl.t;
   unresolved : (node_id, infer_kind) Hashtbl.t;
-  func_map : (node_id, ty) Hashtbl.t;
+  func_map : (ident, ty) Hashtbl.t;
 }
 
 let infer_ctx_create () =
@@ -87,8 +87,13 @@ let infer_ctx_create () =
 type infer_err =
   | MismatchInfer of ty * infer_kind
   | MismatchTy of ty * ty
+  | FnNotFound of ident
+  | MismatchArgs of ident * int * int
+
+let error = ref 0
 
 let infer_err_emit (ty_err : infer_err) (span : span) =
+  incr error;
   match ty_err with
   | MismatchInfer (expected, infered_ty) ->
       Printf.printf "\x1b[31;1m%s\x1b[0m: expected `%s`, found `%s`\n"
@@ -97,6 +102,14 @@ let infer_err_emit (ty_err : infer_err) (span : span) =
   | MismatchTy (expected, ty) ->
       Printf.printf "\x1b[31;1m%s\x1b[0m: expected `%s`, found `%s`\n"
         (display_span span) (render_ty expected) (render_ty ty)
+  | FnNotFound ident ->
+      Printf.printf "\x1b[31;1m%s\x1b[0m: function `%s` is not defined\n"
+        (display_span span) ident
+  | MismatchArgs (func, expected, args) ->
+      Printf.printf "\x1b[31;1m%s\x1b[0m: `%s` expected %d arg%s, found %d\n"
+        (display_span span) func expected
+        (if expected = 1 then "" else "s")
+        args
 
 let print_unresolved unresolved =
   Hashtbl.iter
@@ -114,7 +127,7 @@ let rec print_bindings ty_env =
     ty_env.bindings_id;
   match ty_env.parent with Some env -> print_bindings env | None -> ()
 
-let infer (infer_ctx : infer_ctx) (expr : expr) : infer_kind =
+let rec infer (infer_ctx : infer_ctx) (expr : expr) : infer_kind =
   Hashtbl.add infer_ctx.env expr.expr_id expr;
   let ty =
     match expr.expr_kind with
@@ -131,13 +144,36 @@ let infer (infer_ctx : infer_ctx) (expr : expr) : infer_kind =
         | Int _ -> Int expr.expr_id
         | Float _ -> Float expr.expr_id
         | ty -> ty)
+    | Call (ident, exprs) ->
+        if Hashtbl.mem infer_ctx.func_map ident then (
+          let func = Hashtbl.find infer_ctx.func_map ident in
+          let check (expr : expr) (expected : ty) =
+            let ty = infer infer_ctx expr in
+            match unify infer_ctx ty expected with
+            | Some err -> infer_err_emit err expr.expr_span
+            | None -> ()
+          in
+          match func with
+          | FnTy (args_ty, ret_ty) ->
+              let expr_len = List.length exprs in
+              let ty_len = List.length args_ty in
+              if expr_len <> ty_len then
+                infer_err_emit
+                  (MismatchArgs (ident, ty_len, expr_len))
+                  expr.expr_span
+              else List.iter2 (fun expr ty -> check expr ty) exprs args_ty;
+              Normal ret_ty
+          | _ -> assert false)
+        else (
+          infer_err_emit (FnNotFound ident) expr.expr_span;
+          Normal Unit)
   in
   (match ty with
   | Int _ | Float _ -> Hashtbl.add infer_ctx.unresolved expr.expr_id ty
   | Normal ty -> expr.expr_ty <- Some ty);
   ty
 
-let rec unify (infer_ctx : infer_ctx) (ty : infer_kind) (expected : ty) :
+and unify (infer_ctx : infer_ctx) (ty : infer_kind) (expected : ty) :
     infer_err option =
   let f (check_ty : ty -> bool) (id : node_id) =
     let expr = Hashtbl.find infer_ctx.env id in
@@ -201,9 +237,9 @@ let resolve (infer_ctx : infer_ctx) (node_id : node_id)
   expr.expr_ty <- Some ty
 
 let infer_func (infer_ctx : infer_ctx) (func : func) =
-  let { fn_sig = { args; ret_ty; fn_span; _ }; body; func_id; _ } = func in
+  let { fn_sig = { name; args; ret_ty; fn_span; _ }; body; _ } = func in
   let ret_ty = Option.value ret_ty ~default:Unit in
-  Hashtbl.add infer_ctx.func_map func_id
+  Hashtbl.add infer_ctx.func_map name
     (FnTy (List.map (fun (ty, _) -> ty) args, ret_ty));
   (match body with
   | Some body ->

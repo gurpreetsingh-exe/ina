@@ -14,7 +14,7 @@ let env_create parent : env = { parent; bindings = Hashtbl.create 0 }
 
 type ty_ctx = {
   ty_env : env;
-  func_map : (node_id, ty) Hashtbl.t;
+  func_map : (ident, ty) Hashtbl.t;
 }
 
 type ty_err =

@@ -68,6 +68,15 @@ let emit_err e =
       Printf.fprintf stderr "%s:%d:%d %s\n" filename line col msg;
       exit 1
 
+let strip_comments pctx =
+  try
+    while true do
+      match pctx.curr_tok.kind with
+      | Comment None -> advance pctx
+      | _ -> raise Exit
+    done
+  with Exit -> ()
+
 let parse_ident pctx = get_token_str (eat pctx Ident) pctx.src
 
 let parse_attr pctx : normal_attr =
@@ -195,7 +204,8 @@ let parse_fn_sig pctx : fn_sig =
   let ret_ty = parse_ret_ty pctx in
   { name = ident; args; ret_ty; fn_span = span s pctx }
 
-let parse_expr pctx : expr =
+let rec parse_expr pctx : expr =
+  strip_comments pctx;
   let s = pctx.curr_tok.span.start in
   let expr_kind =
     match pctx.curr_tok.kind with
@@ -210,7 +220,11 @@ let parse_expr pctx : expr =
           | lit_kind ->
               ignore (Printf.printf "%s\n" (display_literal lit_kind));
               assert false)
-    | Ident -> Ident (parse_ident pctx)
+    | Ident -> (
+        let ident = parse_ident pctx in
+        match pctx.curr_tok.kind with
+        | LParen -> Call (ident, parse_call_args pctx)
+        | _ -> Ident ident)
     | kind ->
         ignore (Printf.printf "%s\n" (display_token_kind kind));
         assert false
@@ -221,6 +235,21 @@ let parse_expr pctx : expr =
     expr_id = gen_id pctx;
     expr_span = span s pctx;
   }
+
+and parse_call_args pctx : expr list =
+  let args = ref [] in
+  ignore (eat pctx LParen);
+  (try
+     while pctx.curr_tok.kind <> RParen do
+       args := !args @ [parse_expr pctx];
+       match pctx.curr_tok.kind with
+       | RParen -> raise Exit
+       | Comma -> advance pctx
+       | kind -> ignore (eat pctx kind)
+     done
+   with Exit -> ());
+  ignore (eat pctx RParen);
+  !args
 
 let parse_pat pctx : pat =
   let kind = pctx.curr_tok.kind in
@@ -309,6 +338,7 @@ let parse_mod pctx : modd =
   let mod_attrs = parse_inner_attrs pctx in
   let modd = { items = []; attrs = mod_attrs; mod_id = gen_id pctx } in
   while not pctx.stop do
+    strip_comments pctx;
     try modd.items <- modd.items @ [parse_item pctx]
     with ParseError err -> emit_err err
   done;

@@ -67,6 +67,8 @@ let () =
       ignore (Infer.infer_begin infer_ctx modd);
       let ty_ctx = Tychk.ty_ctx_create infer_ctx in
       ignore (Tychk.tychk ty_ctx modd);
+      if !Infer.error <> 0 then exit 1;
+      (* print_endline (Fmt.display_mod modd); *)
       let modd = Llvm_gen.gen_module name modd in
       let out = String.split_on_char '.' name in
       Llvm_gen.emit modd (List.hd out)
