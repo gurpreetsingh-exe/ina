@@ -42,7 +42,7 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
   let { fn_sig = { ret_ty; fn_span; _ }; body; _ } = func in
   let f stmt =
     match stmt with
-    | Stmt _ | Expr _ -> ()
+    | Assign _ | Stmt _ | Expr _ -> ()
     | Binding ({ binding_pat; binding_ty; binding_expr; _ } as binding) -> (
       match binding_pat with
       | PatIdent ident -> (

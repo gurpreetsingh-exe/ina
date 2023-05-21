@@ -290,8 +290,14 @@ let parse_stmt pctx : stmt =
   if pctx.curr_tok.kind = Let then Binding (parse_let pctx)
   else (
     let expr = parse_expr pctx in
-    if pctx.curr_tok.kind = Semi then (advance pctx; Stmt expr)
-    else Expr expr)
+    match pctx.curr_tok.kind with
+    | Semi -> advance pctx; Stmt expr
+    | Eq ->
+        advance pctx;
+        let init = parse_expr pctx in
+        ignore (eat pctx Semi);
+        Assign (expr, init)
+    | _ -> Expr expr)
 
 let parse_block pctx : block =
   ignore (eat pctx LBrace);

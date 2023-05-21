@@ -111,6 +111,8 @@ let display_stmt (stmt : stmt) indent =
         (display_pat binding_pat)
         (match binding_ty with Some ty -> render_ty ty | None -> "<none>")
         (display_expr binding_expr)
+  | Assign (lhs, rhs) ->
+      "Assign lhs = " ^ display_expr lhs ^ ", init = " ^ display_expr rhs
 
 let display_item (item : item) =
   match item with

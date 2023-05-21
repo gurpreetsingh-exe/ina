@@ -56,6 +56,7 @@ and block = {
 and stmt =
   | Stmt of expr
   | Expr of expr
+  | Assign of expr * expr
   | Binding of binding
 
 and binding = {
@@ -120,7 +121,6 @@ and expr_kind =
   | Lit of lit
   | Ident of ident
   | Call of ident * expr list
-(* | Binary of binary_kind * expr * expr *)
 
 and lit =
   | LitInt of int

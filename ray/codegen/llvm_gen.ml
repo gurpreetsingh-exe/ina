@@ -141,6 +141,15 @@ let gen_block (builder : llbuilder) (block : block) =
               let expr = gen_expr builder binding_expr in
               ignore (build_store expr ptr builder);
               Hashtbl.add codegen_ctx.env.bindings ident ptr))
+    | Assign (expr, init) ->
+        let ptr =
+          match expr.expr_kind with
+          | Ident ident -> find_val codegen_ctx.env ident
+          | _ -> assert false
+        in
+        let init = gen_expr builder init in
+        ignore (build_store init ptr builder)
+    | Stmt expr -> ignore (gen_expr builder expr)
     | _ -> assert false
   in
   let tmp_scope = codegen_ctx.env in
@@ -188,7 +197,7 @@ let gen_module (name : string) (modd : modd) : llmodule =
   match verify_module ll_mod with
   | Some reason ->
       Printf.fprintf stderr "%s\n" reason;
-      assert false
+      ll_mod
   | None -> ll_mod
 
 let emit (modd : llmodule) (out : string) =

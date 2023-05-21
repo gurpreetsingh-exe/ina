@@ -86,7 +86,7 @@ let infer_ctx_create () =
 
 type infer_err =
   | MismatchInfer of ty * infer_kind
-  | MismatchTy of ty * ty
+  | MismatchTy of infer_kind * infer_kind
   | FnNotFound of ident
   | MismatchArgs of ident * int * int
 
@@ -101,7 +101,9 @@ let infer_err_emit (ty_err : infer_err) (span : span) =
         (display_infer_kind infered_ty)
   | MismatchTy (expected, ty) ->
       Printf.printf "\x1b[31;1m%s\x1b[0m: expected `%s`, found `%s`\n"
-        (display_span span) (render_ty expected) (render_ty ty)
+        (display_span span)
+        (display_infer_kind expected)
+        (display_infer_kind ty)
   | FnNotFound ident ->
       Printf.printf "\x1b[31;1m%s\x1b[0m: function `%s` is not defined\n"
         (display_span span) ident
@@ -219,7 +221,8 @@ and unify (infer_ctx : infer_ctx) (ty : infer_kind) (expected : ty) :
   in
   match ty with
   | Normal ty ->
-      if ty <> expected then Some (MismatchTy (expected, ty)) else None
+      if ty <> expected then Some (MismatchTy (Normal expected, Normal ty))
+      else None
   | Int id -> f ty_is_int id
   | Float id -> f ty_is_float id
 
@@ -236,6 +239,24 @@ let infer_block (infer_ctx : infer_ctx) (block : block) : infer_kind =
                Hashtbl.add infer_ctx.ty_env.bindings ident (Normal expected);
                ignore (unify infer_ctx ty expected)
            | None -> Hashtbl.add infer_ctx.ty_env.bindings ident ty));
+        Normal Unit
+    | Assign (l, init) ->
+        let lty = infer infer_ctx l in
+        let rty = infer infer_ctx init in
+        let f ty exp =
+          match unify infer_ctx exp ty with
+          | Some err -> infer_err_emit err init.expr_span
+          | None -> ()
+        in
+        (match (lty, rty) with
+        | Normal l, Normal r ->
+            if l <> r then
+              infer_err_emit (MismatchTy (lty, rty)) init.expr_span
+        | Normal ty, (Int _ | Float _) -> f ty rty
+        | (Int _ | Float _), Normal ty -> f ty lty
+        | Int _, Int _ | Float _, Float _ -> ()
+        | Float _, Int _ | Int _, Float _ ->
+            infer_err_emit (MismatchTy (lty, rty)) init.expr_span);
         Normal Unit
   in
   ignore (List.map f block.block_stmts);
