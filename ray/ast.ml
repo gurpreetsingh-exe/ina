@@ -121,9 +121,17 @@ and expr_kind =
   | Lit of lit
   | Ident of ident
   | Call of ident * expr list
+  | Binary of binary_kind * expr * expr
 
 and lit =
   | LitInt of int
   | LitFloat of float
   | LitBool of bool
   | LitStr of string
+
+let binary_kind_from_token = function
+  | Plus -> Add
+  | Minus -> Sub
+  | Star -> Mul
+  | Slash -> Div
+  | _ -> assert false

@@ -93,6 +93,9 @@ let rec display_expr_kind (expr_kind : expr_kind) =
   | Call (ident, exprs) ->
       "Call " ^ ident ^ ", args: "
       ^ String.concat "\n" (List.map (fun expr -> display_expr expr) exprs)
+  | Binary (_, left, right) ->
+      "Binary left = " ^ display_expr left ^ ", right = "
+      ^ display_expr right
 
 and display_expr (expr : expr) =
   sprintf "{ id: %d, ty: %s, kind: %s }" expr.expr_id

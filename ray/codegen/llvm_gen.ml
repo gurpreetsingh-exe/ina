@@ -32,6 +32,8 @@ let _ =
   x86AsmPrinterInit ();
   enable_pretty_stacktrace ()
 
+let is_float = function Prim F64 | Prim F32 -> true | _ -> false
+
 let codegen_ctx =
   let ctx = global_context () in
   let target = Target.by_triple (Target.default_triple ()) in
@@ -125,6 +127,18 @@ let rec gen_expr (builder : llbuilder) (expr : expr) : llvalue =
         Option.get (lookup_function ident (Option.get codegen_ctx.curr_mod))
       in
       build_call function_type fn args "" builder
+  | Binary (kind, left, right) ->
+      let left = gen_expr builder left in
+      let right = gen_expr builder right in
+      let op =
+        match kind with
+        | Add -> build_add
+        | Sub -> build_sub
+        | Mul -> build_mul
+        | Div -> build_fdiv
+        | _ -> assert false
+      in
+      op left right "" builder
 
 let gen_block (builder : llbuilder) (block : block) =
   let f stmt =

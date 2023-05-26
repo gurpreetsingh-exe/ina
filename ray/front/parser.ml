@@ -212,8 +212,59 @@ let parse_fn_sig pctx : fn_sig =
   let ret_ty = parse_ret_ty pctx in
   { name = ident; args; ret_ty; fn_span = span s pctx; is_variadic }
 
-let rec parse_expr pctx : expr =
-  strip_comments pctx;
+let rec parse_expr pctx : expr = strip_comments pctx; parse_addition pctx
+
+and parse_call_args pctx : expr list =
+  let args = ref [] in
+  ignore (eat pctx LParen);
+  (try
+     while pctx.curr_tok.kind <> RParen do
+       args := !args @ [parse_expr pctx];
+       match pctx.curr_tok.kind with
+       | RParen -> raise Exit
+       | Comma -> advance pctx
+       | kind -> ignore (eat pctx kind)
+     done
+   with Exit -> ());
+  ignore (eat pctx RParen);
+  !args
+
+and parse_binary pctx (rule : parse_ctx -> expr)
+    (binary_op : parse_ctx -> bool) : expr =
+  let s = pctx.curr_tok.span.start in
+  let left = ref (rule pctx) in
+  (try
+     while true do
+       if binary_op pctx then (
+         let kind = binary_kind_from_token pctx.curr_tok.kind in
+         advance pctx;
+         let right = rule pctx in
+         left :=
+           {
+             expr_kind = Binary (kind, !left, right);
+             expr_ty = None;
+             expr_id = gen_id pctx;
+             expr_span = span s pctx;
+           })
+       else raise Exit
+     done
+   with Exit -> ());
+  {
+    expr_kind = !left.expr_kind;
+    expr_ty = None;
+    expr_id = gen_id pctx;
+    expr_span = span s pctx;
+  }
+
+and parse_multiply pctx : expr =
+  parse_binary pctx parse_primary (fun pctx ->
+      match pctx.curr_tok.kind with Star | Slash -> true | _ -> false)
+
+and parse_addition pctx : expr =
+  parse_binary pctx parse_multiply (fun pctx ->
+      match pctx.curr_tok.kind with Plus | Minus -> true | _ -> false)
+
+and parse_primary pctx : expr =
   let s = pctx.curr_tok.span.start in
   let expr_kind =
     match pctx.curr_tok.kind with
@@ -243,21 +294,6 @@ let rec parse_expr pctx : expr =
     expr_id = gen_id pctx;
     expr_span = span s pctx;
   }
-
-and parse_call_args pctx : expr list =
-  let args = ref [] in
-  ignore (eat pctx LParen);
-  (try
-     while pctx.curr_tok.kind <> RParen do
-       args := !args @ [parse_expr pctx];
-       match pctx.curr_tok.kind with
-       | RParen -> raise Exit
-       | Comma -> advance pctx
-       | kind -> ignore (eat pctx kind)
-     done
-   with Exit -> ());
-  ignore (eat pctx RParen);
-  !args
 
 let parse_pat pctx : pat =
   let kind = pctx.curr_tok.kind in
