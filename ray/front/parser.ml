@@ -287,7 +287,10 @@ and parse_primary pctx : expr =
           | Int -> LitInt (int_of_string buf)
           | Float -> LitFloat (float_of_string buf)
           | Bool -> LitBool (bool_of_string buf)
-          | String -> LitStr (String.sub buf 1 (String.length buf - 2))
+          | String ->
+              let s = String.sub buf 1 (String.length buf - 2) in
+              let s = Scanf.unescaped s in
+              LitStr s
           | lit_kind ->
               ignore (Printf.printf "%s\n" (display_literal lit_kind));
               assert false)
