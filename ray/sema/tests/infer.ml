@@ -2,8 +2,17 @@ open Sema
 open Ast
 open Token
 open Infer
+open Front
+open Tokenizer
+open Parser
 
 let dummy_span = { start = ("", 0, 0, 0); ending = ("", 0, 0, 0) }
+
+let parse_input input =
+  let tokenizer = tokenize "<test>" input in
+  let pctx = parse_ctx_create tokenizer input in
+  let modd = parse_mod pctx in
+  modd
 
 let mk_expr expr_kind id =
   { expr_kind; expr_ty = None; expr_id = id; expr_span = dummy_span }
@@ -42,3 +51,19 @@ let%test "unify let int binding" =
   let ty2 = infer ctx expr2 in
   ignore (unify ctx ty2 (Prim I64));
   Hashtbl.find ctx.ty_env.bindings "a" = Normal (Prim I64)
+
+let%test "infer" =
+  let input =
+    "\n    fn main() -> i32 {\n        let a = 20;\n        a\n    }\n    "
+  in
+  let modd = parse_input input in
+  let ctx = infer_ctx_create () in
+  let fn =
+    match List.nth modd.items 0 with
+    | Fn (fn, _) -> infer_func ctx fn; fn
+    | _ -> assert false
+  in
+  let binding = List.nth (Option.get fn.body).block_stmts 0 in
+  match binding with
+  | Binding binding -> binding.binding_expr.expr_ty = Some (Prim I32)
+  | _ -> false
