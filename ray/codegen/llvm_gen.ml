@@ -90,6 +90,15 @@ let gen_function_type (fn_sig : fn_sig) : lltype =
   (if fn_sig.is_variadic then var_arg_function_type else function_type)
     ret_ty (Array.of_list args)
 
+let rec lvalue expr builder =
+  match expr.expr_kind with
+  | Ident ident -> find_val codegen_ctx.env ident
+  | Deref expr ->
+      build_load
+        (pointer_type codegen_ctx.llctx)
+        (lvalue expr builder) "" builder
+  | _ -> assert false
+
 let rec gen_expr (builder : llbuilder) (expr : expr) : llvalue =
   let ty = get_llvm_ty (Option.get expr.expr_ty) in
   match expr.expr_kind with
@@ -143,7 +152,7 @@ let rec gen_expr (builder : llbuilder) (expr : expr) : llvalue =
   | Deref expr ->
       let ptr = gen_expr builder expr in
       build_load ty ptr "" builder
-  | Ref expr -> gen_expr builder expr
+  | Ref expr -> lvalue expr builder
 
 let gen_block (builder : llbuilder) (block : block) =
   let f stmt =
@@ -161,16 +170,7 @@ let gen_block (builder : llbuilder) (block : block) =
               ignore (build_store expr ptr builder);
               Hashtbl.add codegen_ctx.env.bindings ident ptr))
     | Assign (expr, init) ->
-        let rec lvalue expr =
-          match expr.expr_kind with
-          | Ident ident -> find_val codegen_ctx.env ident
-          | Deref expr ->
-              build_load
-                (pointer_type codegen_ctx.llctx)
-                (lvalue expr) "" builder
-          | _ -> assert false
-        in
-        let ptr = lvalue expr in
+        let ptr = lvalue expr builder in
         let init = gen_expr builder init in
         ignore (build_store init ptr builder)
     | Stmt expr -> ignore (gen_expr builder expr)
