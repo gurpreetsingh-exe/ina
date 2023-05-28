@@ -100,6 +100,7 @@ type infer_err =
   | MismatchTy of infer_kind * infer_kind
   | FnNotFound of ident
   | MismatchArgs of ident * int * int
+  | InvalidDeref of infer_kind
 
 let error = ref 0
 
@@ -123,6 +124,9 @@ let infer_err_emit (ty_err : infer_err) (span : span) =
         (display_span span) func expected
         (if expected = 1 then "" else "s")
         args
+  | InvalidDeref ty ->
+      Printf.printf "\x1b[31;1m%s\x1b[0m: `%s` cannot be dereferenced\n"
+        (display_span span) (display_infer_kind ty)
 
 let print_unresolved unresolved =
   Hashtbl.iter
@@ -222,6 +226,21 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : infer_kind =
         | a, b ->
             infer_err_emit (MismatchTy (a, b)) expr.expr_span;
             left)
+    | Deref expr -> (
+      match infer infer_ctx expr with
+      | Normal ty -> (
+        match ty with
+        | Ptr ty | RefTy ty -> Normal ty
+        | ty ->
+            infer_err_emit (InvalidDeref (Normal ty)) expr.expr_span;
+            Normal ty)
+      | ty ->
+          infer_err_emit (InvalidDeref ty) expr.expr_span;
+          ty)
+    | Ref expr -> (
+      match infer infer_ctx expr with
+      | Normal ty -> Normal (RefTy ty)
+      | _ -> assert false)
   in
   (match ty with
   | Int _ | Float _ ->

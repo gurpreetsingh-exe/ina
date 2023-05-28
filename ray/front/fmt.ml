@@ -9,6 +9,8 @@ let render_expr (expr : expr) : string =
 
 let rec render_ty (ty : ty) : string =
   match ty with
+  | Ptr ty -> sprintf "*%s" (render_ty ty)
+  | RefTy ty -> sprintf "&%s" (render_ty ty)
   | Prim ty -> (
     match ty with
     | I8 -> "i8"
@@ -96,6 +98,8 @@ let rec display_expr_kind (expr_kind : expr_kind) =
   | Binary (_, left, right) ->
       "Binary left = " ^ display_expr left ^ ", right = "
       ^ display_expr right
+  | Deref expr -> "Deref expr = " ^ display_expr expr
+  | Ref expr -> "Ref expr = " ^ display_expr expr
 
 and display_expr (expr : expr) =
   sprintf "{ id: %d, ty: %s, kind: %s }" expr.expr_id

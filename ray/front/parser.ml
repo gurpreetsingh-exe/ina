@@ -144,9 +144,15 @@ let parse_inner_attrs pctx : attr list =
     !attrs
   with Exit -> !attrs
 
-let parse_ty pctx : ty =
+let rec parse_ty pctx : ty =
   let t = pctx.curr_tok in
   match t.kind with
+  | Star ->
+      advance pctx;
+      Ptr (parse_ty pctx)
+  | Ampersand ->
+      advance pctx;
+      RefTy (parse_ty pctx)
   | Ident ->
       Prim
         (match get_token_str (eat pctx Ident) pctx.src with
@@ -268,6 +274,12 @@ and parse_primary pctx : expr =
   let s = pctx.curr_tok.span.start in
   let expr_kind =
     match pctx.curr_tok.kind with
+    | Star ->
+        advance pctx;
+        Deref (parse_expr pctx)
+    | Ampersand ->
+        advance pctx;
+        Ref (parse_expr pctx)
     | Lit lit as kind ->
         let buf = get_token_str (eat pctx kind) pctx.src in
         Ast.Lit

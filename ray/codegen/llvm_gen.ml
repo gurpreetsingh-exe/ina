@@ -69,6 +69,7 @@ let rec find_val scope ident =
 let get_llvm_ty (ty : ty) : lltype =
   let { llctx = ctx; size_type; _ } = codegen_ctx in
   match ty with
+  | Ptr _ | RefTy _ -> pointer_type ctx
   | Prim ty -> (
     match ty with
     | Isize | Usize -> size_type
@@ -81,7 +82,7 @@ let get_llvm_ty (ty : ty) : lltype =
     | Bool -> i1_type ctx
     | Str -> struct_type ctx [|pointer_type ctx; size_type|])
   | Unit -> void_type ctx
-  | _ -> assert false
+  | FnTy _ -> assert false
 
 let gen_function_type (fn_sig : fn_sig) : lltype =
   let args = List.map (fun (ty, _) -> get_llvm_ty ty) fn_sig.args in
@@ -139,6 +140,10 @@ let rec gen_expr (builder : llbuilder) (expr : expr) : llvalue =
         | _ -> assert false
       in
       op left right "" builder
+  | Deref expr ->
+      let ptr = gen_expr builder expr in
+      build_load ty ptr "" builder
+  | Ref expr -> gen_expr builder expr
 
 let gen_block (builder : llbuilder) (block : block) =
   let f stmt =
@@ -156,11 +161,16 @@ let gen_block (builder : llbuilder) (block : block) =
               ignore (build_store expr ptr builder);
               Hashtbl.add codegen_ctx.env.bindings ident ptr))
     | Assign (expr, init) ->
-        let ptr =
+        let rec lvalue expr =
           match expr.expr_kind with
           | Ident ident -> find_val codegen_ctx.env ident
+          | Deref expr ->
+              build_load
+                (pointer_type codegen_ctx.llctx)
+                (lvalue expr) "" builder
           | _ -> assert false
         in
+        let ptr = lvalue expr in
         let init = gen_expr builder init in
         ignore (build_store init ptr builder)
     | Stmt expr -> ignore (gen_expr builder expr)

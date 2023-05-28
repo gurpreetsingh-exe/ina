@@ -79,6 +79,8 @@ and import = ident
 
 and ty =
   | Prim of prim_ty
+  | Ptr of ty
+  | RefTy of ty
   | FnTy of (ty list * ty * bool)
   | Unit
 
@@ -122,6 +124,8 @@ and expr_kind =
   | Ident of ident
   | Call of ident * expr list
   | Binary of binary_kind * expr * expr
+  | Deref of expr
+  | Ref of expr
 
 and lit =
   | LitInt of int
