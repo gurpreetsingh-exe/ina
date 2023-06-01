@@ -67,9 +67,7 @@ let render_item (item : item) : string =
         (render attrs (fun attr -> render_attr attr) "")
         (render_fn func)
   | Const constant -> render_const constant
-  | _ ->
-      Printf.printf "todo\n";
-      assert false
+  | Import path -> sprintf "import %s;\n" (String.concat "::" path.segments)
 
 let render_mod modd : string =
   let rendered_items = render modd.items (fun item -> render_item item) "" in

@@ -24,13 +24,15 @@ and attr_style =
 type modd = {
   mutable items : item list;
   mutable attrs : attr list;
+  mod_name : string;
+  mod_path : string;
   mod_id : node_id;
 }
 
 and item =
   | Fn of func * attr_list
   | Const of constant
-  | Import of import
+  | Import of path
 
 and fn_sig = {
   name : ident;
@@ -75,7 +77,9 @@ and constant = {
   const_id : node_id;
 }
 
-and import = ident
+and path_segment = ident
+
+and path = { segments : path_segment list }
 
 and ty =
   | Prim of prim_ty

@@ -22,6 +22,7 @@ type token_kind =
   | Fn
   | Extern
   | Let
+  | Import
   | Ident
   | Lit of literal
   | Comment of comment_style option
@@ -33,6 +34,7 @@ type token_kind =
   | LBracket
   | RBracket
   | Colon
+  | Colon2
   | Eq
   | EqEq
   | Bang
@@ -56,6 +58,7 @@ let display_token_kind = function
   | Fn -> "fn"
   | Extern -> "extern"
   | Let -> "let"
+  | Import -> "import"
   | Ident -> "identifier"
   | Lit lit -> display_literal lit
   | Comment (Some kind) -> "comment " ^ display_comment_style kind
@@ -68,6 +71,7 @@ let display_token_kind = function
   | LBracket -> "["
   | RBracket -> "]"
   | Colon -> ":"
+  | Colon2 -> "::"
   | Eq -> "="
   | EqEq -> "=="
   | Bang -> "!"

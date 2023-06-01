@@ -390,18 +390,51 @@ let parse_extern pctx attrs : item =
   advance pctx;
   Fn (parse_fn pctx, attrs)
 
+let parse_path pctx : path =
+  let segments =
+    let s = ref [] in
+    try
+      while pctx.curr_tok.kind <> Semi do
+        s := !s @ [parse_ident pctx];
+        match pctx.curr_tok.kind with
+        | Colon2 -> advance pctx
+        | Semi -> advance pctx; raise Exit
+        | _ -> assert false
+      done;
+      !s
+    with Exit -> !s
+  in
+  { segments }
+
 let parse_item pctx : item =
   let attrs = parse_outer_attrs pctx in
   match pctx.curr_tok.kind with
   | Fn -> Fn (parse_fn pctx, attrs)
   | Extern -> parse_extern pctx attrs
+  | Import ->
+      advance pctx;
+      Import (parse_path pctx)
   | kind ->
       Printf.printf "%s\n" (display_token_kind kind);
       assert false
 
 let parse_mod pctx : modd =
   let mod_attrs = parse_inner_attrs pctx in
-  let modd = { items = []; attrs = mod_attrs; mod_id = gen_id pctx } in
+  let mod_path = pctx.tokenizer.filename in
+  let mod_name =
+    match Filename.chop_extension (Filename.basename mod_path) with
+    | "lib" -> Filename.basename (Filename.dirname mod_path)
+    | other -> other
+  in
+  let modd =
+    {
+      items = [];
+      attrs = mod_attrs;
+      mod_name;
+      mod_path;
+      mod_id = gen_id pctx;
+    }
+  in
   while not pctx.stop do
     strip_comments pctx;
     try modd.items <- modd.items @ [parse_item pctx]

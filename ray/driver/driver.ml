@@ -2,6 +2,7 @@ open Front
 open Printf
 open Sema
 open Codegen
+open Resolve
 
 type command =
   | Build
@@ -63,6 +64,10 @@ let () =
       let tokenizer = Tokenizer.tokenize name s in
       let pctx = Parser.parse_ctx_create tokenizer s in
       let modd = Parser.parse_mod pctx in
+      let resolver = Imports.resolver_create modd in
+      (* print_endline (Sys. name); *)
+      let env = Imports.resolve resolver in
+      Imports.print_env env;
       let infer_ctx = Infer.infer_ctx_create () in
       ignore (Infer.infer_begin infer_ctx modd);
       let ty_ctx = Tychk.ty_ctx_create infer_ctx in

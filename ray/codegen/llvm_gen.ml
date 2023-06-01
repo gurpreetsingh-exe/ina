@@ -211,7 +211,10 @@ let gen_func (func : func) (ll_mod : llmodule) =
         func.fn_sig.name)
 
 let gen_item (item : item) (ll_mod : llmodule) =
-  match item with Fn (func, _) -> gen_func func ll_mod | _ -> assert false
+  match item with
+  | Fn (func, _) -> gen_func func ll_mod
+  | Import _ -> ()
+  | _ -> assert false
 
 let gen_module (name : string) (modd : modd) : llmodule =
   let ll_mod = create_module codegen_ctx.llctx name in

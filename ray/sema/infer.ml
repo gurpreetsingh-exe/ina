@@ -365,6 +365,7 @@ let infer_begin infer_ctx (modd : modd) =
   let f (item : item) =
     match item with
     | Fn (func, _) -> infer_func infer_ctx func
+    | Import _ -> ()
     | _ -> assert false
   in
   List.iter f modd.items

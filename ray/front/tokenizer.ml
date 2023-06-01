@@ -11,7 +11,8 @@ let keywords = Hashtbl.create 0;;
 
 Hashtbl.add keywords "fn" Fn;
 Hashtbl.add keywords "extern" Extern;
-Hashtbl.add keywords "let" Let
+Hashtbl.add keywords "let" Let;
+Hashtbl.add keywords "import" Import
 
 let mk_tok (tokenizer : tokenizer) (kind : token_kind)
     (tok : token option ref) (start : pos) =
@@ -46,7 +47,10 @@ let get_token_type c tokenizer : token_kind =
   | ']' -> RBracket
   | '{' -> LBrace
   | '}' -> RBrace
-  | ':' -> Colon
+  | ':' -> (
+    match peek tokenizer with
+    | Some ':' -> bump tokenizer; Colon2
+    | Some _ | None -> Colon)
   | '=' -> (
     match peek tokenizer with
     | Some '=' -> bump tokenizer; EqEq
