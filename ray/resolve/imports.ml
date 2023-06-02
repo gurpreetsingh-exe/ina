@@ -41,11 +41,9 @@ let create_path resolver name =
   in
   path
 
-let std_path = "library/std/"
-
-let find_std () =
-  if Sys.is_directory std_path then (
-    let lib_path = std_path ^ "lib.ray" in
+let find_std lib =
+  if Sys.is_directory lib then (
+    let lib_path = String.concat Filename.dir_sep [lib; "lib.ray"] in
     if Sys.file_exists lib_path then lib_path else raise Not_found)
   else raise Not_found
 
@@ -70,11 +68,10 @@ let rec get_abs_ray_path mod_path =
 let rec import (resolver : resolver) (path : path) =
   let s = List.hd path.segments in
   let lib_path =
-    match s with
-    | "std" -> find_std ()
-    | s ->
-        if mod_exists resolver s then create_path resolver s
-        else raise Not_found
+    if mod_exists resolver s then create_path resolver s
+    else if Array.mem s (Sys.readdir "library") then
+      find_std (String.concat Filename.dir_sep ["library"; s])
+    else raise Not_found
   in
   let f lib_path =
     let ic = open_in lib_path in
