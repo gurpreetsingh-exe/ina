@@ -177,12 +177,12 @@ and gen_expr (builder : llbuilder) (expr : expr) : llvalue =
       let ptr = find_val codegen_ctx.env (render_path path) in
       build_load ty ptr "" builder
   | Call (path, exprs) ->
-      let ident = render_path path in
       let function_type, fn =
         if Hashtbl.mem codegen_ctx.func_map path then
           ( Hashtbl.find codegen_ctx.func_map path,
             Option.get
-              (lookup_function ident (Option.get codegen_ctx.curr_mod)) )
+              (lookup_function (mangle path)
+                 (Option.get codegen_ctx.curr_mod)) )
         else (
           let env = Option.get codegen_ctx.globl_env in
           let func = Hashtbl.find env path in

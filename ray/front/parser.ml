@@ -450,7 +450,7 @@ let parse_mod pctx : modd =
       mod_name;
       mod_path;
       mod_id = gen_id pctx;
-      imported_mods = [];
+      imported_mods = Hashtbl.create 0;
     }
   in
   while not pctx.stop do

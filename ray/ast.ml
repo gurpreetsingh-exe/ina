@@ -24,7 +24,7 @@ and attr_style =
 type modd = {
   mutable items : item list;
   mutable attrs : attr list;
-  mutable imported_mods : string list;
+  imported_mods : (string, modd) Hashtbl.t;
   mod_name : string;
   mod_path : string;
   mod_id : node_id;

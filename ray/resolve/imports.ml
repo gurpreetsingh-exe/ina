@@ -57,6 +57,16 @@ let rec get_abs_path path =
     else get_abs_path parent @ [Filename.remove_extension base])
   else [Filename.remove_extension (Filename.basename path)]
 
+let rec get_abs_ray_path mod_path =
+  let parent = Filename.dirname mod_path in
+  let mod_name = Filename.basename (Filename.remove_extension mod_path) in
+  match mod_name with
+  | "lib" -> get_abs_ray_path parent
+  | _ ->
+      if Array.mem "lib.ray" (Sys.readdir parent) then
+        get_abs_ray_path parent @ [mod_name]
+      else [mod_name]
+
 let rec import (resolver : resolver) (path : path) =
   let s = List.hd path.segments in
   let lib_path =
@@ -66,32 +76,49 @@ let rec import (resolver : resolver) (path : path) =
         if mod_exists resolver s then create_path resolver s
         else raise Not_found
   in
-  let ic = open_in lib_path in
-  let src = really_input_string ic (in_channel_length ic) in
-  close_in ic;
-  let tokenizer = Tokenizer.tokenize lib_path src in
-  let pctx = Parser.parse_ctx_create tokenizer src in
-  let modd = Parser.parse_mod pctx in
-  let env, modd = (resolve { modd; func_map = Hashtbl.create 0 }, modd) in
-  let infer_ctx = Infer.infer_ctx_create env in
-  ignore (Infer.infer_begin infer_ctx modd);
+  let f lib_path =
+    let ic = open_in lib_path in
+    let src = really_input_string ic (in_channel_length ic) in
+    close_in ic;
+    let tokenizer = Tokenizer.tokenize lib_path src in
+    let pctx = Parser.parse_ctx_create tokenizer src in
+    let modd = Parser.parse_mod pctx in
+    let env, modd = (resolve { modd; func_map = Hashtbl.create 0 }, modd) in
+    let infer_ctx = Infer.infer_ctx_create env in
+    ignore (Infer.infer_begin infer_ctx modd);
+    (env, modd)
+  in
+  let env, modd = f lib_path in
+  let modd =
+    List.fold_left
+      (fun h next ->
+        if not (Hashtbl.mem h.imported_mods next) then (
+          printf "error: %s not found\n" next;
+          assert false)
+        else (
+          let path =
+            String.concat Filename.dir_sep
+              [Filename.dirname h.mod_path; next]
+          in
+          let lib_path = create_path resolver path in
+          let _, h = f lib_path in
+          h))
+      modd (List.tl path.segments)
+  in
   (env, modd)
 
 and resolve resolver : (path, lang_item) Hashtbl.t =
   let env = Hashtbl.create 0 in
   let abs_path = get_abs_path resolver.modd.mod_path in
-  (* printf " %s = %s\n" (String.concat "::" abs_path)
-     resolver.modd.mod_path; *)
   Hashtbl.add env { segments = abs_path } (Mod resolver.modd);
   let f item =
     match item with
     | Import path ->
         let env2, modd = import resolver path in
-        resolver.modd.imported_mods <-
-          resolver.modd.imported_mods @ [modd.mod_name];
+        Hashtbl.add resolver.modd.imported_mods modd.mod_name modd;
         Hashtbl.iter
           (fun path item ->
-            Hashtbl.add env { segments = path.segments } item)
+            if not (Hashtbl.mem env path) then Hashtbl.add env path item)
           env2
     | Fn (fn, _) ->
         Hashtbl.add resolver.func_map fn.fn_sig.name fn;
@@ -110,11 +137,17 @@ and resolve_body body resolver =
   let handle_expr expr =
     match expr.expr_kind with
     | Call (path, _) ->
+        let abs_path = get_abs_ray_path resolver.modd.mod_path in
         let st = List.hd path.segments in
-        if Hashtbl.mem resolver.func_map st then ()
-          (* path.segments <- [resolver.modd.mod_name] @ path.segments *)
-        else if List.mem st resolver.modd.imported_mods then ()
-        else assert false
+        if Hashtbl.mem resolver.func_map st then (
+          let segs = abs_path @ path.segments in
+          path.segments <- segs)
+        else if Hashtbl.mem resolver.modd.imported_mods st then (
+          let modd = Hashtbl.find resolver.modd.imported_mods st in
+          let abs_path = get_abs_ray_path modd.mod_path in
+          path.segments <- List.tl path.segments;
+          let segs = abs_path @ path.segments in
+          path.segments <- segs)
     | Path _ -> ()
     | _ -> ()
   in
