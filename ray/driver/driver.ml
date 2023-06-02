@@ -18,6 +18,8 @@ type context = {
 
 let ctx = { file_name = None; file_source = "" }
 
+(* type globl_ctx = { env : (path, Imports.lang_item) Hashtbl.t } *)
+
 let usage arg0 =
   printf "Usage: %s [command] [options] input...\n" arg0;
   printf "\nCommands:\n";
@@ -67,14 +69,14 @@ let () =
       let resolver = Imports.resolver_create modd in
       (* print_endline (Sys. name); *)
       let env = Imports.resolve resolver in
-      Imports.print_env env;
-      let infer_ctx = Infer.infer_ctx_create () in
+      (* Imports.print_env env; *)
+      let infer_ctx = Infer.infer_ctx_create env in
       ignore (Infer.infer_begin infer_ctx modd);
       let ty_ctx = Tychk.ty_ctx_create infer_ctx in
       ignore (Tychk.tychk ty_ctx modd);
       if !Infer.error <> 0 then exit 1;
       (* print_endline (Fmt.display_mod modd); *)
-      let modd = Llvm_gen.gen_module name modd in
+      let modd = Llvm_gen.gen_module name modd env in
       let out = String.split_on_char '.' name in
       Llvm_gen.emit modd (List.hd out)
   | None -> usage arg0

@@ -218,6 +218,21 @@ let parse_fn_sig pctx : fn_sig =
   let ret_ty = parse_ret_ty pctx in
   { name = ident; args; ret_ty; fn_span = span s pctx; is_variadic }
 
+let parse_path pctx : path =
+  let segments =
+    let s = ref [] in
+    try
+      while pctx.curr_tok.kind = Ident do
+        s := !s @ [parse_ident pctx];
+        match pctx.curr_tok.kind with
+        | Colon2 -> advance pctx
+        | _ -> raise Exit
+      done;
+      !s
+    with Exit -> !s
+  in
+  { segments }
+
 let rec parse_expr pctx : expr = strip_comments pctx; parse_addition pctx
 
 and parse_call_args pctx : expr list =
@@ -294,14 +309,7 @@ and parse_primary pctx : expr =
           | lit_kind ->
               ignore (Printf.printf "%s\n" (display_literal lit_kind));
               assert false)
-    | Ident -> (
-        let ident = parse_ident pctx in
-        match pctx.curr_tok.kind with
-        | LParen -> Call (ident, parse_call_args pctx)
-        | _ -> Ident ident)
-    | kind ->
-        ignore (Printf.printf "%s\n" (display_token_kind kind));
-        assert false
+    | _ -> parse_path_or_call pctx
   in
   {
     expr_kind;
@@ -309,6 +317,17 @@ and parse_primary pctx : expr =
     expr_id = gen_id pctx;
     expr_span = span s pctx;
   }
+
+and parse_path_or_call pctx =
+  match pctx.curr_tok.kind with
+  | Ident -> (
+      let path = parse_path pctx in
+      match pctx.curr_tok.kind with
+      | LParen -> Call (path, parse_call_args pctx)
+      | _ -> Path path)
+  | kind ->
+      ignore (Printf.printf "%s\n" (display_token_kind kind));
+      assert false
 
 let parse_pat pctx : pat =
   let kind = pctx.curr_tok.kind in
@@ -381,30 +400,26 @@ let parse_fn pctx : func =
   let sign = parse_fn_sig pctx in
   if pctx.curr_tok.kind == Semi then (
     advance pctx;
-    { is_extern; fn_sig = sign; body = None; func_id = gen_id pctx })
+    {
+      is_extern;
+      fn_sig = sign;
+      body = None;
+      func_id = gen_id pctx;
+      func_path = None;
+    })
   else (
     let body = parse_block pctx in
-    { is_extern; fn_sig = sign; body = Some body; func_id = gen_id pctx })
+    {
+      is_extern;
+      fn_sig = sign;
+      body = Some body;
+      func_id = gen_id pctx;
+      func_path = None;
+    })
 
 let parse_extern pctx attrs : item =
   advance pctx;
   Fn (parse_fn pctx, attrs)
-
-let parse_path pctx : path =
-  let segments =
-    let s = ref [] in
-    try
-      while pctx.curr_tok.kind <> Semi do
-        s := !s @ [parse_ident pctx];
-        match pctx.curr_tok.kind with
-        | Colon2 -> advance pctx
-        | Semi -> advance pctx; raise Exit
-        | _ -> assert false
-      done;
-      !s
-    with Exit -> !s
-  in
-  { segments }
 
 let parse_item pctx : item =
   let attrs = parse_outer_attrs pctx in
@@ -413,7 +428,9 @@ let parse_item pctx : item =
   | Extern -> parse_extern pctx attrs
   | Import ->
       advance pctx;
-      Import (parse_path pctx)
+      let import = Ast.Import (parse_path pctx) in
+      ignore (eat pctx Semi);
+      import
   | kind ->
       Printf.printf "%s\n" (display_token_kind kind);
       assert false
@@ -433,6 +450,7 @@ let parse_mod pctx : modd =
       mod_name;
       mod_path;
       mod_id = gen_id pctx;
+      imported_mods = [];
     }
   in
   while not pctx.stop do

@@ -4,8 +4,22 @@ open Printf
 let render (items : 'a list) (func : 'a -> string) (sep : string) : string =
   String.concat sep (List.map (fun item -> func item) items)
 
-let render_expr (expr : expr) : string =
-  match expr.expr_kind with Ident ident -> ident | _ -> "lit"
+let render_path (path : path) : string = String.concat "::" path.segments
+
+let render_lit (lit : lit) : string =
+  match lit with
+  | LitInt value -> sprintf "%d" value
+  | LitFloat value -> sprintf "%f" value
+  | LitBool value -> sprintf "%b" value
+  | LitStr value -> sprintf "\"%s\"" value
+
+let rec render_expr (expr : expr) : string =
+  match expr.expr_kind with
+  | Path path -> render_path path
+  | Call (path, exprs) ->
+      sprintf "%s(%s)" (render_path path) (render exprs render_expr ", ")
+  | Lit lit -> render_lit lit
+  | _ -> assert false
 
 let rec render_ty (ty : ty) : string =
   match ty with
@@ -43,13 +57,35 @@ let render_fn_sig (fn_sig : fn_sig) : string =
     | Some ty -> " -> " ^ render_ty ty
     | None -> "")
 
-let render_block (_ : block) : string = "{}"
+let render_pat pat = match pat with PatIdent ident -> ident
+
+let render_stmt stmt =
+  "    "
+  ^
+  match stmt with
+  | Binding { binding_pat; binding_ty; binding_expr; _ } ->
+      sprintf "let %s%s = %s;" (render_pat binding_pat)
+        (match binding_ty with
+        | Some ty -> sprintf ": %s " (render_ty ty)
+        | None -> "")
+        (render_expr binding_expr)
+  | Assign (left, right) ->
+      sprintf "%s = %s;" (render_expr left) (render_expr right)
+  | Stmt expr -> render_expr expr ^ ";"
+  | Expr expr -> render_expr expr
+
+let render_block (block : block) : string =
+  sprintf "{\n%s\n%s\n}\n"
+    (render block.block_stmts render_stmt "\n")
+    (match block.last_expr with Some expr -> render_expr expr | None -> "")
 
 let render_fn (func : func) : string =
   sprintf
-    (if func.is_extern then "extern %s %s" else "%s %s")
+    (if func.is_extern then "extern %s%s" else "%s%s")
     (render_fn_sig func.fn_sig)
-    (match func.body with Some body -> render_block body | None -> ";")
+    (match func.body with
+    | Some body -> " " ^ render_block body
+    | None -> ";")
 
 let render_attr (attr : attr) : string =
   (match (attr.kind, attr.style) with
@@ -89,9 +125,9 @@ let display_lit (lit : lit) : string =
 let rec display_expr_kind (expr_kind : expr_kind) =
   match expr_kind with
   | Lit lit -> "Lit " ^ display_lit lit
-  | Ident ident -> "Ident " ^ ident
-  | Call (ident, exprs) ->
-      "Call " ^ ident ^ ", args: "
+  | Path path -> "Path " ^ render_path path
+  | Call (path, exprs) ->
+      "Call " ^ render_path path ^ ", args: "
       ^ String.concat "\n" (List.map (fun expr -> display_expr expr) exprs)
   | Binary (_, left, right) ->
       "Binary left = " ^ display_expr left ^ ", right = "

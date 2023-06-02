@@ -3,6 +3,17 @@ open Llvm
 open Llvm_target
 open Llvm_X86
 open Llvm_analysis
+open Resolve.Imports
+open Printf
+
+let render_path path = String.concat "::" path.segments
+
+let mangle path =
+  "_Z"
+  ^ String.concat ""
+      (List.map
+         (fun seg -> sprintf "%d%s" (String.length seg) seg)
+         path.segments)
 
 type env = {
   bindings : (string, llvalue) Hashtbl.t;
@@ -18,7 +29,9 @@ type codegen_ctx = {
   global_strings : (string, llvalue) Hashtbl.t;
   size_type : lltype;
   mutable curr_mod : llmodule option;
-  func_map : (ident, lltype) Hashtbl.t;
+  func_map : (path, lltype) Hashtbl.t;
+  mutable globl_env : (path, lang_item) Hashtbl.t option;
+  mutable main : llvalue option;
 }
 
 (* we define our own *)
@@ -55,6 +68,8 @@ let codegen_ctx =
     size_type = DataLayout.intptr_type ctx data_layout;
     curr_mod = None;
     func_map = Hashtbl.create 0;
+    globl_env = None;
+    main = None;
   }
 
 let i32_c value = const_int (i32_type codegen_ctx.llctx) value
@@ -92,69 +107,14 @@ let gen_function_type (fn_sig : fn_sig) : lltype =
 
 let rec lvalue expr builder =
   match expr.expr_kind with
-  | Ident ident -> find_val codegen_ctx.env ident
+  | Path path -> find_val codegen_ctx.env (render_path path)
   | Deref expr ->
       build_load
         (pointer_type codegen_ctx.llctx)
         (lvalue expr builder) "" builder
   | _ -> assert false
 
-let rec gen_expr (builder : llbuilder) (expr : expr) : llvalue =
-  let ty = get_llvm_ty (Option.get expr.expr_ty) in
-  match expr.expr_kind with
-  | Lit lit -> (
-    match lit with
-    | LitInt value -> const_int ty value
-    | LitFloat value -> const_float ty value
-    | LitBool value -> const_int ty (if value then 1 else 0)
-    | LitStr value ->
-        let id =
-          Printf.sprintf "str%d" (Hashtbl.length codegen_ctx.global_strings)
-        in
-        let global_ptr =
-          define_global id
-            (const_string codegen_ctx.llctx value)
-            (Option.get codegen_ctx.curr_mod)
-        in
-        set_linkage Linkage.Private global_ptr;
-        set_unnamed_addr true global_ptr;
-        set_global_constant true global_ptr;
-        set_alignment 1 global_ptr;
-        Hashtbl.add codegen_ctx.global_strings id global_ptr;
-        const_struct codegen_ctx.llctx
-          [|
-            global_ptr; const_int codegen_ctx.size_type (String.length value);
-          |])
-  | Ident ident ->
-      let ptr = find_val codegen_ctx.env ident in
-      build_load ty ptr "" builder
-  | Call (ident, exprs) ->
-      let args =
-        Array.map (fun expr -> gen_expr builder expr) (Array.of_list exprs)
-      in
-      let function_type = Hashtbl.find codegen_ctx.func_map ident in
-      let fn =
-        Option.get (lookup_function ident (Option.get codegen_ctx.curr_mod))
-      in
-      build_call function_type fn args "" builder
-  | Binary (kind, left, right) ->
-      let left = gen_expr builder left in
-      let right = gen_expr builder right in
-      let op =
-        match kind with
-        | Add -> build_add
-        | Sub -> build_sub
-        | Mul -> build_mul
-        | Div -> build_fdiv
-        | _ -> assert false
-      in
-      op left right "" builder
-  | Deref expr ->
-      let ptr = gen_expr builder expr in
-      build_load ty ptr "" builder
-  | Ref expr -> lvalue expr builder
-
-let gen_block (builder : llbuilder) (block : block) =
+let rec gen_block (builder : llbuilder) (block : block) =
   let f stmt =
     match stmt with
     | Binding { binding_pat; binding_ty; binding_expr; _ } -> (
@@ -187,14 +147,88 @@ let gen_block (builder : llbuilder) (block : block) =
     | None -> build_ret_void builder);
   codegen_ctx.env <- tmp_scope
 
-let gen_func (func : func) (ll_mod : llmodule) =
+and gen_expr (builder : llbuilder) (expr : expr) : llvalue =
+  let ty = get_llvm_ty (Option.get expr.expr_ty) in
+  match expr.expr_kind with
+  | Lit lit -> (
+    match lit with
+    | LitInt value -> const_int ty value
+    | LitFloat value -> const_float ty value
+    | LitBool value -> const_int ty (if value then 1 else 0)
+    | LitStr value ->
+        let id =
+          Printf.sprintf "str%d" (Hashtbl.length codegen_ctx.global_strings)
+        in
+        let global_ptr =
+          define_global id
+            (const_string codegen_ctx.llctx value)
+            (Option.get codegen_ctx.curr_mod)
+        in
+        set_linkage Linkage.Private global_ptr;
+        set_unnamed_addr true global_ptr;
+        set_global_constant true global_ptr;
+        set_alignment 1 global_ptr;
+        Hashtbl.add codegen_ctx.global_strings id global_ptr;
+        const_struct codegen_ctx.llctx
+          [|
+            global_ptr; const_int codegen_ctx.size_type (String.length value);
+          |])
+  | Path path ->
+      let ptr = find_val codegen_ctx.env (render_path path) in
+      build_load ty ptr "" builder
+  | Call (path, exprs) ->
+      let ident = render_path path in
+      let function_type, fn =
+        if Hashtbl.mem codegen_ctx.func_map path then
+          ( Hashtbl.find codegen_ctx.func_map path,
+            Option.get
+              (lookup_function ident (Option.get codegen_ctx.curr_mod)) )
+        else (
+          let env = Option.get codegen_ctx.globl_env in
+          let func = Hashtbl.find env path in
+          match func with
+          | Fn func -> gen_func func (Option.get codegen_ctx.curr_mod)
+          | _ -> assert false)
+      in
+      let args =
+        Array.map (fun expr -> gen_expr builder expr) (Array.of_list exprs)
+      in
+      build_call function_type fn args "" builder
+  | Binary (kind, left, right) ->
+      let left = gen_expr builder left in
+      let right = gen_expr builder right in
+      let op =
+        match kind with
+        | Add -> build_add
+        | Sub -> build_sub
+        | Mul -> build_mul
+        | Div -> build_fdiv
+        | _ -> assert false
+      in
+      op left right "" builder
+  | Deref expr ->
+      let ptr = gen_expr builder expr in
+      build_load ty ptr "" builder
+  | Ref expr -> lvalue expr builder
+
+and gen_func (func : func) (ll_mod : llmodule) =
   let function_type = gen_function_type func.fn_sig in
-  Hashtbl.add codegen_ctx.func_map func.fn_sig.name function_type;
   if func.is_extern then (
     let fn = declare_function func.fn_sig.name function_type ll_mod in
-    set_linkage Linkage.External fn)
+    Hashtbl.add codegen_ctx.func_map
+      { segments = [func.fn_sig.name] }
+      function_type;
+    if func.fn_sig.name = "main" then codegen_ctx.main <- Some fn;
+    set_linkage Linkage.External fn;
+    (function_type, fn))
   else (
-    let fn = define_function func.fn_sig.name function_type ll_mod in
+    Hashtbl.add codegen_ctx.func_map
+      (Option.get func.func_path)
+      function_type;
+    let path = Option.get func.func_path in
+    let mangled_name = mangle path in
+    let fn = define_function mangled_name function_type ll_mod in
+    if func.fn_sig.name = "main" then codegen_ctx.main <- Some fn;
     let builder = builder_at_end codegen_ctx.llctx (entry_block fn) in
     for i = 0 to Array.length (params fn) - 1 do
       let _, name = List.nth func.fn_sig.args i in
@@ -208,19 +242,30 @@ let gen_func (func : func) (ll_mod : llmodule) =
     (match func.body with Some body -> gen_block builder body | None -> ());
     if not (verify_function fn) then
       Printf.fprintf stderr "llvm error: function `%s` is not valid\n"
-        func.fn_sig.name)
+        func.fn_sig.name;
+    (function_type, fn))
+
+let gen_main ll_mod name =
+  let main = Option.get codegen_ctx.main in
+  let main_ty = function_type (get_llvm_ty (Prim I32)) [||] in
+  let fn = define_function "main" main_ty ll_mod in
+  let builder = builder_at_end codegen_ctx.llctx (entry_block fn) in
+  let ret = build_call main_ty main [||] "" builder in
+  ignore (build_ret ret builder)
 
 let gen_item (item : item) (ll_mod : llmodule) =
   match item with
-  | Fn (func, _) -> gen_func func ll_mod
+  | Fn (func, _) -> ignore (gen_func func ll_mod)
   | Import _ -> ()
   | _ -> assert false
 
-let gen_module (name : string) (modd : modd) : llmodule =
+let gen_module (name : string) (modd : modd) env : llmodule =
   let ll_mod = create_module codegen_ctx.llctx name in
   codegen_ctx.curr_mod <- Some ll_mod;
+  codegen_ctx.globl_env <- Some env;
   set_target_triple (Target.default_triple ()) ll_mod;
   ignore (List.map (fun item -> gen_item item ll_mod) modd.items);
+  gen_main ll_mod name;
   match verify_module ll_mod with
   | Some reason ->
       Printf.fprintf stderr "%s\n" reason;
