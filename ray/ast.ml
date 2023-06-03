@@ -45,6 +45,7 @@ and fn_sig = {
 
 and func = {
   is_extern : bool;
+  abi : string;
   fn_sig : fn_sig;
   body : block option;
   func_id : node_id;

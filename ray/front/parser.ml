@@ -392,16 +392,14 @@ let parse_block pctx : block =
     block_id = gen_id pctx;
   }
 
-let parse_fn pctx : func =
-  let is_extern =
-    match pctx.prev_tok with Some { kind = Extern; _ } -> true | _ -> false
-  in
+let parse_fn pctx abi is_extern : func =
   advance pctx;
   let sign = parse_fn_sig pctx in
   if pctx.curr_tok.kind == Semi then (
     advance pctx;
     {
       is_extern;
+      abi;
       fn_sig = sign;
       body = None;
       func_id = gen_id pctx;
@@ -411,6 +409,7 @@ let parse_fn pctx : func =
     let body = parse_block pctx in
     {
       is_extern;
+      abi;
       fn_sig = sign;
       body = Some body;
       func_id = gen_id pctx;
@@ -419,12 +418,21 @@ let parse_fn pctx : func =
 
 let parse_extern pctx attrs : item =
   advance pctx;
-  Fn (parse_fn pctx, attrs)
+  let abi =
+    match pctx.curr_tok.kind with
+    | Lit String ->
+        let buf = get_token_str (eat pctx pctx.curr_tok.kind) pctx.src in
+        let s = String.sub buf 1 (String.length buf - 2) in
+        let s = Scanf.unescaped s in
+        s
+    | _ -> "C"
+  in
+  Fn (parse_fn pctx abi true, attrs)
 
 let parse_item pctx : item =
   let attrs = parse_outer_attrs pctx in
   match pctx.curr_tok.kind with
-  | Fn -> Fn (parse_fn pctx, attrs)
+  | Fn -> Fn (parse_fn pctx "C" false, attrs)
   | Extern -> parse_extern pctx attrs
   | Import ->
       advance pctx;

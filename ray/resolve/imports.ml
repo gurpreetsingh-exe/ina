@@ -25,21 +25,27 @@ let rec mod_exists resolver name =
   else false
 
 let create_path resolver name =
-  let path =
-    String.concat Filename.dir_sep
-      [Filename.dirname resolver.modd.mod_path; name]
-  in
-  let f path =
-    if Sys.is_directory path then
-      String.concat Filename.dir_sep [path; "lib.ray"]
-    else path
-  in
-  let path =
-    if Sys.file_exists path then f path
-    else if Sys.file_exists (path ^ ".ray") then f (path ^ ".ray")
-    else raise Not_found
-  in
-  path
+  if Sys.file_exists name then
+    if Sys.is_directory name then
+      String.concat Filename.dir_sep [name; "lib.ray"]
+    else name ^ ".ray"
+  else if Sys.file_exists (name ^ ".ray") then name ^ ".ray"
+  else (
+    let path =
+      String.concat Filename.dir_sep
+        [Filename.dirname resolver.modd.mod_path; name]
+    in
+    let f path =
+      if Sys.is_directory path then
+        String.concat Filename.dir_sep [path; "lib.ray"]
+      else path
+    in
+    let path =
+      if Sys.file_exists path then f path
+      else if Sys.file_exists (path ^ ".ray") then f (path ^ ".ray")
+      else raise Not_found
+    in
+    path)
 
 let find_std lib =
   if Sys.is_directory lib then (

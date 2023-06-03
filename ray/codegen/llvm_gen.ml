@@ -32,6 +32,7 @@ type codegen_ctx = {
   func_map : (path, lltype) Hashtbl.t;
   mutable globl_env : (path, lang_item) Hashtbl.t option;
   mutable main : llvalue option;
+  intrinsics : (path, func) Hashtbl.t;
 }
 
 (* we define our own *)
@@ -70,6 +71,7 @@ let codegen_ctx =
     func_map = Hashtbl.create 0;
     globl_env = None;
     main = None;
+    intrinsics = Hashtbl.create 0;
   }
 
 let i32_c value = const_int (i32_type codegen_ctx.llctx) value
@@ -177,23 +179,32 @@ and gen_expr (builder : llbuilder) (expr : expr) : llvalue =
       let ptr = find_val codegen_ctx.env (render_path path) in
       build_load ty ptr "" builder
   | Call (path, exprs) ->
-      let function_type, fn =
-        if Hashtbl.mem codegen_ctx.func_map path then
+      let args =
+        Array.map (fun expr -> gen_expr builder expr) (Array.of_list exprs)
+      in
+      let f fn_ty fn args = build_call fn_ty fn args "" builder in
+      if Hashtbl.mem codegen_ctx.func_map path then (
+        let fn_ty, fn =
           ( Hashtbl.find codegen_ctx.func_map path,
             Option.get
               (lookup_function (mangle path)
                  (Option.get codegen_ctx.curr_mod)) )
-        else (
-          let env = Option.get codegen_ctx.globl_env in
-          let func = Hashtbl.find env path in
-          match func with
-          | Fn func -> gen_func func (Option.get codegen_ctx.curr_mod)
-          | _ -> assert false)
-      in
-      let args =
-        Array.map (fun expr -> gen_expr builder expr) (Array.of_list exprs)
-      in
-      build_call function_type fn args "" builder
+        in
+        f fn_ty fn args)
+      else (
+        let env = Option.get codegen_ctx.globl_env in
+        let func = Hashtbl.find env path in
+        match func with
+        | Fn func ->
+            if func.is_extern && func.abi = "intrinsic" then
+              Intrinsics.gen_intrinsic func.fn_sig.name args builder
+                codegen_ctx.llctx
+            else (
+              let fn_ty, fn =
+                gen_func func (Option.get codegen_ctx.curr_mod)
+              in
+              f fn_ty fn args)
+        | _ -> assert false)
   | Binary (kind, left, right) ->
       let left = gen_expr builder left in
       let right = gen_expr builder right in
@@ -255,7 +266,12 @@ let gen_main ll_mod name =
 
 let gen_item (item : item) (ll_mod : llmodule) =
   match item with
-  | Fn (func, _) -> ignore (gen_func func ll_mod)
+  | Fn (func, _) ->
+      if func.abi = "intrinsic" then
+        Hashtbl.add codegen_ctx.intrinsics
+          { segments = [func.fn_sig.name] }
+          func
+      else ignore (gen_func func ll_mod)
   | Import _ -> ()
   | _ -> assert false
 

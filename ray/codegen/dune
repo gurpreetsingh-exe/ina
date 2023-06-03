@@ -1,7 +1,7 @@
 (library
  (name codegen)
  (libraries ast resolve llvm llvm.target llvm.analysis llvm_X86)
- (modules llvm_gen)
+ (modules llvm_gen intrinsics)
  (foreign_stubs
   (language c)
   (names llvm_opt))
