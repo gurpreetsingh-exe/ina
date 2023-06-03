@@ -131,12 +131,12 @@ and resolve resolver : (path, lang_item) Hashtbl.t =
   env
 
 and resolve_body body resolver =
-  let handle_expr expr =
+  let rec handle_expr expr =
     match expr.expr_kind with
-    | Call (path, _) ->
-        let abs_path = get_abs_ray_path resolver.modd.mod_path in
+    | Call (path, exprs) ->
         let st = List.hd path.segments in
         if Hashtbl.mem resolver.func_map st then (
+          let abs_path = get_abs_ray_path resolver.modd.mod_path in
           let segs = abs_path @ path.segments in
           path.segments <- segs)
         else if Hashtbl.mem resolver.modd.imported_mods st then (
@@ -144,7 +144,10 @@ and resolve_body body resolver =
           let abs_path = get_abs_ray_path modd.mod_path in
           path.segments <- List.tl path.segments;
           let segs = abs_path @ path.segments in
-          path.segments <- segs)
+          path.segments <- segs);
+        List.iter handle_expr exprs
+    | Binary (_, left, right) -> handle_expr left; handle_expr right
+    | Deref expr | Ref expr -> handle_expr expr
     | Path _ -> ()
     | _ -> ()
   in
@@ -154,7 +157,11 @@ and resolve_body body resolver =
     | Assign (expr1, expr2) -> handle_expr expr1; handle_expr expr2
     | Stmt expr | Expr expr -> handle_expr expr
   in
-  match body with Some body -> List.iter f body.block_stmts | None -> ()
+  match body with
+  | Some body -> (
+      List.iter f body.block_stmts;
+      match body.last_expr with Some expr -> handle_expr expr | None -> ())
+  | None -> ()
 
 let print_env env =
   let ritem = function Mod _ -> "module" | Fn _ -> "fn" in
