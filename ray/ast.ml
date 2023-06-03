@@ -24,13 +24,16 @@ and attr_style =
 type modd = {
   mutable items : item list;
   mutable attrs : attr list;
+  imported_mods : (string, modd) Hashtbl.t;
+  mod_name : string;
+  mod_path : string;
   mod_id : node_id;
 }
 
 and item =
   | Fn of func * attr_list
   | Const of constant
-  | Import of import
+  | Import of path
 
 and fn_sig = {
   name : ident;
@@ -45,6 +48,7 @@ and func = {
   fn_sig : fn_sig;
   body : block option;
   func_id : node_id;
+  mutable func_path : path option;
 }
 
 and block = {
@@ -75,7 +79,9 @@ and constant = {
   const_id : node_id;
 }
 
-and import = ident
+and path_segment = ident
+
+and path = { mutable segments : path_segment list }
 
 and ty =
   | Prim of prim_ty
@@ -121,8 +127,8 @@ and binary_kind =
 
 and expr_kind =
   | Lit of lit
-  | Ident of ident
-  | Call of ident * expr list
+  | Path of path
+  | Call of path * expr list
   | Binary of binary_kind * expr * expr
   | Deref of expr
   | Ref of expr
@@ -139,3 +145,7 @@ let binary_kind_from_token = function
   | Star -> Mul
   | Slash -> Div
   | _ -> assert false
+
+type lang_item =
+  | Mod of modd
+  | Fn of func

@@ -77,9 +77,15 @@ let ty_is_float (ty : ty) : bool =
   | Prim ty -> ( match ty with F32 | F64 -> true | _ -> false)
   | _ -> false
 
+let fn_ty func =
+  let { fn_sig = { args; ret_ty; is_variadic; _ }; _ } = func in
+  let ret_ty = Option.value ret_ty ~default:Unit in
+  FnTy (List.map (fun (ty, _) -> ty) args, ret_ty, is_variadic)
+
 type infer_ctx = {
   mutable ty_env : env;
   env : (node_id, expr) Hashtbl.t;
+  globl_env : (path, lang_item) Hashtbl.t;
   func_map : (ident, ty) Hashtbl.t;
 }
 
@@ -88,11 +94,12 @@ let add_binding (infer_ctx : infer_ctx) ident ty =
     Hashtbl.replace infer_ctx.ty_env.bindings ident ty
   else Hashtbl.add infer_ctx.ty_env.bindings ident ty
 
-let infer_ctx_create () =
+let infer_ctx_create globl_env =
   {
     ty_env = env_create None;
     env = Hashtbl.create 0;
     func_map = Hashtbl.create 0;
+    globl_env;
   }
 
 type infer_err =
@@ -174,12 +181,12 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : infer_kind =
       | LitFloat _ -> Float expr.expr_id
       | LitBool _ -> Normal (Prim Bool)
       | LitStr _ -> Normal (Prim Str))
-    | Ident ident ->
+    | Path path ->
+        let ident = render_path path in
         Hashtbl.add infer_ctx.ty_env.bindings_id expr.expr_id ident;
         find_ty infer_ctx.ty_env ident
-    | Call (ident, exprs) ->
-        if Hashtbl.mem infer_ctx.func_map ident then (
-          let func = Hashtbl.find infer_ctx.func_map ident in
+    | Call (path, exprs) ->
+        let f func ident =
           let check (expr : expr) (expected : ty) =
             let ty = infer infer_ctx expr in
             match unify infer_ctx ty expected with
@@ -202,6 +209,15 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : infer_kind =
                   expr.expr_span
               else List.iter2 (fun expr ty -> check expr ty) exprs args_ty;
               Normal ret_ty
+          | _ -> assert false
+        in
+        let ident = render_path path in
+        if Hashtbl.mem infer_ctx.func_map ident then (
+          let func = Hashtbl.find infer_ctx.func_map ident in
+          f func ident)
+        else if Hashtbl.mem infer_ctx.globl_env path then (
+          match Hashtbl.find infer_ctx.globl_env path with
+          | Fn func -> f (fn_ty func) ident
           | _ -> assert false)
         else (
           infer_err_emit (FnNotFound ident) expr.expr_span;
@@ -258,7 +274,8 @@ and unify (infer_ctx : infer_ctx) (ty : infer_kind) (expected : ty) :
       match set_type left with
       | Some err -> Some err
       | None -> set_type right)
-    | Ident name ->
+    | Path path ->
+        let name = render_path path in
         let binding = Hashtbl.find infer_ctx.ty_env.bindings name in
         Hashtbl.replace infer_ctx.ty_env.bindings name (Normal expected);
         unify infer_ctx binding expected
@@ -365,6 +382,7 @@ let infer_begin infer_ctx (modd : modd) =
   let f (item : item) =
     match item with
     | Fn (func, _) -> infer_func infer_ctx func
+    | Import _ -> ()
     | _ -> assert false
   in
   List.iter f modd.items

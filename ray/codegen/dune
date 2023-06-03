@@ -1,6 +1,6 @@
 (library
  (name codegen)
- (libraries ast llvm llvm.target llvm.analysis llvm_X86)
+ (libraries ast resolve llvm llvm.target llvm.analysis llvm_X86)
  (modules llvm_gen)
  (foreign_stubs
   (language c)

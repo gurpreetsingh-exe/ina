@@ -1,0 +1,4 @@
+(library
+ (name resolve)
+ (libraries ast front sema)
+ (modules imports))
