@@ -5,6 +5,7 @@ open Llvm_X86
 open Llvm_analysis
 open Resolve.Imports
 open Printf
+open Session
 
 let render_path path = String.concat "::" path.segments
 
@@ -275,27 +276,41 @@ let gen_item (item : item) (ll_mod : llmodule) =
   | Import _ -> ()
   | _ -> assert false
 
-let gen_module (name : string) (modd : modd) env : llmodule =
-  let ll_mod = create_module codegen_ctx.llctx name in
+let gen_module (ctx : Context.t) (modd : modd) env : llmodule =
+  let ll_mod = create_module codegen_ctx.llctx ctx.options.input in
   codegen_ctx.curr_mod <- Some ll_mod;
   codegen_ctx.globl_env <- Some env;
   set_target_triple (Target.default_triple ()) ll_mod;
   ignore (List.map (fun item -> gen_item item ll_mod) modd.items);
-  gen_main ll_mod name;
+  gen_main ll_mod ctx.options.input;
   match verify_module ll_mod with
   | Some reason ->
       Printf.fprintf stderr "%s\n" reason;
       ll_mod
   | None -> ll_mod
 
-let emit (modd : llmodule) (out : string) =
-  (* run_passes modd "default<O3>" codegen_ctx.machine; *)
-  let ic = open_out (out ^ ".ll") in
-  output_string ic (string_of_llmodule modd);
-  let objfile = out ^ ".o" in
-  TargetMachine.emit_to_file modd CodeGenFileType.ObjectFile objfile
-    codegen_ctx.machine;
-  TargetMachine.emit_to_file modd CodeGenFileType.AssemblyFile (out ^ ".s")
-    codegen_ctx.machine;
-  let command = Sys.command ("clang " ^ objfile ^ " -o " ^ out) in
-  if command <> 0 then Printf.fprintf stderr "cannot emit executable\n"
+let emit (modd : llmodule) (ctx : Context.t) =
+  (match ctx.options.opt_level with
+  | Default -> ()
+  | Agressive -> run_passes modd "default<O3>" codegen_ctx.machine);
+  match ctx.options.output_type with
+  | LlvmIr ->
+      let ic = open_out (ctx.options.output ^ ".ll") in
+      output_string ic (string_of_llmodule modd)
+  | Object ->
+      let objfile = ctx.options.output ^ ".o" in
+      TargetMachine.emit_to_file modd CodeGenFileType.ObjectFile objfile
+        codegen_ctx.machine
+  | Asm ->
+      TargetMachine.emit_to_file modd CodeGenFileType.AssemblyFile
+        (ctx.options.output ^ ".s")
+        codegen_ctx.machine
+  | Exe ->
+      let objfile = ctx.options.output ^ ".o" in
+      TargetMachine.emit_to_file modd CodeGenFileType.ObjectFile objfile
+        codegen_ctx.machine;
+      let command =
+        Sys.command ("clang " ^ objfile ^ " -o " ^ ctx.options.output)
+      in
+      if command <> 0 then Printf.fprintf stderr "cannot emit executable\n";
+      ignore (Sys.command ("rm -f " ^ objfile))

@@ -70,7 +70,7 @@ let emit_err e =
 
 let strip_comments pctx =
   try
-    while true do
+    while not pctx.stop do
       match pctx.curr_tok.kind with
       | Comment None -> advance pctx
       | _ -> raise Exit
@@ -447,7 +447,7 @@ let parse_mod pctx : modd =
   let mod_attrs = parse_inner_attrs pctx in
   let mod_path = pctx.tokenizer.filename in
   let mod_name =
-    match Filename.chop_extension (Filename.basename mod_path) with
+    match Filename.remove_extension (Filename.basename mod_path) with
     | "lib" -> Filename.basename (Filename.dirname mod_path)
     | other -> other
   in
@@ -463,7 +463,6 @@ let parse_mod pctx : modd =
   in
   while not pctx.stop do
     strip_comments pctx;
-    try modd.items <- modd.items @ [parse_item pctx]
-    with ParseError err -> emit_err err
+    modd.items <- modd.items @ [parse_item pctx]
   done;
   modd
