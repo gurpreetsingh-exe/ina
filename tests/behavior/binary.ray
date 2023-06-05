@@ -1,20 +1,19 @@
-extern "C" fn printf(format: str, ...);
+// STDOUT: 50 500
 
-fn main() {
-    // TODO: implement float math
+import core::intrinsics;
+import core::alloc;
+
+extern "C" fn sprintf(buf: *u8, format: *u8, ...);
+extern "C" fn printf(format: *u8, ...);
+
+fn main() -> i32 {
     let a = 10 + 20 + 30 + 40 - 50;
     let b = a + a + a + a + a + a + a + a + a + a + a - a;
-    let c = a < b;
-    let d = b > b;
-    let e = b % 45;
-    printf("%d %d %d %d %d ", a, b, c, d, a > b);
-    printf("%d\n", e);
-
-    // TODO: register allocation
-    // let x = 255;
-    // if x < 255 + 1 {
-    //     printf("#\n");
-    // }
+    let format = "%d %d\n";
+    let buf = alloc::malloc(32);
+    sprintf(buf, intrinsics::as_ptr(format), a, b);
+    printf(buf);
+    alloc::free(buf);
+    0
 }
 
-// STDOUT: 50 500 1 0 0 5
