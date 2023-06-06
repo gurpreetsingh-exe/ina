@@ -281,7 +281,7 @@ and unify (infer_ctx : infer_ctx) (ty : infer_kind) (expected : ty) :
         unify infer_ctx binding expected
     | _ -> None
   in
-  let f (check_ty : ty -> bool) =
+  let f (check_ty : ty -> bool) (ty_kind : infer_kind) =
     if check_ty expected then (
       Hashtbl.iter
         (fun id t ->
@@ -304,14 +304,14 @@ and unify (infer_ctx : infer_ctx) (ty : infer_kind) (expected : ty) :
             with Not_found -> ()))
         infer_ctx.ty_env.unresolved;
       None)
-    else Some (MismatchTy (Normal expected, Int 0))
+    else Some (MismatchTy (Normal expected, ty_kind))
   in
   match ty with
   | Normal ty ->
       if ty <> expected then Some (MismatchTy (Normal expected, Normal ty))
       else None
-  | Int _ -> f ty_is_int
-  | Float _ -> f ty_is_float
+  | Int _ -> f ty_is_int ty
+  | Float _ -> f ty_is_float ty
 
 let infer_block (infer_ctx : infer_ctx) (block : block) : infer_kind =
   let f stmt : infer_kind =
