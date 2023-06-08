@@ -46,20 +46,34 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
     | Binding ({ binding_pat; binding_ty; binding_expr; _ } as binding) -> (
       match binding_pat with
       | PatIdent ident -> (
-          let ty =
-            match binding_expr.expr_ty with
-            | Some ty ->
-                Hashtbl.add ty_ctx.ty_env.bindings ident ty;
-                ty
-            | None -> assert false
+          (let ty =
+             match binding_expr.expr_ty with
+             | Some ty ->
+                 Hashtbl.add ty_ctx.ty_env.bindings ident ty;
+                 ty
+             | None -> assert false
+           in
+           match binding_ty with
+           | Some expected ->
+               if expected <> ty then
+                 ty_err_emit
+                   (MismatchTy (expected, ty))
+                   binding_expr.expr_span
+           | None -> binding.binding_ty <- Some ty);
+          let check_overflow _value ty =
+            match ty with
+            | Prim prim ->
+                let _ = integer_ranges prim in
+                ()
+            | _ -> ()
           in
-          match binding_ty with
-          | Some expected ->
-              if expected <> ty then
-                ty_err_emit
-                  (MismatchTy (expected, ty))
-                  binding_expr.expr_span
-          | None -> binding.binding_ty <- Some ty))
+          match binding_expr.expr_kind with
+          | Lit lit -> (
+            match lit with
+            | LitInt value ->
+                check_overflow value (Option.get binding_expr.expr_ty)
+            | _ -> ())
+          | _ -> ()))
   in
   let ret_ty = Option.value ret_ty ~default:Unit in
   match body with

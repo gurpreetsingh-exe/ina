@@ -107,7 +107,8 @@ def run_test(case: pathlib.Path):
             exe, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         output = TestResult()
         if proc.stdout:
-            output.stdout = proc.stdout.read().decode()
+            if stdout := proc.stdout.read().decode():
+                output.stdout = stdout
         if proc.stderr:
             if stderr := proc.stderr.read().decode():
                 output.stderr = stderr

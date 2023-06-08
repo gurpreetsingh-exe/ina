@@ -233,7 +233,7 @@ let parse_path pctx : path =
   in
   { segments }
 
-let rec parse_expr pctx : expr = strip_comments pctx; parse_addition pctx
+let rec parse_expr pctx : expr = strip_comments pctx; parse_comparison pctx
 
 and parse_call_args pctx : expr list =
   let args = ref [] in
@@ -284,6 +284,10 @@ and parse_multiply pctx : expr =
 and parse_addition pctx : expr =
   parse_binary pctx parse_multiply (fun pctx ->
       match pctx.curr_tok.kind with Plus | Minus -> true | _ -> false)
+
+and parse_comparison pctx : expr =
+  parse_binary pctx parse_addition (fun pctx ->
+      match pctx.curr_tok.kind with EqEq | BangEq -> true | _ -> false)
 
 and parse_primary pctx : expr =
   let s = pctx.curr_tok.span.start in

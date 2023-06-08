@@ -222,26 +222,29 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : infer_kind =
         else (
           infer_err_emit (FnNotFound ident) expr.expr_span;
           Normal Unit)
-    | Binary (_, left, right) -> (
+    | Binary (kind, left, right) -> (
         Hashtbl.add infer_ctx.ty_env.expr_paren left.expr_id expr.expr_id;
         Hashtbl.add infer_ctx.ty_env.expr_paren right.expr_id expr.expr_id;
         let left, right = (infer infer_ctx left, infer infer_ctx right) in
+        let cmp t1 =
+          match kind with Eq | NotEq -> Normal (Prim Bool) | _ -> t1
+        in
         match (left, right) with
         | Normal t0, Normal t1 ->
             if t0 <> t1 then
               infer_err_emit (MismatchTy (left, right)) expr.expr_span;
-            left
-        | Int _, Int _ -> Int expr.expr_id
-        | Float _, Float _ -> Float expr.expr_id
+            cmp left
+        | Int _, Int _ -> cmp (Int expr.expr_id)
+        | Float _, Float _ -> cmp (Float expr.expr_id)
         | Normal t0, (Int _ | Float _) ->
             ignore (unify infer_ctx right t0);
-            left
+            cmp left
         | (Int _ | Float _), Normal t0 ->
             ignore (unify infer_ctx left t0);
-            right
+            cmp right
         | a, b ->
             infer_err_emit (MismatchTy (a, b)) expr.expr_span;
-            left)
+            cmp left)
     | Deref expr -> (
       match infer infer_ctx expr with
       | Normal ty -> (

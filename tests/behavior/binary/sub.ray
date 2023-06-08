@@ -1,0 +1,7 @@
+// EXIT_CODE: 1
+
+fn main() -> bool {
+    let a = 256 - 1;
+    a == 255
+}
+

@@ -209,13 +209,28 @@ and gen_expr (builder : llbuilder) (expr : expr) : llvalue =
   | Binary (kind, left, right) ->
       let left = gen_expr builder left in
       let right = gen_expr builder right in
+      let pty = Option.get expr.expr_ty in
+      let is_float = is_float pty in
       let op =
         match kind with
         | Add -> build_add
         | Sub -> build_sub
         | Mul -> build_mul
-        | Div -> build_fdiv
-        | _ -> assert false
+        | Div -> (
+          match pty with
+          | Prim t ->
+              if is_unsigned t then build_udiv
+              else if is_signed t then build_sdiv
+              else assert false
+          | _ -> assert false)
+        | _ ->
+            if is_float then assert false
+            else
+              build_icmp
+                (match kind with
+                | Eq -> Icmp.Eq
+                | NotEq -> Icmp.Ne
+                | _ -> assert false)
       in
       op left right "" builder
   | Deref expr ->

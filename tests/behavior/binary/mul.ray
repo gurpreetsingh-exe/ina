@@ -1,0 +1,7 @@
+// EXIT_CODE: 1
+
+fn main() -> bool {
+    let a = 20;
+    let b = 50;
+    a * b == 1000
+}
