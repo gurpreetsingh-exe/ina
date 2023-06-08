@@ -26,6 +26,7 @@ class Tests:
     def __init__(self):
         self.passed = 0
         self.failed = 0
+        self.fmt = 0
         self.n = 0
 
     def print_results(self):
@@ -88,6 +89,15 @@ def parse_expected_result(lines: List[str]) -> TestResult:
     return TestResult(stdout, stderr, exit_code)
 
 
+def fmt_test(tests: Tests, case: pathlib.Path, src: str):
+    command = "./bin/ray fmt {}".format(case).split(" ")
+    proc = subprocess.Popen(command, stdout=subprocess.PIPE)
+    if proc.stdout:
+        if stdout := proc.stdout.read().decode():
+            if stdout != src:
+                tests.fmt += 1
+
+
 def run_test(case: pathlib.Path):
     if case.is_dir():
         test_dir(case)
@@ -95,7 +105,9 @@ def run_test(case: pathlib.Path):
 
     tests.n += 1
     with open(case, 'r') as f:
-        expected = parse_expected_result(f.readlines())
+        src = f.readlines()
+        fmt_test(tests, case, "".join(src))
+        expected = parse_expected_result(src)
         command = "./bin/ray build {}".format(case).split(" ")
         proc = subprocess.Popen(command)
         proc.communicate()

@@ -1,5 +1,6 @@
 type command =
   | Build
+  | Fmt
   | Test
   | Nan
 

@@ -62,6 +62,7 @@ let parse_args () =
       command :=
         match arg with
         | "build" -> Build
+        | "fmt" -> Fmt
         | "test" -> Test
         | _ ->
             printf "unknown command `%s`\n" arg;

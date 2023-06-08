@@ -19,6 +19,20 @@ let rec render_expr (expr : expr) : string =
   | Call (path, exprs) ->
       sprintf "%s(%s)" (render_path path) (render exprs render_expr ", ")
   | Lit lit -> render_lit lit
+  | Binary (kind, left, right) ->
+      sprintf "%s %s %s" (render_expr left)
+        (match kind with
+        | Add -> "+"
+        | Sub -> "-"
+        | Mul -> "*"
+        | Div -> "/"
+        | Eq -> "=="
+        | NotEq -> "!="
+        | Gt -> ">"
+        | GtEq -> ">="
+        | Lt -> "<"
+        | LtEq -> "<=")
+        (render_expr right)
   | _ -> assert false
 
 let rec render_ty (ty : ty) : string =
@@ -60,8 +74,6 @@ let render_fn_sig (fn_sig : fn_sig) : string =
 let render_pat pat = match pat with PatIdent ident -> ident
 
 let render_stmt stmt =
-  "    "
-  ^
   match stmt with
   | Binding { binding_pat; binding_ty; binding_expr; _ } ->
       sprintf "let %s%s = %s;" (render_pat binding_pat)
@@ -74,17 +86,20 @@ let render_stmt stmt =
   | Stmt expr -> render_expr expr ^ ";"
   | Expr expr -> render_expr expr
 
-let render_block (block : block) : string =
+let render_block (block : block) indent : string =
+  let indent = String.make (indent * 4) ' ' in
   sprintf "{\n%s\n%s\n}\n"
-    (render block.block_stmts render_stmt "\n")
-    (match block.last_expr with Some expr -> render_expr expr | None -> "")
+    (render block.block_stmts (fun s -> indent ^ render_stmt s) "\n")
+    (match block.last_expr with
+    | Some expr -> indent ^ render_expr expr
+    | None -> "")
 
 let render_fn (func : func) : string =
   sprintf
     (if func.is_extern then "extern %s%s" else "%s%s")
     (render_fn_sig func.fn_sig)
     (match func.body with
-    | Some body -> " " ^ render_block body
+    | Some body -> " " ^ render_block body 1
     | None -> ";")
 
 let render_attr (attr : attr) : string =
