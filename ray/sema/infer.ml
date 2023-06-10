@@ -245,6 +245,12 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : infer_kind =
         | a, b ->
             infer_err_emit (MismatchTy (a, b)) expr.expr_span;
             cmp left)
+    | If { cond; then_block; _ } ->
+        let cond_ty = infer infer_ctx cond in
+        (match unify infer_ctx cond_ty (Prim Bool) with
+        | Some err -> infer_err_emit err cond.expr_span
+        | None -> ());
+        infer_block infer_ctx then_block
     | Deref expr -> (
       match infer infer_ctx expr with
       | Normal ty -> (
@@ -316,7 +322,7 @@ and unify (infer_ctx : infer_ctx) (ty : infer_kind) (expected : ty) :
   | Int _ -> f ty_is_int ty
   | Float _ -> f ty_is_float ty
 
-let infer_block (infer_ctx : infer_ctx) (block : block) : infer_kind =
+and infer_block (infer_ctx : infer_ctx) (block : block) : infer_kind =
   let f stmt : infer_kind =
     match stmt with
     | Stmt expr | Expr expr -> infer infer_ctx expr

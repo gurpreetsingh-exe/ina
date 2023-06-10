@@ -131,8 +131,15 @@ and expr_kind =
   | Path of path
   | Call of path * expr list
   | Binary of binary_kind * expr * expr
+  | If of iff
   | Deref of expr
   | Ref of expr
+
+and iff = {
+  cond : expr;
+  then_block : block;
+  else_block : block option;
+}
 
 and lit =
   | LitInt of int

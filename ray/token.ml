@@ -23,6 +23,7 @@ type token_kind =
   | Extern
   | Let
   | Import
+  | If
   | Ident
   | Lit of literal
   | Comment of comment_style option
@@ -59,6 +60,7 @@ let display_token_kind = function
   | Extern -> "extern"
   | Let -> "let"
   | Import -> "import"
+  | If -> "if"
   | Ident -> "identifier"
   | Lit lit -> display_literal lit
   | Comment (Some kind) -> "comment " ^ display_comment_style kind

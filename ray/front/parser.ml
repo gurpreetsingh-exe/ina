@@ -235,6 +235,46 @@ let parse_path pctx : path =
 
 let rec parse_expr pctx : expr = strip_comments pctx; parse_comparison pctx
 
+and parse_pat pctx : pat =
+  let kind = pctx.curr_tok.kind in
+  match kind with
+  | Ident -> PatIdent (get_token_str (eat pctx kind) pctx.src)
+  | _ -> assert false
+
+and parse_let pctx : binding =
+  ignore (eat pctx Let);
+  let binding_create pat ty =
+    ignore (eat pctx Eq);
+    let binding_expr = parse_expr pctx in
+    ignore (eat pctx Semi);
+    {
+      binding_pat = pat;
+      binding_ty = ty;
+      binding_expr;
+      binding_id = gen_id pctx;
+    }
+  in
+  let pat = parse_pat pctx in
+  match pctx.curr_tok.kind with
+  | Eq -> binding_create pat None
+  | Colon ->
+      advance pctx;
+      binding_create pat (Some (parse_ty pctx))
+  | _ -> assert false
+
+and parse_stmt pctx : stmt =
+  if pctx.curr_tok.kind = Let then Binding (parse_let pctx)
+  else (
+    let expr = parse_expr pctx in
+    match pctx.curr_tok.kind with
+    | Semi -> advance pctx; Stmt expr
+    | Eq ->
+        advance pctx;
+        let init = parse_expr pctx in
+        ignore (eat pctx Semi);
+        Assign (expr, init)
+    | _ -> Expr expr)
+
 and parse_call_args pctx : expr list =
   let args = ref [] in
   ignore (eat pctx LParen);
@@ -313,6 +353,7 @@ and parse_primary pctx : expr =
           | lit_kind ->
               ignore (Printf.printf "%s\n" (display_literal lit_kind));
               assert false)
+    | If -> If (parse_if pctx)
     | _ -> parse_path_or_call pctx
   in
   {
@@ -321,6 +362,12 @@ and parse_primary pctx : expr =
     expr_id = gen_id pctx;
     expr_span = span s pctx;
   }
+
+and parse_if pctx =
+  advance pctx;
+  let cond = parse_expr pctx in
+  let then_block = parse_block pctx in
+  { cond; then_block; else_block = None }
 
 and parse_path_or_call pctx =
   match pctx.curr_tok.kind with
@@ -333,47 +380,7 @@ and parse_path_or_call pctx =
       ignore (Printf.printf "%s\n" (display_token_kind kind));
       assert false
 
-let parse_pat pctx : pat =
-  let kind = pctx.curr_tok.kind in
-  match kind with
-  | Ident -> PatIdent (get_token_str (eat pctx kind) pctx.src)
-  | _ -> assert false
-
-let parse_let pctx : binding =
-  ignore (eat pctx Let);
-  let binding_create pat ty =
-    ignore (eat pctx Eq);
-    let binding_expr = parse_expr pctx in
-    ignore (eat pctx Semi);
-    {
-      binding_pat = pat;
-      binding_ty = ty;
-      binding_expr;
-      binding_id = gen_id pctx;
-    }
-  in
-  let pat = parse_pat pctx in
-  match pctx.curr_tok.kind with
-  | Eq -> binding_create pat None
-  | Colon ->
-      advance pctx;
-      binding_create pat (Some (parse_ty pctx))
-  | _ -> assert false
-
-let parse_stmt pctx : stmt =
-  if pctx.curr_tok.kind = Let then Binding (parse_let pctx)
-  else (
-    let expr = parse_expr pctx in
-    match pctx.curr_tok.kind with
-    | Semi -> advance pctx; Stmt expr
-    | Eq ->
-        advance pctx;
-        let init = parse_expr pctx in
-        ignore (eat pctx Semi);
-        Assign (expr, init)
-    | _ -> Expr expr)
-
-let parse_block pctx : block =
+and parse_block pctx : block =
   ignore (eat pctx LBrace);
   let stmt_list = ref [] in
   let last_expr = ref None in
@@ -385,7 +392,11 @@ let parse_block pctx : block =
          | _ -> parse_stmt pctx
        in
        match stmt with
-       | Expr expr -> last_expr := Some expr
+       | Expr expr ->
+           (match !last_expr with
+           | Some expr -> stmt_list := !stmt_list @ [Stmt expr]
+           | None -> ());
+           last_expr := Some expr
        | stmt -> stmt_list := !stmt_list @ [stmt]
      done
    with Exit -> ());
