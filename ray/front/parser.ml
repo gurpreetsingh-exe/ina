@@ -233,6 +233,12 @@ let parse_path pctx : path =
   in
   { segments }
 
+let parse_pat pctx : pat =
+  let kind = pctx.curr_tok.kind in
+  match kind with
+  | Ident -> PatIdent (get_token_str (eat pctx kind) pctx.src)
+  | _ -> assert false
+
 let rec parse_expr pctx : expr = strip_comments pctx; parse_comparison pctx
 
 and parse_call_args pctx : expr list =
@@ -313,6 +319,7 @@ and parse_primary pctx : expr =
           | lit_kind ->
               ignore (Printf.printf "%s\n" (display_literal lit_kind));
               assert false)
+    | LBrace -> Block (parse_block pctx)
     | _ -> parse_path_or_call pctx
   in
   {
@@ -333,13 +340,7 @@ and parse_path_or_call pctx =
       ignore (Printf.printf "%s\n" (display_token_kind kind));
       assert false
 
-let parse_pat pctx : pat =
-  let kind = pctx.curr_tok.kind in
-  match kind with
-  | Ident -> PatIdent (get_token_str (eat pctx kind) pctx.src)
-  | _ -> assert false
-
-let parse_let pctx : binding =
+and parse_let pctx : binding =
   ignore (eat pctx Let);
   let binding_create pat ty =
     ignore (eat pctx Eq);
@@ -360,7 +361,7 @@ let parse_let pctx : binding =
       binding_create pat (Some (parse_ty pctx))
   | _ -> assert false
 
-let parse_stmt pctx : stmt =
+and parse_stmt pctx : stmt =
   if pctx.curr_tok.kind = Let then Binding (parse_let pctx)
   else (
     let expr = parse_expr pctx in
@@ -373,7 +374,7 @@ let parse_stmt pctx : stmt =
         Assign (expr, init)
     | _ -> Expr expr)
 
-let parse_block pctx : block =
+and parse_block pctx : block =
   ignore (eat pctx LBrace);
   let stmt_list = ref [] in
   let last_expr = ref None in

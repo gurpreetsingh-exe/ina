@@ -4,37 +4,6 @@ open Printf
 let render (items : 'a list) (func : 'a -> string) (sep : string) : string =
   String.concat sep (List.map (fun item -> func item) items)
 
-let render_path (path : path) : string = String.concat "::" path.segments
-
-let render_lit (lit : lit) : string =
-  match lit with
-  | LitInt value -> sprintf "%d" value
-  | LitFloat value -> sprintf "%f" value
-  | LitBool value -> sprintf "%b" value
-  | LitStr value -> sprintf "\"%s\"" value
-
-let rec render_expr (expr : expr) : string =
-  match expr.expr_kind with
-  | Path path -> render_path path
-  | Call (path, exprs) ->
-      sprintf "%s(%s)" (render_path path) (render exprs render_expr ", ")
-  | Lit lit -> render_lit lit
-  | Binary (kind, left, right) ->
-      sprintf "%s %s %s" (render_expr left)
-        (match kind with
-        | Add -> "+"
-        | Sub -> "-"
-        | Mul -> "*"
-        | Div -> "/"
-        | Eq -> "=="
-        | NotEq -> "!="
-        | Gt -> ">"
-        | GtEq -> ">="
-        | Lt -> "<"
-        | LtEq -> "<=")
-        (render_expr right)
-  | _ -> assert false
-
 let rec render_ty (ty : ty) : string =
   match ty with
   | Ptr ty -> sprintf "*%s" (render_ty ty)
@@ -62,18 +31,41 @@ let rec render_ty (ty : ty) : string =
         (if is_variadic then ", ..." else "")
         (render_ty ret_ty)
 
-let render_fn_sig (fn_sig : fn_sig) : string =
-  sprintf "fn %s(%s)%s" fn_sig.name
-    (render fn_sig.args
-       (fun (ty, name) -> sprintf "%s%s" (name ^ ": ") (render_ty ty))
-       ", ")
-    (match fn_sig.ret_ty with
-    | Some ty -> " -> " ^ render_ty ty
-    | None -> "")
+let render_path (path : path) : string = String.concat "::" path.segments
+
+let render_lit (lit : lit) : string =
+  match lit with
+  | LitInt value -> sprintf "%d" value
+  | LitFloat value -> sprintf "%f" value
+  | LitBool value -> sprintf "%b" value
+  | LitStr value -> sprintf "\"%s\"" value
 
 let render_pat pat = match pat with PatIdent ident -> ident
 
-let render_stmt stmt =
+let rec render_expr (expr : expr) : string =
+  match expr.expr_kind with
+  | Path path -> render_path path
+  | Call (path, exprs) ->
+      sprintf "%s(%s)" (render_path path) (render exprs render_expr ", ")
+  | Lit lit -> render_lit lit
+  | Binary (kind, left, right) ->
+      sprintf "%s %s %s" (render_expr left)
+        (match kind with
+        | Add -> "+"
+        | Sub -> "-"
+        | Mul -> "*"
+        | Div -> "/"
+        | Eq -> "=="
+        | NotEq -> "!="
+        | Gt -> ">"
+        | GtEq -> ">="
+        | Lt -> "<"
+        | LtEq -> "<=")
+        (render_expr right)
+  | Block block -> render_block block 1
+  | _ -> assert false
+
+and render_stmt stmt =
   match stmt with
   | Binding { binding_pat; binding_ty; binding_expr; _ } ->
       sprintf "let %s%s = %s;" (render_pat binding_pat)
@@ -86,12 +78,21 @@ let render_stmt stmt =
   | Stmt expr -> render_expr expr ^ ";"
   | Expr expr -> render_expr expr
 
-let render_block (block : block) indent : string =
+and render_block (block : block) indent : string =
   let indent = String.make (indent * 4) ' ' in
   sprintf "{\n%s\n%s\n}\n"
     (render block.block_stmts (fun s -> indent ^ render_stmt s) "\n")
     (match block.last_expr with
     | Some expr -> indent ^ render_expr expr
+    | None -> "")
+
+let render_fn_sig (fn_sig : fn_sig) : string =
+  sprintf "fn %s(%s)%s" fn_sig.name
+    (render fn_sig.args
+       (fun (ty, name) -> sprintf "%s%s" (name ^ ": ") (render_ty ty))
+       ", ")
+    (match fn_sig.ret_ty with
+    | Some ty -> " -> " ^ render_ty ty
     | None -> "")
 
 let render_fn (func : func) : string =
@@ -149,6 +150,7 @@ let rec display_expr_kind (expr_kind : expr_kind) =
       ^ display_expr right
   | Deref expr -> "Deref expr = " ^ display_expr expr
   | Ref expr -> "Ref expr = " ^ display_expr expr
+  | _ -> assert false
 
 and display_expr (expr : expr) =
   sprintf "{ id: %d, ty: %s, kind: %s }" expr.expr_id

@@ -142,13 +142,13 @@ let rec gen_block (builder : llbuilder) (block : block) =
   let tmp_scope = codegen_ctx.env in
   codegen_ctx.env <- { bindings = Hashtbl.create 0; parent = Some tmp_scope };
   List.iter f block.block_stmts;
-  ignore
-    (match block.last_expr with
-    | Some expr ->
-        let ret_expr = gen_expr builder expr in
-        build_ret ret_expr builder
-    | None -> build_ret_void builder);
-  codegen_ctx.env <- tmp_scope
+  let ret =
+    match block.last_expr with
+    | Some expr -> gen_expr builder expr
+    | None -> build_ret_void builder
+  in
+  codegen_ctx.env <- tmp_scope;
+  ret
 
 and gen_expr (builder : llbuilder) (expr : expr) : llvalue =
   let ty = get_llvm_ty (Option.get expr.expr_ty) in
@@ -233,6 +233,7 @@ and gen_expr (builder : llbuilder) (expr : expr) : llvalue =
                 | _ -> assert false)
       in
       op left right "" builder
+  | Block block -> gen_block builder block
   | Deref expr ->
       let ptr = gen_expr builder expr in
       build_load ty ptr "" builder
@@ -266,7 +267,13 @@ and gen_func (func : func) (ll_mod : llmodule) =
       ignore (build_store arg ptr builder);
       Hashtbl.add codegen_ctx.env.bindings name ptr
     done;
-    (match func.body with Some body -> gen_block builder body | None -> ());
+    (match func.body with
+    | Some body -> (
+        let ret = gen_block builder body in
+        match body.last_expr with
+        | Some _ -> ignore (build_ret ret builder)
+        | None -> ())
+    | None -> ());
     if not (verify_function fn) then
       Printf.fprintf stderr "llvm error: function `%s` is not valid\n"
         func.fn_sig.name;

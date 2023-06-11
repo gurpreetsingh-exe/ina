@@ -26,22 +26,24 @@ class Tests:
     def __init__(self):
         self.passed = 0
         self.failed = 0
+        self.skipped = 0
         self.fmt = 0
         self.n = 0
 
     def print_results(self):
-        if self.passed + self.failed != self.n:
+        if self.passed + self.failed + self.skipped != self.n:
             print("BUG: this is a bug in the test runner")
 
         if self.passed == self.n:
             print("  {}{}[OK]{} All {} test{} passed".format(
                 Color.OKGREEN, Color.BOLD, Color.ENDC, self.n, plural(self.n)))
         else:
-            print("  {} test{} passed out of {}, {} failed".format(
+            print("  {} test{} passed out of {}{}{}".format(
                   self.passed,
                   plural(self.passed),
                   self.n,
-                  self.failed))
+                  ", {} failed".format(self.failed) if self.failed else "",
+                  ", {} skipped".format(self.skipped) if self.skipped else ""))
 
 
 tests = Tests()
@@ -71,6 +73,10 @@ class TestResult:
 def extract_value(lines: List[str], value: str):
     value = "// {}: ".format(value)
     return [l.strip(value) for l in lines if l.startswith(value)]
+
+
+def skip(lines: List[str]):
+    return any([True for l in lines if l.startswith("// SKIP")])
 
 
 def parse_expected_result(lines: List[str]) -> TestResult:
@@ -106,12 +112,16 @@ def run_test(case: pathlib.Path):
     tests.n += 1
     with open(case, 'r') as f:
         src = f.readlines()
+        if skip(src):
+            tests.skipped += 1
+            return
         fmt_test(tests, case, "".join(src))
         expected = parse_expected_result(src)
         command = "./bin/ray build {}".format(case).split(" ")
         proc = subprocess.Popen(command)
         proc.communicate()
         if proc.returncode != 0:
+            print("compile fail: {}".format(case))
             tests.failed += 1
             return
         exe = case.with_suffix("")

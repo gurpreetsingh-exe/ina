@@ -1,0 +1,14 @@
+// EXIT_CODE: 54
+
+fn test(a: i32, b: i32) -> i32 {
+    let c = {
+        let a = 50;
+        a + b
+    };
+    c
+}
+
+fn main() -> i32 {
+    test(2, 4)
+}
+
