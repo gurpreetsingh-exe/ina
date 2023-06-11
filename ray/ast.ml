@@ -132,6 +132,7 @@ and expr_kind =
   | Call of path * expr list
   | Binary of binary_kind * expr * expr
   | If of iff
+  | Block of block
   | Deref of expr
   | Ref of expr
 

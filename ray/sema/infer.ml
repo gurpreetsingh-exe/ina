@@ -251,6 +251,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : infer_kind =
         | Some err -> infer_err_emit err cond.expr_span
         | None -> ());
         infer_block infer_ctx then_block
+    | Block block -> infer_block infer_ctx block
     | Deref expr -> (
       match infer infer_ctx expr with
       | Normal ty -> (
@@ -288,7 +289,11 @@ and unify (infer_ctx : infer_ctx) (ty : infer_kind) (expected : ty) :
         let binding = Hashtbl.find infer_ctx.ty_env.bindings name in
         Hashtbl.replace infer_ctx.ty_env.bindings name (Normal expected);
         unify infer_ctx binding expected
+    | Block block -> fblock block
+    | If { then_block; _ } -> fblock then_block
     | _ -> None
+  and fblock block =
+    match block.last_expr with Some expr -> set_type expr | None -> None
   in
   let f (check_ty : ty -> bool) (ty_kind : infer_kind) =
     if check_ty expected then (

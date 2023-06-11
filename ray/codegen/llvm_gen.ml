@@ -16,6 +16,10 @@ let mangle path =
          (fun seg -> sprintf "%d%s" (String.length seg) seg)
          path.segments)
 
+let _bb_id = ref 0
+
+let bb_id () = incr _bb_id; sprintf "bb%d" !_bb_id
+
 type env = {
   bindings : (string, llvalue) Hashtbl.t;
   parent : env option;
@@ -119,12 +123,15 @@ let rec lvalue expr builder =
         (lvalue expr builder) "" builder
   | _ -> assert false
 
-let rec gen_block (builder : llbuilder) (block : block) name =
+let rec gen_block (builder : llbuilder) (block : block) name newbb =
   let bb =
-    match name with
-    | "entry" -> entry_block (Option.get codegen_ctx.curr_fn)
-    | _ ->
-        append_block codegen_ctx.llctx name (Option.get codegen_ctx.curr_fn)
+    if newbb then (
+      match name with
+      | "entry" -> entry_block (Option.get codegen_ctx.curr_fn)
+      | _ ->
+          append_block codegen_ctx.llctx name
+            (Option.get codegen_ctx.curr_fn))
+    else insertion_block builder
   in
   let builder = builder_at_end codegen_ctx.llctx bb in
   let f stmt : llbuilder =
@@ -159,14 +166,16 @@ let rec gen_block (builder : llbuilder) (block : block) name =
   let builder =
     if List.length builders <> 0 then List.hd builders else builder
   in
-  ignore
-    (match block.last_expr with
+  (* ignore (List.map f block.block_stmts); *)
+  let ret =
+    match block.last_expr with
     | Some expr ->
-        let ret_expr, builder = gen_expr builder expr in
-        build_ret ret_expr builder
-    | None -> build_ret_void builder);
+        let expr, builder = gen_expr builder expr in
+        (Some expr, builder)
+    | None -> (None, builder)
+  in
   codegen_ctx.env <- tmp_scope;
-  bb
+  ret
 
 and gen_expr (builder : llbuilder) (expr : expr) : llvalue * llbuilder =
   let ty = get_llvm_ty (Option.get expr.expr_ty) in
@@ -261,12 +270,18 @@ and gen_expr (builder : llbuilder) (expr : expr) : llvalue * llbuilder =
       (op left right "" builder, builder)
   | If { cond; then_block; _ } ->
       let cond, _ = gen_expr builder cond in
-      let then_block = gen_block builder then_block "bb1" in
+      let _, then_builder = gen_block builder then_block (bb_id ()) true in
+      let then_block = insertion_block then_builder in
       let end_block =
-        append_block codegen_ctx.llctx "bb2" (Option.get codegen_ctx.curr_fn)
+        append_block codegen_ctx.llctx (bb_id ())
+          (Option.get codegen_ctx.curr_fn)
       in
+      ignore (build_br end_block then_builder);
       ( build_cond_br cond then_block end_block builder,
         builder_at_end codegen_ctx.llctx end_block )
+  | Block block ->
+      let expr, builder = gen_block builder block "" false in
+      (Option.get expr, builder)
   | Deref expr ->
       let ptr, _ = gen_expr builder expr in
       (build_load ty ptr "" builder, builder)
@@ -303,7 +318,11 @@ and gen_func (func : func) (ll_mod : llmodule) =
       Hashtbl.add codegen_ctx.env.bindings name ptr
     done;
     (match func.body with
-    | Some body -> ignore (gen_block builder body "entry")
+    | Some body -> (
+        let ret, builder = gen_block builder body "entry" true in
+        match ret with
+        | Some ret -> ignore (build_ret ret builder)
+        | None -> ())
     | None -> ());
     if not (verify_function fn) then
       Printf.fprintf stderr "llvm error: function `%s` is not valid\n"

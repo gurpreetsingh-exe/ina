@@ -73,6 +73,7 @@ let rec render_expr (expr : expr) : string =
         (render_expr right)
   | If { cond; then_block; _ } ->
       sprintf "if %s %s" (render_expr cond) (render_block then_block 1)
+  | Block block -> render_block block 1
   | _ -> assert false
 
 and render_stmt stmt =
@@ -152,6 +153,7 @@ let rec display_expr_kind (expr_kind : expr_kind) =
   | If { cond; _ } -> "If cond = " ^ display_expr cond
   | Deref expr -> "Deref expr = " ^ display_expr expr
   | Ref expr -> "Ref expr = " ^ display_expr expr
+  | _ -> assert false
 
 and display_expr (expr : expr) =
   sprintf "{ id: %d, ty: %s, kind: %s }" expr.expr_id

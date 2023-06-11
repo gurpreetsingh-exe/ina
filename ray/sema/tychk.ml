@@ -40,47 +40,60 @@ let ty_ctx_create (infer_ctx : infer_ctx) =
 
 let tychk_func (ty_ctx : ty_ctx) (func : func) =
   let { fn_sig = { ret_ty; fn_span; _ }; body; _ } = func in
-  let f stmt =
+  let rec fexpr expr =
+    match expr.expr_kind with
+    | If { cond; then_block; _ } -> fexpr cond; fblock then_block
+    | Block body -> fblock body
+    | _ -> ()
+  and fblock body =
+    List.iter f body.block_stmts;
+    match body.last_expr with Some expr -> fexpr expr | None -> ()
+  and f stmt =
     match stmt with
-    | Assign _ | Stmt _ | Expr _ -> ()
+    | Assign (expr1, expr2) ->
+        expr2.expr_ty <- expr1.expr_ty;
+        fexpr expr1;
+        fexpr expr2
+    | Stmt expr | Expr expr -> fexpr expr
     | Binding ({ binding_pat; binding_ty; binding_expr; _ } as binding) -> (
-      match binding_pat with
-      | PatIdent ident -> (
-          (let ty =
-             match binding_expr.expr_ty with
-             | Some ty ->
-                 Hashtbl.add ty_ctx.ty_env.bindings ident ty;
-                 ty
-             | None -> assert false
-           in
-           match binding_ty with
-           | Some expected ->
-               if expected <> ty then
-                 ty_err_emit
-                   (MismatchTy (expected, ty))
-                   binding_expr.expr_span
-           | None -> binding.binding_ty <- Some ty);
-          let check_overflow _value ty =
-            match ty with
-            | Prim prim ->
-                let _ = integer_ranges prim in
-                ()
-            | _ -> ()
-          in
-          match binding_expr.expr_kind with
-          | Lit lit -> (
-            match lit with
-            | LitInt value ->
-                check_overflow value (Option.get binding_expr.expr_ty)
-            | _ -> ())
-          | _ -> ()))
+        fexpr binding_expr;
+        match binding_pat with
+        | PatIdent ident -> (
+            (let ty =
+               match binding_expr.expr_ty with
+               | Some ty ->
+                   Hashtbl.add ty_ctx.ty_env.bindings ident ty;
+                   ty
+               | None -> assert false
+             in
+             match binding_ty with
+             | Some expected ->
+                 if expected <> ty then
+                   ty_err_emit
+                     (MismatchTy (expected, ty))
+                     binding_expr.expr_span
+             | None -> binding.binding_ty <- Some ty);
+            let check_overflow _value ty =
+              match ty with
+              | Prim prim ->
+                  let _ = integer_ranges prim in
+                  ()
+              | _ -> ()
+            in
+            match binding_expr.expr_kind with
+            | Lit lit -> (
+              match lit with
+              | LitInt value ->
+                  check_overflow value (Option.get binding_expr.expr_ty)
+              | _ -> ())
+            | _ -> ()))
   in
   let ret_ty = Option.value ret_ty ~default:Unit in
   match body with
   | Some body -> (
-      ignore (List.map f body.block_stmts);
+      List.iter f body.block_stmts;
       match body.last_expr with
-      | Some _ -> ()
+      | Some expr -> fexpr expr
       | None -> (
         match ret_ty with
         | Unit -> ()

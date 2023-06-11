@@ -1,0 +1,9 @@
+// EXIT_CODE: 1
+
+fn main() -> i32 {
+    let a = 2;
+    if 20 != 50 {
+        a = 1;
+    }
+    a
+}
