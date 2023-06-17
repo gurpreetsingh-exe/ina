@@ -9,6 +9,6 @@ fn test(a: i32, b: i32) -> i32 {
 }
 
 fn main() -> i32 {
-    test(2, 4)
+    { test(2, 4) }
 }
 

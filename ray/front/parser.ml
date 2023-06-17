@@ -334,7 +334,13 @@ and parse_if pctx =
   advance pctx;
   let cond = parse_expr pctx in
   let then_block = parse_block pctx in
-  { cond; then_block; else_block = None }
+  let else_block =
+    if pctx.curr_tok.kind = Else then (
+      advance pctx;
+      Some (parse_block pctx))
+    else None
+  in
+  { cond; then_block; else_block }
 
 and parse_path_or_call pctx =
   match pctx.curr_tok.kind with

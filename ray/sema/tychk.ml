@@ -42,7 +42,12 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
   let { fn_sig = { ret_ty; fn_span; _ }; body; _ } = func in
   let rec fexpr expr =
     match expr.expr_kind with
-    | If { cond; then_block; _ } -> fexpr cond; fblock then_block
+    | If { cond; then_block; else_block } -> (
+        fexpr cond;
+        fblock then_block;
+        match else_block with
+        | Some else_block -> fblock else_block
+        | None -> ())
     | Block body -> fblock body
     | _ -> ()
   and fblock body =

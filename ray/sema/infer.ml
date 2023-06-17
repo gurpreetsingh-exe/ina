@@ -245,12 +245,34 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : infer_kind =
         | a, b ->
             infer_err_emit (MismatchTy (a, b)) expr.expr_span;
             cmp left)
-    | If { cond; then_block; _ } ->
+    | If { cond; then_block; else_block } -> (
         let cond_ty = infer infer_ctx cond in
         (match unify infer_ctx cond_ty (Prim Bool) with
         | Some err -> infer_err_emit err cond.expr_span
         | None -> ());
-        infer_block infer_ctx then_block
+        let then_ty = infer_block infer_ctx then_block in
+        match else_block with
+        | Some elze -> (
+            let else_ty = infer_block infer_ctx elze in
+            match (then_ty, else_ty) with
+            | Normal t0, Normal t1 ->
+                if t0 <> t1 then
+                  infer_err_emit
+                    (MismatchTy (then_ty, else_ty))
+                    expr.expr_span;
+                then_ty
+            | Int _, Int _ -> Int expr.expr_id
+            | Float _, Float _ -> Float expr.expr_id
+            | Normal t0, (Int _ | Float _) ->
+                ignore (unify infer_ctx else_ty t0);
+                then_ty
+            | (Int _ | Float _), Normal t0 ->
+                ignore (unify infer_ctx then_ty t0);
+                else_ty
+            | a, b ->
+                infer_err_emit (MismatchTy (a, b)) expr.expr_span;
+                then_ty)
+        | None -> Normal Unit)
     | Block block -> infer_block infer_ctx block
     | Deref expr -> (
       match infer infer_ctx expr with
@@ -290,7 +312,13 @@ and unify (infer_ctx : infer_ctx) (ty : infer_kind) (expected : ty) :
         Hashtbl.replace infer_ctx.ty_env.bindings name (Normal expected);
         unify infer_ctx binding expected
     | Block block -> fblock block
-    | If { then_block; _ } -> fblock then_block
+    | If { then_block; else_block; _ } -> (
+      match fblock then_block with
+      | None -> (
+        match else_block with
+        | Some else_block -> fblock else_block
+        | None -> None)
+      | err -> err)
     | _ -> None
   and fblock block =
     match block.last_expr with Some expr -> set_type expr | None -> None

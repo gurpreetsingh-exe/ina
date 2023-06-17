@@ -154,6 +154,7 @@ and resolve_body body resolver =
         List.iter handle_expr exprs
     | Binary (_, left, right) -> handle_expr left; handle_expr right
     | Deref expr | Ref expr -> handle_expr expr
+    | Block body -> resolve_body (Some body) resolver
     | Path _ -> ()
     | _ -> ()
   in
