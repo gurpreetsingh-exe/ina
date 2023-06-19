@@ -1,4 +1,4 @@
 (library
  (name lowering)
  (libraries ast ir)
- (modules context item builder))
+ (modules context item expr builder))

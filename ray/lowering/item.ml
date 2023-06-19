@@ -1,5 +1,4 @@
 open Ast
-open Front
 open Ir
 
 let rec lower_fn (fn : func) (ctx : Context.t) : Func.t =
@@ -11,20 +10,6 @@ let rec lower_fn (fn : func) (ctx : Context.t) : Func.t =
       Def { def_ty = fn_ty; basic_blocks = lower_fn_body body ctx }
   | None -> Decl fn_ty
 
-and lower_expr (expr : expr) (builder : Builder.t) (ctx : Context.t) :
-    Inst.value =
-  let ty = Option.get expr.expr_ty in
-  match expr.expr_kind with
-  | Lit lit -> (
-    match lit with
-    | LitInt value -> Builder.const_int ty value
-    | _ -> assert false)
-  | Path path ->
-      let ident = Fmt.render_path path in
-      let ptr = Context.find_local ctx.env ident in
-      Builder.load ptr builder
-  | _ -> assert false
-
 and lower_fn_body body ctx =
   let blocks = ref [] in
   let entry = Basicblock.create () in
@@ -32,10 +17,10 @@ and lower_fn_body body ctx =
   let builder = Builder.create entry in
   let f stmt =
     match stmt with
-    | Stmt expr | Expr expr -> ignore (lower_expr expr builder ctx)
+    | Stmt expr | Expr expr -> ignore (Expr.lower expr builder ctx)
     | Assign (expr1, expr2) ->
-        let left = lower_expr expr1 builder ctx in
-        let right = lower_expr expr2 builder ctx in
+        let left = Expr.lower expr1 builder ctx in
+        let right = Expr.lower expr2 builder ctx in
         Builder.store left right builder
     | Binding { binding_pat; binding_ty; binding_expr; _ } -> (
       match binding_pat with
@@ -43,13 +28,13 @@ and lower_fn_body body ctx =
           let ty = Option.get binding_ty in
           let dst = Builder.alloca ty builder in
           Context.add_local ctx ident dst;
-          let src = lower_expr binding_expr builder ctx in
+          let src = Expr.lower binding_expr builder ctx in
           Builder.store dst src builder)
   in
   List.iter f body.block_stmts;
   (match body.last_expr with
   | Some expr ->
-      let ret = lower_expr expr builder ctx in
+      let ret = Expr.lower expr builder ctx in
       Builder.ret ret builder
   | None -> Builder.ret_unit builder);
   !blocks
