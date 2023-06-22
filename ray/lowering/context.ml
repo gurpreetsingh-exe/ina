@@ -9,13 +9,15 @@ type env = {
 type t = {
   func_map : (path, func) Hashtbl.t;
   mutable env : env;
+  globl_env : (path, lang_item) Hashtbl.t;
   modd : modd;
 }
 
-let create modd =
+let create modd env =
   {
     func_map = Hashtbl.create 0;
     env = { parent = None; locals = Hashtbl.create 0 };
+    globl_env = env;
     modd;
   }
 

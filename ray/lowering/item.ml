@@ -1,10 +1,30 @@
 open Ast
 open Ir
+open Printf
+
+let mangle path =
+  "_Z"
+  ^ String.concat ""
+      (List.map
+         (fun seg -> sprintf "%d%s" (String.length seg) seg)
+         path.segments)
 
 let rec lower_fn (fn : func) (ctx : Context.t) : Func.t =
-  let { fn_sig = { name; args; ret_ty; is_variadic; _ }; body; _ } = fn in
+  let {
+    fn_sig = { name; args; ret_ty; is_variadic; _ };
+    body;
+    abi;
+    is_extern;
+    func_path;
+    _;
+  } =
+    fn
+  in
   let ret_ty = match ret_ty with Some ty -> ty | None -> Unit in
-  let fn_ty = Func.{ name; args; ret_ty; is_variadic } in
+  let linkage_name = mangle (Option.get func_path) in
+  let fn_ty =
+    Func.{ name; args; ret_ty; is_variadic; abi; is_extern; linkage_name }
+  in
   match body with
   | Some body ->
       Def { def_ty = fn_ty; basic_blocks = lower_fn_body body ctx }

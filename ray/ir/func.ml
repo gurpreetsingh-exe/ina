@@ -4,9 +4,12 @@ open Printf
 
 type fn_type = {
   name : string;
+  linkage_name : string;
   args : (ty * string) list;
   ret_ty : ty;
   is_variadic : bool;
+  is_extern : bool;
+  abi : string;
 }
 
 let render_fn_type fn_ty =
