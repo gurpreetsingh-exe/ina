@@ -31,7 +31,7 @@ type t =
     }
 
 let render = function
-  | Decl fn_ty -> render_fn_type fn_ty ^ ";"
+  | Decl fn_ty -> render_fn_type fn_ty ^ ";\n"
   | Def { def_ty; basic_blocks } ->
-      sprintf "%s {\n%s\n}" (render_fn_type def_ty)
-        (String.concat "" (List.map Basicblock.render basic_blocks.bbs))
+      sprintf "%s {\n%s\n}\n" (render_fn_type def_ty)
+        (String.concat "\n\n" (List.map Basicblock.render basic_blocks.bbs))

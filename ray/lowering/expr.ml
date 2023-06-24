@@ -22,14 +22,32 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
   | If { cond; then_block; else_block } -> (
       let cond = lower cond builder ctx in
       let then_bb = Basicblock.create () in
-      let _else_bb = Basicblock.create () in
+      let else_bb = Basicblock.create () in
       let join_bb = Basicblock.create () in
-      Builder.br cond (Label then_bb) (Label join_bb) builder;
+      Builder.br cond (Label then_bb) (Label else_bb) builder;
       Context.block_append ctx then_bb;
-      let _true_expr = block_lower then_block ctx in
-      match else_block with
-      | Some _else_block -> assert false
-      | None -> (); Builder.nop builder)
+      let true_expr = block_lower then_block ctx in
+      let false_expr = ref None in
+      Builder.with_ctx (Builder.jmp (Label join_bb)) ctx builder;
+      Context.block_append ctx else_bb;
+      (match else_block with
+      | Some else_block -> false_expr := Some (block_lower else_block ctx)
+      | None -> ());
+      Builder.with_ctx (Builder.jmp (Label join_bb)) ctx builder;
+      Context.block_append ctx join_bb;
+      builder.block <- Option.get ctx.block;
+      match ty with
+      | Unit -> Builder.nop builder
+      | _ ->
+          let phi =
+            Builder.phi ty
+              [
+                (Label then_bb, true_expr);
+                (Label else_bb, Option.get !false_expr);
+              ]
+              builder
+          in
+          phi)
   | _ -> assert false
 
 and block_lower (block : block) (ctx : Context.t) : Inst.value =

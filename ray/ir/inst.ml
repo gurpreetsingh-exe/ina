@@ -26,8 +26,9 @@ and binary_kind =
 and inst_kind =
   | Alloca of ty
   | Binary of binary_kind * value * value
-  (* TODO: add basic block type to value *)
   | Br of value * value * value
+  | Jmp of value
+  | Phi of ty * (value * value) list
   | Store of value * value
   | Load of value
   | Ret of value
@@ -64,7 +65,7 @@ let binary_kind_to_inst = function
   | LtEq -> LtEq
 
 let has_value = function
-  | Br _ | Store _ | Ret _ | RetUnit | Nop -> false
+  | Br _ | Jmp _ | Store _ | Ret _ | RetUnit | Nop -> false
   | _ -> true
 
 let render_const = function
@@ -75,7 +76,7 @@ let render_value = function
   | Const (const, ty) ->
       sprintf "%s %s" (Fmt.render_ty ty) (render_const const)
   | VReg (_, i, ty) -> sprintf "%s%%%i" (Fmt.render_ty ty ^ " ") i
-  | Label bb -> sprintf "label %%%d" bb.bid
+  | Label bb -> sprintf "label %%bb%d" bb.bid
 
 let get_ty = function
   | Const (_, ty) | VReg (_, _, ty) -> ty
@@ -91,6 +92,14 @@ let render_inst inst : string =
   | Br (cond, true_block, false_block) ->
       sprintf "br %s, %s, %s" (render_value cond) (render_value true_block)
         (render_value false_block)
+  | Phi (ty, args) ->
+      sprintf "phi %s, %s" (Fmt.render_ty ty)
+        (String.concat ", "
+           (List.map
+              (fun (bb, inst) ->
+                sprintf "[%s, %s]" (render_value bb) (render_value inst))
+              args))
+  | Jmp bb -> sprintf "jmp %s" (render_value bb)
   | Store (dst, src) ->
       sprintf "store %s, %s" (render_value dst) (render_value src)
   | Load ptr ->
