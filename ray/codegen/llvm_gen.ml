@@ -402,7 +402,8 @@ let gen_blocks (blocks : Func.blocks) =
       | Jmp bb -> Some (build_br (block_of_value (get_value bb)) builder)
       | Phi (ty, values) -> None
       | Ret value -> Some (build_ret (get_value value) builder)
-      | Store (dst, src) ->
+      | RetUnit -> Some (build_ret_void builder)
+      | Store (src, dst) ->
           Some (build_store (get_value src) (get_value dst) builder)
       | Load ptr ->
           Some
@@ -410,9 +411,9 @@ let gen_blocks (blocks : Func.blocks) =
                (get_llvm_ty (get_load_ty ptr))
                (get_value ptr) "" builder)
       | Nop -> None
-      | _ ->
-          print_endline (Inst.render_inst inst);
-          assert false
+      (* | _ -> *)
+      (*     print_endline (Inst.render_inst inst); *)
+      (*     assert false *)
     in
     match llinst with
     | Some instr -> Hashtbl.add insts inst.id instr

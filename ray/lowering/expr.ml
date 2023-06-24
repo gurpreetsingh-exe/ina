@@ -27,12 +27,12 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
       let join_bb = Basicblock.create () in
       Builder.br cond (Label then_bb) (Label else_bb) builder;
       Context.block_append ctx then_bb;
-      let true_expr = block_lower then_block ctx in
+      let true_expr = lower_block then_block ctx in
       let false_expr = ref None in
       Builder.with_ctx (Builder.jmp (Label join_bb)) ctx builder;
       Context.block_append ctx else_bb;
       (match else_block with
-      | Some else_block -> false_expr := Some (block_lower else_block ctx)
+      | Some else_block -> false_expr := Some (lower_block else_block ctx)
       | None -> ());
       Builder.with_ctx (Builder.jmp (Label join_bb)) ctx builder;
       Context.block_append ctx join_bb;
@@ -59,7 +59,7 @@ and lower_lvalue (expr : expr) (_builder : Builder.t) (ctx : Context.t) :
       Context.find_local ctx.env ident
   | _ -> assert false
 
-and block_lower (block : block) (ctx : Context.t) : Inst.value =
+and lower_block (block : block) (ctx : Context.t) : Inst.value =
   let bb = Option.get ctx.block in
   let builder = Builder.create bb in
   let f stmt =
@@ -68,7 +68,7 @@ and block_lower (block : block) (ctx : Context.t) : Inst.value =
     | Assign (expr1, expr2) ->
         let left = lower_lvalue expr1 builder ctx in
         let right = lower expr2 builder ctx in
-        Builder.store left right builder
+        Builder.store right left builder
     | Binding { binding_pat; binding_ty; binding_expr; _ } -> (
       match binding_pat with
       | PatIdent ident ->
@@ -76,7 +76,7 @@ and block_lower (block : block) (ctx : Context.t) : Inst.value =
           let dst = Builder.alloca ty builder in
           Context.add_local ctx ident dst;
           let src = lower binding_expr builder ctx in
-          Builder.store dst src builder)
+          Builder.store src dst builder)
   in
   List.iter f block.block_stmts;
   match block.last_expr with

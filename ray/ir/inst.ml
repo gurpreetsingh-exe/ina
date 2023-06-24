@@ -113,8 +113,8 @@ let render_inst inst : string =
                 sprintf "[%s, %s]" (render_value bb) (render_value inst))
               args))
   | Jmp bb -> sprintf "jmp %s" (render_value bb)
-  | Store (dst, src) ->
-      sprintf "store %s, %s" (render_value dst) (render_value src)
+  | Store (src, dst) ->
+      sprintf "store %s, %s" (render_value src) (render_value dst)
   | Load ptr ->
       sprintf "load %s, %s"
         (match get_ty ptr with

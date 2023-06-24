@@ -36,30 +36,15 @@ let rec lower_fn (fn : func) (ctx : Context.t) : Func.t =
 and lower_fn_body body ctx =
   let entry = Basicblock.create () in
   Context.block_append ctx entry;
-  let builder = Builder.create entry in
-  let f stmt =
-    match stmt with
-    | Stmt expr | Expr expr -> ignore (Expr.lower expr builder ctx)
-    | Assign (expr1, expr2) ->
-        let left = Expr.lower expr1 builder ctx in
-        let right = Expr.lower expr2 builder ctx in
-        Builder.store left right builder
-    | Binding { binding_pat; binding_ty; binding_expr; _ } -> (
-      match binding_pat with
-      | PatIdent ident ->
-          let ty = Option.get binding_ty in
-          let dst = Builder.alloca ty builder in
-          Context.add_local ctx ident dst;
-          let src = Expr.lower binding_expr builder ctx in
-          Builder.store dst src builder)
-  in
-  List.iter f body.block_stmts;
-  builder.block <- Option.get ctx.block;
-  match body.last_expr with
-  | Some expr ->
-      let ret = Expr.lower expr builder ctx in
-      Builder.ret ret builder
-  | None -> Builder.ret_unit builder
+  let ret = Expr.lower_block body ctx in
+  let builder = Builder.create (Option.get ctx.block) in
+  match ret with
+  | VReg (inst, _, _) -> (
+    match inst.kind with
+    | Nop -> Builder.ret_unit builder
+    | _ -> Builder.ret ret builder)
+  | Const _ -> Builder.ret ret builder
+  | _ -> Builder.ret_unit builder
 
 let gen_id (items : Func.t list) =
   let f (item : Func.t) =

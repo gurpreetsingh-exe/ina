@@ -38,8 +38,8 @@ let jmp (bb : value) (builder : t) = add_inst (Jmp bb) builder
 let phi (ty : Ast.ty) (args : (value * value) list) (builder : t) : value =
   add_inst_with_ty ty (Phi (ty, args)) builder
 
-let store (dst : Inst.value) (src : Inst.value) (builder : t) : unit =
-  add_inst (Store (dst, src)) builder
+let store (src : Inst.value) (dst : Inst.value) (builder : t) : unit =
+  add_inst (Store (src, dst)) builder
 
 let load (ptr : Inst.value) (builder : t) : value =
   let ty = get_ty ptr in
