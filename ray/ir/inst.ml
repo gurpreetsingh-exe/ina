@@ -64,6 +64,18 @@ let binary_kind_to_inst = function
   | GtEq -> GtEq
   | LtEq -> LtEq
 
+let render_binary = function
+  | Add -> "add"
+  | Sub -> "sub"
+  | Mul -> "mul"
+  | Div -> "div"
+  | Gt -> "gt"
+  | Lt -> "lt"
+  | Eq -> "eq"
+  | NotEq -> "neq"
+  | GtEq -> "gte"
+  | LtEq -> "lte"
+
 let has_value = function
   | Br _ | Jmp _ | Store _ | Ret _ | RetUnit | Nop -> false
   | _ -> true
@@ -87,8 +99,9 @@ let render_inst inst : string =
   ^
   match inst.kind with
   | Alloca ty -> sprintf "alloca %s" (Fmt.render_ty ty)
-  | Binary (_, left, right) ->
-      sprintf "binary %s, %s" (render_value left) (render_value right)
+  | Binary (kind, left, right) ->
+      sprintf "%s %s, %s" (render_binary kind) (render_value left)
+        (render_value right)
   | Br (cond, true_block, false_block) ->
       sprintf "br %s, %s, %s" (render_value cond) (render_value true_block)
         (render_value false_block)

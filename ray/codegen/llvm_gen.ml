@@ -340,6 +340,13 @@ let gen_main ll_mod name =
 let gen_blocks (blocks : Func.blocks) =
   let fn = Option.get codegen_ctx.curr_fn in
   let insts = Hashtbl.create 0 in
+  let bbs = Hashtbl.create 0 in
+  List.iter
+    (fun (bb : Inst.basic_block) ->
+      Hashtbl.add bbs bb.bid
+        (if bb.bid = 0 then entry_block fn
+        else append_block codegen_ctx.llctx (sprintf "bb%d" bb.bid) fn))
+    blocks.bbs;
   let get_value (value : Inst.value) : llvalue =
     match value with
     | Const (const, ty) -> (
@@ -348,15 +355,52 @@ let gen_blocks (blocks : Func.blocks) =
         | Int value -> const_int ty value
         | Float value -> const_float ty value)
     | VReg (inst, id, _) -> Hashtbl.find insts id
-    | Label _ -> assert false
+    | Label bb -> value_of_block (Hashtbl.find bbs bb.bid)
   in
   let get_load_ty ptr =
     match Inst.get_ty ptr with Ptr ty -> ty | _ -> assert false
   in
-  let g (inst : Inst.t) builder =
+  let rec g (inst : Inst.t) builder =
     let llinst =
       match inst.kind with
       | Alloca ty -> Some (build_alloca (get_llvm_ty ty) "" builder)
+      | Binary (kind, left, right) ->
+          let pty = Inst.get_ty left in
+          let left = get_value left in
+          let right = get_value right in
+          let is_float = is_float pty in
+          let op =
+            match kind with
+            | Add -> build_add
+            | Sub -> build_sub
+            | Mul -> build_mul
+            | Div -> (
+              match pty with
+              | Prim t ->
+                  if is_unsigned t then build_udiv
+                  else if is_signed t then build_sdiv
+                  else assert false
+              | _ -> assert false)
+            | _ ->
+                if is_float then assert false
+                else
+                  build_icmp
+                    (match kind with
+                    | Eq -> Icmp.Eq
+                    | NotEq -> Icmp.Ne
+                    | _ -> assert false)
+          in
+          Some (op left right "" builder)
+      | Br (cond, true_bb, false_bb) ->
+          let cond = get_value cond in
+          ignore
+            (build_cond_br cond
+               (block_of_value (get_value true_bb))
+               (block_of_value (get_value false_bb))
+               builder);
+          None
+      | Jmp bb -> Some (build_br (block_of_value (get_value bb)) builder)
+      | Phi (ty, values) -> None
       | Ret value -> Some (build_ret (get_value value) builder)
       | Store (dst, src) ->
           Some (build_store (get_value src) (get_value dst) builder)
@@ -373,15 +417,16 @@ let gen_blocks (blocks : Func.blocks) =
     match llinst with
     | Some instr -> Hashtbl.add insts inst.id instr
     | None -> ()
-  in
-  let f i (bb : Inst.basic_block) =
-    let llbb =
-      if i = 0 then entry_block fn else append_block codegen_ctx.llctx "" fn
-    in
+  and f (bb : Inst.basic_block) =
+    (* let llbb = *)
+    (*   if bb.bid = 0 then entry_block fn *)
+    (*   else append_block codegen_ctx.llctx "" fn *)
+    (* in *)
+    let llbb = Hashtbl.find bbs bb.bid in
     let builder = builder_at_end codegen_ctx.llctx llbb in
     List.iter (fun inst -> g inst builder) bb.insts
   in
-  List.iteri f blocks.bbs
+  List.iter f blocks.bbs
 
 let gen_item (func : Func.t) (ll_mod : llmodule) =
   let intrinsic (fn : Func.fn_type) =

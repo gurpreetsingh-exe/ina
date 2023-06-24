@@ -14,6 +14,7 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
   | Lit lit -> (
     match lit with
     | LitInt value -> Builder.const_int ty value
+    (* | LitBool value -> Builder.const_bool ty value *)
     | _ -> assert false)
   | Path path ->
       let ident = Fmt.render_path path in
@@ -50,6 +51,14 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
           phi)
   | _ -> assert false
 
+and lower_lvalue (expr : expr) (_builder : Builder.t) (ctx : Context.t) :
+    Inst.value =
+  match expr.expr_kind with
+  | Path path ->
+      let ident = Fmt.render_path path in
+      Context.find_local ctx.env ident
+  | _ -> assert false
+
 and block_lower (block : block) (ctx : Context.t) : Inst.value =
   let bb = Option.get ctx.block in
   let builder = Builder.create bb in
@@ -57,7 +66,7 @@ and block_lower (block : block) (ctx : Context.t) : Inst.value =
     match stmt with
     | Stmt expr | Expr expr -> ignore (lower expr builder ctx)
     | Assign (expr1, expr2) ->
-        let left = lower expr1 builder ctx in
+        let left = lower_lvalue expr1 builder ctx in
         let right = lower expr2 builder ctx in
         Builder.store left right builder
     | Binding { binding_pat; binding_ty; binding_expr; _ } -> (
