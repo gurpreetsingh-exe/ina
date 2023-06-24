@@ -1,21 +1,8 @@
 open Printf
 
-type t = {
-  mutable pred : t list;
-  mutable succ : t list;
-  mutable insts : Inst.t list;
-  id : int;
-}
-[@@deriving show]
+let create () : Inst.basic_block =
+  Inst.{ pred = []; succ = []; insts = []; bid = -1 }
 
-let _bb_id = ref 0
-
-let bb_id () =
-  let b = !_bb_id in
-  incr _bb_id; b
-
-let create () = { pred = []; succ = []; insts = []; id = bb_id () }
-
-let render bb : string =
-  sprintf "\nbb%s:\n" (string_of_int bb.id)
+let render (bb : Inst.basic_block) : string =
+  sprintf "\nbb%s:\n" (string_of_int bb.bid)
   ^ String.concat "\n" (List.map Inst.render_inst bb.insts)

@@ -61,6 +61,20 @@ and lower_fn_body body ctx =
       Builder.ret ret builder
   | None -> Builder.ret_unit builder
 
+let gen_id (items : Func.t list) =
+  let f (item : Func.t) =
+    let bb_id = ref 0 in
+    match item with
+    | Def { basic_blocks; _ } ->
+        List.iter
+          (fun (bb : Inst.basic_block) ->
+            bb.bid <- !bb_id;
+            incr bb_id)
+          basic_blocks.bbs
+    | _ -> ()
+  in
+  List.iter f items
+
 let lower_ast (ctx : Context.t) : Module.t =
   let items = ref [] in
   let f (item : item) =
@@ -70,4 +84,5 @@ let lower_ast (ctx : Context.t) : Module.t =
     | _ -> assert false
   in
   List.iter f ctx.modd.items;
+  gen_id !items;
   { items = !items }

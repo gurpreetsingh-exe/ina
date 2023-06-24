@@ -1,7 +1,7 @@
 open Ir
 open Inst
 
-type t = { mutable block : Basicblock.t }
+type t = { mutable block : basic_block }
 
 let _vreg = ref 0
 
@@ -9,7 +9,7 @@ let vreg () =
   let v = !_vreg in
   incr _vreg; v
 
-let create (bb : Basicblock.t) : t = { block = bb }
+let create (bb : basic_block) : t = { block = bb }
 
 let add_inst_with_ty ty kind builder : value =
   let i = vreg () in

@@ -6,6 +6,11 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
     Inst.value =
   let ty = Option.get expr.expr_ty in
   match expr.expr_kind with
+  | Binary (kind, left, right) ->
+      let left = lower left builder ctx in
+      let right = lower right builder ctx in
+      let inst_kind = Inst.binary_kind_to_inst kind in
+      Builder.add_inst_with_ty ty (Binary (inst_kind, left, right)) builder
   | Lit lit -> (
     match lit with
     | LitInt value -> Builder.const_int ty value
@@ -19,7 +24,7 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
       let then_bb = Basicblock.create () in
       let _else_bb = Basicblock.create () in
       let join_bb = Basicblock.create () in
-      Builder.br cond (Label then_bb.id) (Label join_bb.id) builder;
+      Builder.br cond (Label then_bb) (Label join_bb) builder;
       Context.block_append ctx then_bb;
       let _true_expr = block_lower then_block ctx in
       match else_block with

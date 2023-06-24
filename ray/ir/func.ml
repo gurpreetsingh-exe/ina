@@ -21,7 +21,7 @@ let render_fn_type fn_ty =
     ^ if fn_ty.is_variadic then ", ..." else "")
     (Fmt.render_ty fn_ty.ret_ty)
 
-type blocks = { mutable bbs : Basicblock.t list }
+type blocks = { mutable bbs : Inst.basic_block list }
 
 type t =
   | Decl of fn_type

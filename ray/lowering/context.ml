@@ -12,7 +12,7 @@ type t = {
   globl_env : (path, lang_item) Hashtbl.t;
   modd : modd;
   mutable fn : Func.t option;
-  mutable block : Basicblock.t option;
+  mutable block : Inst.basic_block option;
 }
 
 let create modd env =

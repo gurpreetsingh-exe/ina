@@ -348,6 +348,7 @@ let gen_blocks (blocks : Func.blocks) =
         | Int value -> const_int ty value
         | Float value -> const_float ty value)
     | VReg (inst, id, _) -> Hashtbl.find insts id
+    | Label _ -> assert false
   in
   let get_load_ty ptr =
     match Inst.get_ty ptr with Ptr ty -> ty | _ -> assert false
@@ -373,7 +374,7 @@ let gen_blocks (blocks : Func.blocks) =
     | Some instr -> Hashtbl.add insts inst.id instr
     | None -> ()
   in
-  let f i (bb : Basicblock.t) =
+  let f i (bb : Inst.basic_block) =
     let llbb =
       if i = 0 then entry_block fn else append_block codegen_ctx.llctx "" fn
     in
