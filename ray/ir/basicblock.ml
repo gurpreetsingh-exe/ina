@@ -17,5 +17,5 @@ let bb_id () =
 let create () = { pred = []; succ = []; insts = []; id = bb_id () }
 
 let render bb : string =
-  sprintf "bb%s:\n" (string_of_int bb.id)
+  sprintf "\nbb%s:\n" (string_of_int bb.id)
   ^ String.concat "\n" (List.map Inst.render_inst bb.insts)

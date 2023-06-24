@@ -27,13 +27,15 @@ let rec lower_fn (fn : func) (ctx : Context.t) : Func.t =
   in
   match body with
   | Some body ->
-      Def { def_ty = fn_ty; basic_blocks = lower_fn_body body ctx }
+      let fn = Func.Def { def_ty = fn_ty; basic_blocks = { bbs = [] } } in
+      ctx.fn <- Some fn;
+      lower_fn_body body ctx;
+      fn
   | None -> Decl fn_ty
 
 and lower_fn_body body ctx =
-  let blocks = ref [] in
   let entry = Basicblock.create () in
-  blocks := !blocks @ [entry];
+  Context.block_append ctx entry;
   let builder = Builder.create entry in
   let f stmt =
     match stmt with
@@ -52,12 +54,12 @@ and lower_fn_body body ctx =
           Builder.store dst src builder)
   in
   List.iter f body.block_stmts;
-  (match body.last_expr with
+  builder.block <- Option.get ctx.block;
+  match body.last_expr with
   | Some expr ->
       let ret = Expr.lower expr builder ctx in
       Builder.ret ret builder
-  | None -> Builder.ret_unit builder);
-  !blocks
+  | None -> Builder.ret_unit builder
 
 let lower_ast (ctx : Context.t) : Module.t =
   let items = ref [] in

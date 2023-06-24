@@ -21,15 +21,17 @@ let render_fn_type fn_ty =
     ^ if fn_ty.is_variadic then ", ..." else "")
     (Fmt.render_ty fn_ty.ret_ty)
 
+type blocks = { mutable bbs : Basicblock.t list }
+
 type t =
   | Decl of fn_type
   | Def of {
       def_ty : fn_type;
-      basic_blocks : Basicblock.t list;
+      basic_blocks : blocks;
     }
 
 let render = function
   | Decl fn_ty -> render_fn_type fn_ty ^ ";"
   | Def { def_ty; basic_blocks } ->
       sprintf "%s {\n%s\n}" (render_fn_type def_ty)
-        (String.concat "" (List.map Basicblock.render basic_blocks))
+        (String.concat "" (List.map Basicblock.render basic_blocks.bbs))

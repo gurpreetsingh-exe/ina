@@ -1,7 +1,7 @@
 open Ir
 open Inst
 
-type t = { block : Basicblock.t }
+type t = { mutable block : Basicblock.t }
 
 let _vreg = ref 0
 
@@ -24,16 +24,21 @@ let add_inst (kind : inst_kind) (builder : t) : unit =
 let alloca (ty : Ast.ty) (builder : t) : value =
   add_inst_with_ty (Ptr ty) (Alloca ty) builder
 
+let br (cond : value) (true_bb : value) (false_bb : value) (builder : t) =
+  add_inst (Br (cond, true_bb, false_bb)) builder
+
 let store (dst : Inst.value) (src : Inst.value) (builder : t) : unit =
   add_inst (Store (dst, src)) builder
 
 let load (ptr : Inst.value) (builder : t) : value =
-  let ty = match ptr with VReg (_, _, ty) | Const (_, ty) -> ty in
+  let ty = get_ty ptr in
   let ty = match ty with Ptr ty -> ty | _ -> assert false in
   add_inst_with_ty ty (Load ptr) builder
 
 let ret (ret : Inst.value) (builder : t) : unit = add_inst (Ret ret) builder
 
 let ret_unit (builder : t) : unit = add_inst RetUnit builder
+
+let nop builder = add_inst_with_ty Unit Nop builder
 
 let const_int (ty : Ast.ty) (value : int) : value = Const (Int value, ty)

@@ -337,7 +337,7 @@ let gen_main ll_mod name =
   let ret = build_call main_ty main [||] "" builder in
   ignore (build_ret ret builder)
 
-let gen_blocks (bbs : Basicblock.t list) =
+let gen_blocks (blocks : Func.blocks) =
   let fn = Option.get codegen_ctx.curr_fn in
   let insts = Hashtbl.create 0 in
   let get_value (value : Inst.value) : llvalue =
@@ -353,19 +353,25 @@ let gen_blocks (bbs : Basicblock.t list) =
     match Inst.get_ty ptr with Ptr ty -> ty | _ -> assert false
   in
   let g (inst : Inst.t) builder =
-    Hashtbl.add insts inst.id
-      (match inst.kind with
-      | Alloca ty -> build_alloca (get_llvm_ty ty) "" builder
-      | Ret value -> build_ret (get_value value) builder
+    let llinst =
+      match inst.kind with
+      | Alloca ty -> Some (build_alloca (get_llvm_ty ty) "" builder)
+      | Ret value -> Some (build_ret (get_value value) builder)
       | Store (dst, src) ->
-          build_store (get_value src) (get_value dst) builder
+          Some (build_store (get_value src) (get_value dst) builder)
       | Load ptr ->
-          build_load
-            (get_llvm_ty (get_load_ty ptr))
-            (get_value ptr) "" builder
+          Some
+            (build_load
+               (get_llvm_ty (get_load_ty ptr))
+               (get_value ptr) "" builder)
+      | Nop -> None
       | _ ->
           print_endline (Inst.render_inst inst);
-          assert false)
+          assert false
+    in
+    match llinst with
+    | Some instr -> Hashtbl.add insts inst.id instr
+    | None -> ()
   in
   let f i (bb : Basicblock.t) =
     let llbb =
@@ -374,7 +380,7 @@ let gen_blocks (bbs : Basicblock.t list) =
     let builder = builder_at_end codegen_ctx.llctx llbb in
     List.iter (fun inst -> g inst builder) bb.insts
   in
-  List.iteri f bbs
+  List.iteri f blocks.bbs
 
 let gen_item (func : Func.t) (ll_mod : llmodule) =
   let intrinsic (fn : Func.fn_type) =
