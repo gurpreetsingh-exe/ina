@@ -237,28 +237,42 @@ and parse_call_args pctx : expr list =
   ignore (eat pctx RParen);
   !args
 
+and should_continue_as_binary_expr pctx expr =
+  let is_block =
+    match expr.expr_kind with If _ | Block _ -> true | _ -> false
+  in
+  match (is_block, pctx.curr_tok.kind) with
+  | true, Star ->
+      Printf.printf "\x1b[31;1m%s\x1b[0m: expression is ambiguous\n"
+        (display_span expr.expr_span);
+      false
+  | false, _ -> true
+  | _, _ -> true
+
 and parse_binary pctx (rule : parse_ctx -> expr)
     (binary_op : parse_ctx -> bool) : expr =
   let s = pctx.curr_tok.span.start in
   let left = ref (rule pctx) in
-  while (not pctx.stop) && binary_op pctx do
-    let kind = binary_kind_from_token pctx.curr_tok.kind in
-    advance pctx;
-    let right = rule pctx in
-    left :=
-      {
-        expr_kind = Binary (kind, !left, right);
-        expr_ty = None;
-        expr_id = gen_id pctx;
-        expr_span = span s pctx;
-      }
-  done;
-  {
-    expr_kind = !left.expr_kind;
-    expr_ty = None;
-    expr_id = gen_id pctx;
-    expr_span = span s pctx;
-  }
+  if should_continue_as_binary_expr pctx !left then (
+    while (not pctx.stop) && binary_op pctx do
+      let kind = binary_kind_from_token pctx.curr_tok.kind in
+      advance pctx;
+      let right = rule pctx in
+      left :=
+        {
+          expr_kind = Binary (kind, !left, right);
+          expr_ty = None;
+          expr_id = gen_id pctx;
+          expr_span = span s pctx;
+        }
+    done;
+    {
+      expr_kind = !left.expr_kind;
+      expr_ty = None;
+      expr_id = gen_id pctx;
+      expr_span = span s pctx;
+    })
+  else !left
 
 and parse_multiply pctx : expr =
   parse_binary pctx parse_primary (fun pctx ->
