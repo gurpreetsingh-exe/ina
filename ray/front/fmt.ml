@@ -51,14 +51,15 @@ let render_fn_sig (fn_sig : fn_sig) : string =
 
 let render_pat pat = match pat with PatIdent ident -> ident
 
-let rec render_expr (expr : expr) : string =
+let rec render_expr (expr : expr) (indent : int) : string =
   match expr.expr_kind with
   | Path path -> render_path path
   | Call (path, exprs) ->
-      sprintf "%s(%s)" (render_path path) (render exprs render_expr ", ")
+      sprintf "%s(%s)" (render_path path)
+        (render exprs (fun e -> render_expr e indent) ", ")
   | Lit lit -> render_lit lit
   | Binary (kind, left, right) ->
-      sprintf "%s %s %s" (render_expr left)
+      sprintf "%s %s %s" (render_expr left indent)
         (match kind with
         | Add -> "+"
         | Sub -> "-"
@@ -70,32 +71,47 @@ let rec render_expr (expr : expr) : string =
         | GtEq -> ">="
         | Lt -> "<"
         | LtEq -> "<=")
-        (render_expr right)
-  | If { cond; then_block; _ } ->
-      sprintf "if %s %s" (render_expr cond) (render_block then_block 1)
-  | Block block -> render_block block 1
-  | _ -> assert false
+        (render_expr right indent)
+  | If { cond; then_block; else_block } ->
+      sprintf "if %s %s%s" (render_expr cond indent)
+        (render_block then_block (indent + 1))
+        (match else_block with
+        | Some expr -> " else " ^ render_block expr (indent + 1)
+        | None -> "")
+  | Block block -> render_block block (indent + 1)
+  | Deref expr -> sprintf "*%s" (render_expr expr indent)
+  | Ref expr -> sprintf "&%s" (render_expr expr indent)
 
-and render_stmt stmt =
+and render_stmt stmt indent =
+  String.make (indent * 4) ' '
+  ^
   match stmt with
   | Binding { binding_pat; binding_ty; binding_expr; _ } ->
       sprintf "let %s%s = %s;" (render_pat binding_pat)
         (match binding_ty with
         | Some ty -> sprintf ": %s " (render_ty ty)
         | None -> "")
-        (render_expr binding_expr)
+        (render_expr binding_expr indent)
   | Assign (left, right) ->
-      sprintf "%s = %s;" (render_expr left) (render_expr right)
-  | Stmt expr -> render_expr expr ^ ";"
-  | Expr expr -> render_expr expr
+      sprintf "%s = %s;" (render_expr left indent) (render_expr right indent)
+  | Stmt expr -> render_expr expr indent ^ ";"
+  | Expr expr -> render_expr expr indent
 
 and render_block (block : block) indent : string =
-  let indent = String.make (indent * 4) ' ' in
-  sprintf "{\n%s\n%s\n}"
-    (render block.block_stmts (fun s -> indent ^ render_stmt s) "\n")
-    (match block.last_expr with
-    | Some expr -> indent ^ render_expr expr
-    | None -> "")
+  let has_last_expr = Option.is_some block.last_expr in
+  let render_stmts () =
+    render block.block_stmts (fun s -> render_stmt s indent) "\n"
+  in
+  let last_expr () =
+    String.make (indent * 4) ' '
+    ^ render_expr (Option.get block.last_expr) indent
+  in
+  let indent = String.make ((indent - 1) * 4) ' ' in
+  match (List.length block.block_stmts, has_last_expr) with
+  | 0, false -> "{}"
+  | 0, true -> sprintf "{\n%s\n%s}" (last_expr ()) indent
+  | _, false -> sprintf "{\n%s\n%s}" (render_stmts ()) indent
+  | _, _ -> sprintf "{\n%s\n%s\n%s}" (render_stmts ()) (last_expr ()) indent
 
 let render_fn (func : func) : string =
   sprintf
@@ -117,7 +133,7 @@ let render_const (constant : constant) : string = constant.const_name
 let render_item (item : item) : string =
   match item with
   | Fn (func, attrs) ->
-      sprintf "%s%s\n"
+      sprintf "\n%s%s\n"
         (render attrs (fun attr -> render_attr attr) "")
         (render_fn func)
   | Const constant -> render_const constant
