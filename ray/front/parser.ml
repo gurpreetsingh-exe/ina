@@ -41,7 +41,9 @@ let eat pctx kind =
   if pctx.curr_tok.kind == kind then (
     let t = pctx.curr_tok in
     advance pctx; t)
-  else raise (unexpected_token pctx kind pctx.curr_tok)
+  else (
+    print_endline (display_span pctx.curr_tok.span);
+    raise (unexpected_token pctx kind pctx.curr_tok))
 
 let gen_id pctx : node_id =
   pctx.node_id <- pctx.node_id + 1;
@@ -222,7 +224,7 @@ let parse_pat pctx : pat =
   | Ident -> PatIdent (get_token_str (eat pctx kind) pctx.src)
   | _ -> assert false
 
-let rec parse_expr pctx : expr = strip_comments pctx; parse_comparison pctx
+let rec parse_expr pctx : expr = strip_comments pctx; parse_precedence pctx 0
 
 and parse_call_args pctx : expr list =
   let args = ref [] in
@@ -249,15 +251,25 @@ and should_continue_as_binary_expr pctx expr =
   | false, _ -> true
   | _, _ -> true
 
-and parse_binary pctx (rule : parse_ctx -> expr)
-    (binary_op : parse_ctx -> bool) : expr =
+and prec = function
+  | Star | Slash -> 70
+  | Plus | Minus -> 60
+  | EqEq | BangEq -> 30
+  | _ -> -1
+
+and parse_precedence pctx min_prec : expr =
   let s = pctx.curr_tok.span.start in
-  let left = ref (rule pctx) in
+  let left = ref (parse_primary pctx) in
+  let p = ref (prec pctx.curr_tok.kind) in
   if should_continue_as_binary_expr pctx !left then (
-    while (not pctx.stop) && binary_op pctx do
+    while
+      (p := prec pctx.curr_tok.kind;
+       !p)
+      > min_prec
+    do
       let kind = binary_kind_from_token pctx.curr_tok.kind in
       advance pctx;
-      let right = rule pctx in
+      let right = parse_precedence pctx (!p + 1) in
       left :=
         {
           expr_kind = Binary (kind, !left, right);
@@ -266,25 +278,8 @@ and parse_binary pctx (rule : parse_ctx -> expr)
           expr_span = span s pctx;
         }
     done;
-    {
-      expr_kind = !left.expr_kind;
-      expr_ty = None;
-      expr_id = gen_id pctx;
-      expr_span = span s pctx;
-    })
+    !left)
   else !left
-
-and parse_multiply pctx : expr =
-  parse_binary pctx parse_primary (fun pctx ->
-      match pctx.curr_tok.kind with Star | Slash -> true | _ -> false)
-
-and parse_addition pctx : expr =
-  parse_binary pctx parse_multiply (fun pctx ->
-      match pctx.curr_tok.kind with Plus | Minus -> true | _ -> false)
-
-and parse_comparison pctx : expr =
-  parse_binary pctx parse_addition (fun pctx ->
-      match pctx.curr_tok.kind with EqEq | BangEq -> true | _ -> false)
 
 and parse_primary pctx : expr =
   let s = pctx.curr_tok.span.start in
