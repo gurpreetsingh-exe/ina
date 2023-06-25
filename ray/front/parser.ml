@@ -69,13 +69,11 @@ let emit_err e =
       exit 1
 
 let strip_comments pctx =
-  try
-    while not pctx.stop do
-      match pctx.curr_tok.kind with
-      | Comment None -> advance pctx
-      | _ -> raise Exit
-    done
-  with Exit -> ()
+  let rec impl = function
+    | Comment None -> advance pctx; impl pctx.curr_tok.kind
+    | _ -> ()
+  in
+  impl pctx.curr_tok.kind
 
 let parse_ident pctx = get_token_str (eat pctx Ident) pctx.src
 
@@ -86,63 +84,53 @@ let parse_attr pctx : normal_attr =
   { name = ident }
 
 let parse_outer_attrs pctx : attr list =
-  let attrs = ref [] in
-  try
-    while not pctx.stop do
-      let attr_kind =
-        match pctx.curr_tok.kind with
-        | Bang ->
-            raise
-              (ParseError
-                 (UnexpectedToken
-                    ( "unexpected inner attribute after outer attribute",
-                      pctx.curr_tok.span )))
-        | LBracket -> Some (NormalAttr (parse_attr pctx))
-        | Comment style -> (
-          match style with
-          | Some Outer ->
-              let outer = get_token_str pctx.curr_tok pctx.src in
-              advance pctx; Some (Doc outer)
-          | Some Inner ->
-              raise
-                (ParseError
-                   (UnexpectedToken
-                      ( "unexpected inner attribute after outer attribute",
-                        pctx.curr_tok.span )))
-          | None -> advance pctx; None)
-        | _ -> None
-      in
-      match attr_kind with
-      | Some kind -> attrs := !attrs @ [{ kind; style = Outer }]
-      | None -> raise Exit
-    done;
-    !attrs
-  with Exit -> !attrs
+  let unexpected_inner_attr () =
+    ParseError
+      (UnexpectedToken
+         ( "unexpected inner attribute after outer attribute",
+           pctx.curr_tok.span ))
+  in
+  let rec parse_outer_attrs_impl () =
+    let attr_kind =
+      match pctx.curr_tok.kind with
+      | Bang -> raise (unexpected_inner_attr ())
+      | LBracket -> Some (NormalAttr (parse_attr pctx))
+      | Comment style -> (
+        match style with
+        | Some Outer ->
+            let outer = get_token_str pctx.curr_tok pctx.src in
+            advance pctx; Some (Doc outer)
+        | Some Inner -> raise (unexpected_inner_attr ())
+        | None -> advance pctx; None)
+      | _ -> None
+    in
+    match attr_kind with
+    | Some kind -> [{ kind; style = Outer }] @ parse_outer_attrs_impl ()
+    | None -> []
+  in
+  parse_outer_attrs_impl ()
 
 let parse_inner_attrs pctx : attr list =
-  let attrs = ref [] in
-  try
-    while not pctx.stop do
-      let attr_kind =
-        match pctx.curr_tok.kind with
-        | Bang ->
-            advance pctx;
-            Some (NormalAttr (parse_attr pctx))
-        | Comment style -> (
-          match style with
-          | Some Inner ->
-              let inner = get_token_str pctx.curr_tok pctx.src in
-              advance pctx; Some (Doc inner)
-          | Some Outer -> None
-          | None -> advance pctx; None)
-        | _ -> None
-      in
-      match attr_kind with
-      | Some kind -> attrs := !attrs @ [{ kind; style = Inner }]
-      | None -> raise Exit
-    done;
-    !attrs
-  with Exit -> !attrs
+  let rec parse_inner_attrs_impl () =
+    let attr_kind =
+      match pctx.curr_tok.kind with
+      | Bang ->
+          advance pctx;
+          Some (NormalAttr (parse_attr pctx))
+      | Comment style -> (
+        match style with
+        | Some Inner ->
+            let inner = get_token_str pctx.curr_tok pctx.src in
+            advance pctx; Some (Doc inner)
+        | Some Outer -> None
+        | None -> advance pctx; None)
+      | _ -> None
+    in
+    match attr_kind with
+    | Some kind -> [{ kind; style = Inner }] @ parse_inner_attrs_impl ()
+    | None -> []
+  in
+  parse_inner_attrs_impl ()
 
 let rec parse_ty pctx : ty =
   let t = pctx.curr_tok in
@@ -178,29 +166,25 @@ let parse_fn_args pctx : (ty * ident) list * bool =
   ignore (eat pctx LParen);
   let arg_list = ref [] in
   let is_variadic = ref false in
-  (try
-     while not pctx.stop do
-       if pctx.curr_tok.kind = RParen then raise Exit;
-       match pctx.curr_tok.kind with
-       | Ident -> (
-           let arg =
-             let ident = parse_ident pctx in
-             ignore (eat pctx Colon);
-             let ty = parse_ty pctx in
-             (ty, ident)
-           in
-           arg_list := !arg_list @ [arg];
-           match pctx.curr_tok.kind with
-           | Comma -> advance pctx
-           | RParen -> raise Exit
-           | _ -> assert false)
-       | Dot3 ->
-           advance pctx;
-           is_variadic := true;
-           raise Exit
-       | _ -> assert false
-     done
-   with Exit -> ());
+  while (not pctx.stop) && pctx.curr_tok.kind <> RParen do
+    match pctx.curr_tok.kind with
+    | Ident -> (
+        let arg =
+          let ident = parse_ident pctx in
+          ignore (eat pctx Colon);
+          let ty = parse_ty pctx in
+          (ty, ident)
+        in
+        arg_list := !arg_list @ [arg];
+        match pctx.curr_tok.kind with
+        | Comma -> advance pctx
+        | RParen -> ()
+        | _ -> assert false)
+    | Dot3 ->
+        advance pctx;
+        is_variadic := true
+    | _ -> assert false
+  done;
   ignore (eat pctx RParen);
   (!arg_list, !is_variadic)
 
@@ -219,19 +203,18 @@ let parse_fn_sig pctx : fn_sig =
   { name = ident; args; ret_ty; fn_span = span s pctx; is_variadic }
 
 let parse_path pctx : path =
-  let segments =
-    let s = ref [] in
-    try
-      while pctx.curr_tok.kind = Ident do
-        s := !s @ [parse_ident pctx];
+  let rec parse_path_impl () =
+    match pctx.curr_tok.kind with
+    | Ident -> (
+        let segment = [parse_ident pctx] in
         match pctx.curr_tok.kind with
-        | Colon2 -> advance pctx
-        | _ -> raise Exit
-      done;
-      !s
-    with Exit -> !s
+        | Colon2 ->
+            advance pctx;
+            segment @ parse_path_impl ()
+        | _ -> segment)
+    | _ -> raise (unexpected_token pctx Ident pctx.curr_tok)
   in
-  { segments }
+  { segments = parse_path_impl () }
 
 let parse_pat pctx : pat =
   let kind = pctx.curr_tok.kind in
@@ -244,15 +227,13 @@ let rec parse_expr pctx : expr = strip_comments pctx; parse_comparison pctx
 and parse_call_args pctx : expr list =
   let args = ref [] in
   ignore (eat pctx LParen);
-  (try
-     while pctx.curr_tok.kind <> RParen do
-       args := !args @ [parse_expr pctx];
-       match pctx.curr_tok.kind with
-       | RParen -> raise Exit
-       | Comma -> advance pctx
-       | kind -> ignore (eat pctx kind)
-     done
-   with Exit -> ());
+  while (not pctx.stop) && pctx.curr_tok.kind <> RParen do
+    args := !args @ [parse_expr pctx];
+    match pctx.curr_tok.kind with
+    | Comma -> advance pctx
+    | RParen -> ()
+    | _ -> raise (unexpected_token pctx RParen pctx.curr_tok)
+  done;
   ignore (eat pctx RParen);
   !args
 
@@ -260,22 +241,18 @@ and parse_binary pctx (rule : parse_ctx -> expr)
     (binary_op : parse_ctx -> bool) : expr =
   let s = pctx.curr_tok.span.start in
   let left = ref (rule pctx) in
-  (try
-     while true do
-       if binary_op pctx then (
-         let kind = binary_kind_from_token pctx.curr_tok.kind in
-         advance pctx;
-         let right = rule pctx in
-         left :=
-           {
-             expr_kind = Binary (kind, !left, right);
-             expr_ty = None;
-             expr_id = gen_id pctx;
-             expr_span = span s pctx;
-           })
-       else raise Exit
-     done
-   with Exit -> ());
+  while (not pctx.stop) && binary_op pctx do
+    let kind = binary_kind_from_token pctx.curr_tok.kind in
+    advance pctx;
+    let right = rule pctx in
+    left :=
+      {
+        expr_kind = Binary (kind, !left, right);
+        expr_ty = None;
+        expr_id = gen_id pctx;
+        expr_span = span s pctx;
+      }
+  done;
   {
     expr_kind = !left.expr_kind;
     expr_ty = None;
@@ -388,25 +365,22 @@ and parse_stmt pctx : stmt =
     | _ -> Expr expr)
 
 and parse_block pctx : block =
-  ignore (eat pctx LBrace);
   let stmt_list = ref [] in
   let last_expr = ref None in
-  (try
-     while not pctx.stop do
-       let stmt =
-         match pctx.curr_tok.kind with
-         | RBrace -> raise Exit
-         | _ -> parse_stmt pctx
-       in
-       match stmt with
-       | Expr expr ->
-           (match !last_expr with
-           | Some expr -> stmt_list := !stmt_list @ [Stmt expr]
-           | None -> ());
-           last_expr := Some expr
-       | stmt -> stmt_list := !stmt_list @ [stmt]
-     done
-   with Exit -> ());
+  ignore (eat pctx LBrace);
+  while (not pctx.stop) && pctx.curr_tok.kind <> RBrace do
+    match pctx.curr_tok.kind with
+    | RBrace -> ()
+    | _ -> (
+        let stmt = parse_stmt pctx in
+        match stmt with
+        | Expr expr ->
+            (match !last_expr with
+            | Some expr -> stmt_list := !stmt_list @ [Stmt expr]
+            | None -> ());
+            last_expr := Some expr
+        | stmt -> stmt_list := !stmt_list @ [stmt])
+  done;
   ignore (eat pctx RBrace);
   {
     block_stmts = !stmt_list;
