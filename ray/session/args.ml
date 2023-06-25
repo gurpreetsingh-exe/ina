@@ -4,9 +4,14 @@ open Config
 let usage arg0 =
   printf "Usage: %s [command] [options] input...\n" arg0;
   printf "\nCommands:\n";
-  printf "    build            compile the file\n";
+  printf "    build                compile the file\n";
+  printf "    fmt                  format the file\n";
   printf "\nOptions:\n";
-  printf "    -h, --help       print help information\n\n";
+  printf "        --emit=asm|llvm-ir|exe|obj\n";
+  printf "                         output type to emit\n";
+  printf "        --opt=0|3        optimization level\n";
+  printf "        --print-ir       print IR of the file\n";
+  printf "    -h, --help           print help information\n\n";
   exit 1
 
 let value_map =
