@@ -66,6 +66,7 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
           if fn_ty.is_extern then fn_ty.name else fn_ty.linkage_name
         in
         Builder.call ty name args builder)
+  | Block block -> lower_block block ctx
   | _ -> assert false
 
 and lower_lvalue (expr : expr) (_builder : Builder.t) (ctx : Context.t) :
