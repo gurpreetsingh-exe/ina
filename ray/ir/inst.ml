@@ -28,6 +28,7 @@ and inst_kind =
   | Binary of binary_kind * value * value
   | Br of value * value * value
   | Jmp of value
+  (* bb * inst *)
   | Phi of ty * (value * value) list
   | Store of value * value
   | Load of value

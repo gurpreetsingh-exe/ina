@@ -24,16 +24,21 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
   | If { cond; then_block; else_block } -> (
       let cond = lower cond builder ctx in
       let then_bb = Basicblock.create () in
+      let last_then_bb = ref then_bb in
       let else_bb = Basicblock.create () in
+      let last_else_bb = ref else_bb in
       let join_bb = Basicblock.create () in
       Builder.br cond (Label then_bb) (Label else_bb) builder;
       Context.block_append ctx then_bb;
       let true_expr = lower_block then_block ctx in
+      last_then_bb := Option.get ctx.block;
       let false_expr = ref None in
       Builder.with_ctx (Builder.jmp (Label join_bb)) ctx builder;
       Context.block_append ctx else_bb;
       (match else_block with
-      | Some else_block -> false_expr := Some (lower_block else_block ctx)
+      | Some else_block ->
+          false_expr := Some (lower_block else_block ctx);
+          last_else_bb := Option.get ctx.block
       | None -> ());
       Builder.with_ctx (Builder.jmp (Label join_bb)) ctx builder;
       Context.block_append ctx join_bb;
@@ -44,8 +49,8 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
           let phi =
             Builder.phi ty
               [
-                (Label then_bb, true_expr);
-                (Label else_bb, Option.get !false_expr);
+                (Label !last_then_bb, true_expr);
+                (Label !last_else_bb, Option.get !false_expr);
               ]
               builder
           in

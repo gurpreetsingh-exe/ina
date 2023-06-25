@@ -196,7 +196,14 @@ let gen_blocks (blocks : Func.blocks) =
                builder);
           None
       | Jmp bb -> Some (build_br (block_of_value (get_value bb)) builder)
-      | Phi (ty, values) -> None
+      | Phi (ty, values) ->
+          Some
+            (build_phi
+               (List.map
+                  (fun (bb, inst) ->
+                    (get_value inst, block_of_value (get_value bb)))
+                  values)
+               "" builder)
       | Ret value -> Some (build_ret (get_value value) builder)
       | RetUnit -> Some (build_ret_void builder)
       | Store (src, dst) ->
