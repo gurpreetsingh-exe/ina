@@ -128,6 +128,7 @@ let render_inst inst : string =
       sprintf "load %s, %s"
         (match get_ty ptr with
         | Ptr ty -> Fmt.render_ty ty
+        | RefTy ty -> Fmt.render_ty ty
         | _ -> assert false)
         (render_value ptr)
   | Call (ty, name, args) ->

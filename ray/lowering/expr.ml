@@ -67,7 +67,8 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
         in
         Builder.call ty name args builder)
   | Block block -> lower_block block ctx
-  | _ -> assert false
+  | Deref expr -> Builder.load (lower expr builder ctx) builder
+  | Ref expr -> lower_lvalue expr builder ctx
 
 and lower_lvalue (expr : expr) (_builder : Builder.t) (ctx : Context.t) :
     Inst.value =

@@ -1,0 +1,9 @@
+// EXIT_CODE: 97
+
+import core::intrinsics;
+
+fn main() -> u8 {
+    let str = "a";
+    *intrinsics::as_ptr(str)
+}
+

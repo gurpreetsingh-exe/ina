@@ -151,7 +151,10 @@ let gen_blocks (blocks : Func.blocks) =
     | Param (_, _, i) -> (params (Option.get codegen_ctx.curr_fn)).(i)
   in
   let get_load_ty ptr =
-    match Inst.get_ty ptr with Ptr ty -> ty | _ -> assert false
+    match Inst.get_ty ptr with
+    | Ptr ty -> ty
+    | RefTy ty -> ty
+    | _ -> assert false
   in
   let rec g (inst : Inst.t) builder =
     let llinst =
