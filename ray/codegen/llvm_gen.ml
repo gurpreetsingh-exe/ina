@@ -1,4 +1,5 @@
 open Ast
+open Ir
 open Llvm
 open Llvm_target
 open Llvm_X86
@@ -6,19 +7,6 @@ open Llvm_analysis
 open Resolve.Imports
 open Printf
 open Session
-
-let render_path path = String.concat "::" path.segments
-
-let mangle path =
-  "_Z"
-  ^ String.concat ""
-      (List.map
-         (fun seg -> sprintf "%d%s" (String.length seg) seg)
-         path.segments)
-
-let _bb_id = ref 0
-
-let bb_id () = incr _bb_id; sprintf "bb%d" !_bb_id
 
 type env = {
   bindings : (string, llvalue) Hashtbl.t;
@@ -36,9 +24,8 @@ type codegen_ctx = {
   mutable curr_mod : llmodule option;
   mutable curr_fn : llvalue option;
   func_map : (path, lltype) Hashtbl.t;
-  mutable globl_env : (path, lang_item) Hashtbl.t option;
   mutable main : llvalue option;
-  intrinsics : (path, func) Hashtbl.t;
+  intrinsics : (path, Func.fn_type) Hashtbl.t;
 }
 
 (* we define our own *)
@@ -76,7 +63,6 @@ let codegen_ctx =
     curr_mod = None;
     curr_fn = None;
     func_map = Hashtbl.create 0;
-    globl_env = None;
     main = None;
     intrinsics = Hashtbl.create 0;
   }
@@ -108,84 +94,38 @@ let get_llvm_ty (ty : ty) : lltype =
   | Unit -> void_type ctx
   | FnTy _ -> assert false
 
-let gen_function_type (fn_sig : fn_sig) : lltype =
-  let args = List.map (fun (ty, _) -> get_llvm_ty ty) fn_sig.args in
-  let ret_ty = get_llvm_ty (Option.value fn_sig.ret_ty ~default:Unit) in
-  (if fn_sig.is_variadic then var_arg_function_type else function_type)
+let gen_function_type (fn_ty : Func.fn_type) : lltype =
+  let args = List.map (fun (ty, _) -> get_llvm_ty ty) fn_ty.args in
+  let ret_ty = get_llvm_ty fn_ty.ret_ty in
+  (if fn_ty.is_variadic then var_arg_function_type else function_type)
     ret_ty (Array.of_list args)
 
-let rec lvalue expr builder =
-  match expr.expr_kind with
-  | Path path -> find_val codegen_ctx.env (render_path path)
-  | Deref expr ->
-      build_load
-        (pointer_type codegen_ctx.llctx)
-        (lvalue expr builder) "" builder
-  | _ -> assert false
+let gen_main ll_mod name =
+  let main = Option.get codegen_ctx.main in
+  let main_ty = function_type (get_llvm_ty (Prim I32)) [||] in
+  let fn = define_function "main" main_ty ll_mod in
+  let builder = builder_at_end codegen_ctx.llctx (entry_block fn) in
+  let ret = build_call main_ty main [||] "" builder in
+  ignore (build_ret ret builder)
 
-let rec gen_block (builder : llbuilder) (block : block) name newbb =
-  let bb =
-    if newbb then (
-      match name with
-      | "entry" -> entry_block (Option.get codegen_ctx.curr_fn)
-      | _ ->
-          append_block codegen_ctx.llctx name
-            (Option.get codegen_ctx.curr_fn))
-    else insertion_block builder
-  in
-  let builder = builder_at_end codegen_ctx.llctx bb in
-  let f stmt : llbuilder =
-    match stmt with
-    | Binding { binding_pat; binding_ty; binding_expr; _ } -> (
-        let ty = Option.get binding_ty in
-        let ll_ty = get_llvm_ty ty in
-        match ty with
-        | Unit ->
-            let _, b = gen_expr builder binding_expr in
-            b
-        | _ -> (
-          match binding_pat with
-          | PatIdent ident ->
-              let ptr = build_alloca ll_ty ident builder in
-              let expr, b = gen_expr builder binding_expr in
-              ignore (build_store expr ptr builder);
-              Hashtbl.add codegen_ctx.env.bindings ident ptr;
-              b))
-    | Assign (expr, init) ->
-        let ptr = lvalue expr builder in
-        let init, b = gen_expr builder init in
-        ignore (build_store init ptr builder);
-        b
-    | Stmt expr | Expr expr ->
-        let _, b = gen_expr builder expr in
-        b
-  in
-  let tmp_scope = codegen_ctx.env in
-  codegen_ctx.env <- { bindings = Hashtbl.create 0; parent = Some tmp_scope };
-  let builders = List.rev (List.map f block.block_stmts) in
-  let builder =
-    if List.length builders <> 0 then List.hd builders else builder
-  in
-  (* ignore (List.map f block.block_stmts); *)
-  let ret =
-    match block.last_expr with
-    | Some expr ->
-        let expr, builder = gen_expr builder expr in
-        (Some expr, builder)
-    | None -> (None, builder)
-  in
-  codegen_ctx.env <- tmp_scope;
-  ret
-
-and gen_expr (builder : llbuilder) (expr : expr) : llvalue * llbuilder =
-  let ty = get_llvm_ty (Option.get expr.expr_ty) in
-  match expr.expr_kind with
-  | Lit lit ->
-      ( (match lit with
-        | LitInt value -> const_int ty value
-        | LitFloat value -> const_float ty value
-        | LitBool value -> const_int ty (if value then 1 else 0)
-        | LitStr value ->
+let gen_blocks (blocks : Func.blocks) =
+  let fn = Option.get codegen_ctx.curr_fn in
+  let insts = Hashtbl.create 0 in
+  let bbs = Hashtbl.create 0 in
+  List.iter
+    (fun (bb : Inst.basic_block) ->
+      Hashtbl.add bbs bb.bid
+        (if bb.is_entry then entry_block fn
+        else append_block codegen_ctx.llctx (sprintf "bb%d" bb.bid) fn))
+    blocks.bbs;
+  let get_value (value : Inst.value) : llvalue =
+    match value with
+    | Const (const, ty) -> (
+        let ty = get_llvm_ty ty in
+        match const with
+        | Int value -> const_int ty value
+        | Float value -> const_float ty value
+        | Str value ->
             let id =
               Printf.sprintf "str%d"
                 (Hashtbl.length codegen_ctx.global_strings)
@@ -204,154 +144,133 @@ and gen_expr (builder : llbuilder) (expr : expr) : llvalue * llbuilder =
               [|
                 global_ptr;
                 const_int codegen_ctx.size_type (String.length value);
-              |]),
-        builder )
-  | Path path ->
-      let ptr = find_val codegen_ctx.env (render_path path) in
-      (build_load ty ptr "" builder, builder)
-  | Call (path, exprs) ->
-      let args =
-        Array.map
-          (fun expr ->
-            let e, _ = gen_expr builder expr in
-            e)
-          (Array.of_list exprs)
-      in
-      let f fn_ty fn args = (build_call fn_ty fn args "" builder, builder) in
-      if Hashtbl.mem codegen_ctx.func_map path then (
-        let fn_ty, fn =
-          ( Hashtbl.find codegen_ctx.func_map path,
+              |]
+        | Bool value -> const_int ty (if value then 1 else 0))
+    | VReg (inst, id, _) -> Hashtbl.find insts id
+    | Label bb -> value_of_block (Hashtbl.find bbs bb.bid)
+    | Param (_, _, i) -> (params (Option.get codegen_ctx.curr_fn)).(i)
+  in
+  let get_load_ty ptr =
+    match Inst.get_ty ptr with
+    | Ptr ty -> ty
+    | RefTy ty -> ty
+    | _ -> assert false
+  in
+  let rec g (inst : Inst.t) builder =
+    let llinst =
+      match inst.kind with
+      | Alloca ty -> Some (build_alloca (get_llvm_ty ty) "" builder)
+      | Binary (kind, left, right) ->
+          let pty = Inst.get_ty left in
+          let left = get_value left in
+          let right = get_value right in
+          let is_float = is_float pty in
+          let op =
+            match kind with
+            | Add -> build_add
+            | Sub -> build_sub
+            | Mul -> build_mul
+            | Div -> (
+              match pty with
+              | Prim t ->
+                  if is_unsigned t then build_udiv
+                  else if is_signed t then build_sdiv
+                  else assert false
+              | _ -> assert false)
+            | _ ->
+                if is_float then assert false
+                else
+                  build_icmp
+                    (match kind with
+                    | Eq -> Icmp.Eq
+                    | NotEq -> Icmp.Ne
+                    | _ -> assert false)
+          in
+          Some (op left right "" builder)
+      | Br (cond, true_bb, false_bb) ->
+          let cond = get_value cond in
+          ignore
+            (build_cond_br cond
+               (block_of_value (get_value true_bb))
+               (block_of_value (get_value false_bb))
+               builder);
+          None
+      | Jmp bb -> Some (build_br (block_of_value (get_value bb)) builder)
+      | Phi (ty, values) ->
+          Some
+            (build_phi
+               (List.map
+                  (fun (bb, inst) ->
+                    (get_value inst, block_of_value (get_value bb)))
+                  values)
+               "" builder)
+      | Ret value -> Some (build_ret (get_value value) builder)
+      | RetUnit -> Some (build_ret_void builder)
+      | Store (src, dst) ->
+          Some (build_store (get_value src) (get_value dst) builder)
+      | Load ptr ->
+          Some
+            (build_load
+               (get_llvm_ty (get_load_ty ptr))
+               (get_value ptr) "" builder)
+      | Call (ty, name, args) ->
+          let fn_ty =
+            match ty with
+            | FnTy (args, ret_ty, is_variadic) ->
+                let args = List.map (fun ty -> get_llvm_ty ty) args in
+                let ret_ty = get_llvm_ty ret_ty in
+                (if is_variadic then var_arg_function_type
+                else function_type)
+                  ret_ty (Array.of_list args)
+            | _ -> assert false
+          in
+          let args = Array.map get_value (Array.of_list args) in
+          let fn =
             Option.get
-              (lookup_function (mangle path)
-                 (Option.get codegen_ctx.curr_mod)) )
-        in
-        f fn_ty fn args)
-      else (
-        let env = Option.get codegen_ctx.globl_env in
-        let func = Hashtbl.find env path in
-        match func with
-        | Fn func ->
-            if func.is_extern && func.abi = "intrinsic" then
-              ( Intrinsics.gen_intrinsic func.fn_sig.name args builder
-                  codegen_ctx.llctx,
-                builder )
-            else (
-              let fn_ty, fn =
-                gen_func func (Option.get codegen_ctx.curr_mod)
-              in
-              f fn_ty fn args)
-        | _ -> assert false)
-  | Binary (kind, left, right) ->
-      let left, _ = gen_expr builder left in
-      let right, _ = gen_expr builder right in
-      let pty = Option.get expr.expr_ty in
-      let is_float = is_float pty in
-      let op =
-        match kind with
-        | Add -> build_add
-        | Sub -> build_sub
-        | Mul -> build_mul
-        | Div -> (
-          match pty with
-          | Prim t ->
-              if is_unsigned t then build_udiv
-              else if is_signed t then build_sdiv
-              else assert false
-          | _ -> assert false)
-        | _ ->
-            if is_float then assert false
-            else
-              build_icmp
-                (match kind with
-                | Eq -> Icmp.Eq
-                | NotEq -> Icmp.Ne
-                | _ -> assert false)
-      in
-      (op left right "" builder, builder)
-  | If { cond; then_block; _ } ->
-      let cond, _ = gen_expr builder cond in
-      let _, then_builder = gen_block builder then_block (bb_id ()) true in
-      let then_block = insertion_block then_builder in
-      let end_block =
-        append_block codegen_ctx.llctx (bb_id ())
-          (Option.get codegen_ctx.curr_fn)
-      in
-      ignore (build_br end_block then_builder);
-      ( build_cond_br cond then_block end_block builder,
-        builder_at_end codegen_ctx.llctx end_block )
-  | Block block ->
-      let expr, builder = gen_block builder block "" false in
-      (Option.get expr, builder)
-  | Deref expr ->
-      let ptr, _ = gen_expr builder expr in
-      (build_load ty ptr "" builder, builder)
-  | Ref expr -> (lvalue expr builder, builder)
+              (lookup_function name (Option.get codegen_ctx.curr_mod))
+          in
+          Some (build_call fn_ty fn args "" builder)
+      | Intrinsic (name, args) ->
+          let args = Array.map get_value (Array.of_list args) in
+          Some (Intrinsics.gen_intrinsic name args builder codegen_ctx.llctx)
+      | Nop -> None
+      (* | _ -> *)
+      (*     print_endline (Inst.render_inst inst); *)
+      (*     assert false *)
+    in
+    match llinst with
+    | Some instr -> Hashtbl.add insts inst.id instr
+    | None -> ()
+  and f (bb : Inst.basic_block) =
+    let llbb = Hashtbl.find bbs bb.bid in
+    let builder = builder_at_end codegen_ctx.llctx llbb in
+    List.iter (fun inst -> g inst builder) bb.insts
+  in
+  List.iter f blocks.bbs
 
-and gen_func (func : func) (ll_mod : llmodule) =
-  let function_type = gen_function_type func.fn_sig in
-  if func.is_extern then (
-    let fn = declare_function func.fn_sig.name function_type ll_mod in
-    codegen_ctx.curr_fn <- Some fn;
-    Hashtbl.add codegen_ctx.func_map
-      { segments = [func.fn_sig.name] }
-      function_type;
-    if func.fn_sig.name = "main" then codegen_ctx.main <- Some fn;
-    set_linkage Linkage.External fn;
-    (function_type, fn))
-  else (
-    Hashtbl.add codegen_ctx.func_map
-      (Option.get func.func_path)
-      function_type;
-    let path = Option.get func.func_path in
-    let mangled_name = mangle path in
-    let fn = define_function mangled_name function_type ll_mod in
-    codegen_ctx.curr_fn <- Some fn;
-    if func.fn_sig.name = "main" then codegen_ctx.main <- Some fn;
-    let builder = builder_at_end codegen_ctx.llctx (entry_block fn) in
-    for i = 0 to Array.length (params fn) - 1 do
-      let _, name = List.nth func.fn_sig.args i in
-      let arg = Array.get (params fn) i in
-      let ty = type_of arg in
-      set_value_name name arg;
-      let ptr = build_alloca ty "" builder in
-      ignore (build_store arg ptr builder);
-      Hashtbl.add codegen_ctx.env.bindings name ptr
-    done;
-    (match func.body with
-    | Some body -> (
-        let ret, builder = gen_block builder body "entry" true in
-        match ret with
-        | Some ret -> ignore (build_ret ret builder)
-        | None -> ())
-    | None -> ());
-    if not (verify_function fn) then
-      Printf.fprintf stderr "llvm error: function `%s` is not valid\n"
-        func.fn_sig.name;
-    (function_type, fn))
+let gen_item (func : Func.t) (ll_mod : llmodule) =
+  let intrinsic (fn : Func.fn_type) =
+    let fn_ty = gen_function_type fn in
+    if fn.abi = "intrinsic" then
+      Hashtbl.add codegen_ctx.intrinsics { segments = [fn.name] } fn
+    else if fn.is_extern then (
+      let llfn = declare_function fn.name fn_ty ll_mod in
+      codegen_ctx.curr_fn <- Some llfn;
+      Hashtbl.add codegen_ctx.func_map { segments = [fn.name] } fn_ty;
+      if fn.name = "main" then codegen_ctx.main <- Some llfn;
+      set_linkage Linkage.External llfn)
+    else (
+      let llfn = define_function fn.linkage_name fn_ty ll_mod in
+      codegen_ctx.curr_fn <- Some llfn;
+      if fn.name = "main" then codegen_ctx.main <- Some llfn)
+  in
+  match func with
+  | Decl fn_ty -> intrinsic fn_ty
+  | Def { def_ty; basic_blocks } -> intrinsic def_ty; gen_blocks basic_blocks
 
-let gen_main ll_mod name =
-  let main = Option.get codegen_ctx.main in
-  let main_ty = function_type (get_llvm_ty (Prim I32)) [||] in
-  let fn = define_function "main" main_ty ll_mod in
-  let builder = builder_at_end codegen_ctx.llctx (entry_block fn) in
-  let ret = build_call main_ty main [||] "" builder in
-  ignore (build_ret ret builder)
-
-let gen_item (item : item) (ll_mod : llmodule) =
-  match item with
-  | Fn (func, _) ->
-      if func.abi = "intrinsic" then
-        Hashtbl.add codegen_ctx.intrinsics
-          { segments = [func.fn_sig.name] }
-          func
-      else ignore (gen_func func ll_mod)
-  | Import _ -> ()
-  | _ -> assert false
-
-let gen_module (ctx : Context.t) (modd : modd) env : llmodule =
+let gen_module (ctx : Context.t) (modd : Module.t) : llmodule =
   let ll_mod = create_module codegen_ctx.llctx ctx.options.input in
   codegen_ctx.curr_mod <- Some ll_mod;
-  codegen_ctx.globl_env <- Some env;
   set_target_triple (Target.default_triple ()) ll_mod;
   ignore (List.map (fun item -> gen_item item ll_mod) modd.items);
   gen_main ll_mod ctx.options.input;

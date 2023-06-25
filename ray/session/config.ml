@@ -10,6 +10,7 @@ type t = {
   mutable opt_level : opt_level;
   mutable output_type : output_type;
   mutable command : command;
+  mutable print_ir : bool;
 }
 
 and opt_level =
@@ -43,4 +44,5 @@ let config input : t =
     opt_level = Default;
     output_type = Exe;
     command = Nan;
+    print_ir = false;
   }

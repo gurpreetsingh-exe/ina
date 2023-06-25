@@ -119,6 +119,8 @@ and resolve resolver : (path, lang_item) Hashtbl.t =
     | Import path ->
         let env2, modd = import resolver path in
         Hashtbl.add resolver.modd.imported_mods modd.mod_name modd;
+        (* sus *)
+        if not (Hashtbl.mem env path) then Hashtbl.add env path (Mod modd);
         Hashtbl.iter
           (fun path item ->
             if not (Hashtbl.mem env path) then Hashtbl.add env path item)
@@ -156,7 +158,11 @@ and resolve_body body resolver =
     | Deref expr | Ref expr -> handle_expr expr
     | Block body -> resolve_body (Some body) resolver
     | Path _ -> ()
-    | _ -> ()
+    | If { cond; then_block; else_block } ->
+        handle_expr cond;
+        resolve_body (Some then_block) resolver;
+        resolve_body else_block resolver
+    | Lit _ -> ()
   in
   let f stmt =
     match stmt with

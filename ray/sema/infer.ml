@@ -299,27 +299,32 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : infer_kind =
 and unify (infer_ctx : infer_ctx) (ty : infer_kind) (expected : ty) :
     infer_err option =
   let rec set_type expr : infer_err option =
-    expr.expr_ty <- Some expected;
     Hashtbl.remove infer_ctx.ty_env.unresolved expr.expr_id;
-    match expr.expr_kind with
-    | Binary (_, left, right) -> (
-      match set_type left with
-      | Some err -> Some err
-      | None -> set_type right)
-    | Path path ->
-        let name = render_path path in
-        let binding = Hashtbl.find infer_ctx.ty_env.bindings name in
-        Hashtbl.replace infer_ctx.ty_env.bindings name (Normal expected);
-        unify infer_ctx binding expected
-    | Block block -> fblock block
-    | If { then_block; else_block; _ } -> (
-      match fblock then_block with
-      | None -> (
-        match else_block with
-        | Some else_block -> fblock else_block
-        | None -> None)
-      | err -> err)
-    | _ -> None
+    let err =
+      match expr.expr_kind with
+      | Binary (_, left, right) -> (
+        match set_type left with
+        | Some err -> Some err
+        | None -> set_type right)
+      | Path path ->
+          let name = render_path path in
+          let binding = Hashtbl.find infer_ctx.ty_env.bindings name in
+          Hashtbl.replace infer_ctx.ty_env.bindings name (Normal expected);
+          unify infer_ctx binding expected
+      | Block block -> fblock block
+      | If { then_block; else_block; _ } -> (
+        match fblock then_block with
+        | None -> (
+          match else_block with
+          | Some else_block -> fblock else_block
+          | None -> None)
+        | err -> err)
+      | _ -> None
+    in
+    (match expr.expr_ty with
+    | Some _ -> ()
+    | None -> expr.expr_ty <- Some expected);
+    err
   and fblock block =
     match block.last_expr with Some expr -> set_type expr | None -> None
   in

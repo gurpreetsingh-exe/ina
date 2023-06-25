@@ -1,0 +1,8 @@
+// EXIT_CODE: 69
+
+fn main() -> i32 {
+    let a: i32 = 69;
+    let b = &a;
+    *b
+}
+
