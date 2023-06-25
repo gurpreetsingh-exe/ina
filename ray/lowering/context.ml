@@ -7,10 +7,10 @@ type env = {
 }
 
 type t = {
-  func_map : (path, func) Hashtbl.t;
+  func_map : (path, Func.fn_type) Hashtbl.t;
   mutable env : env;
   globl_env : (path, lang_item) Hashtbl.t;
-  modd : modd;
+  mutable modd : modd;
   mutable fn : Func.t option;
   mutable block : Inst.basic_block option;
 }
@@ -27,7 +27,12 @@ let create modd env =
 
 let add_local ctx name ptr = Hashtbl.add ctx.env.locals name ptr
 
-let find_local env name = Hashtbl.find env.locals name
+let rec find_local env name =
+  if Hashtbl.mem env.locals name then Hashtbl.find env.locals name
+  else (
+    match env.parent with
+    | Some env -> find_local env name
+    | None -> assert false)
 
 let block_append ctx bb =
   ctx.block <- Some bb;

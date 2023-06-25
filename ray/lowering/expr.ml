@@ -14,8 +14,9 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
   | Lit lit -> (
     match lit with
     | LitInt value -> Builder.const_int ty value
-    (* | LitBool value -> Builder.const_bool ty value *)
-    | _ -> assert false)
+    | LitFloat value -> Builder.const_float ty value
+    | LitStr value -> Builder.const_string ty value
+    | LitBool value -> Builder.const_bool ty value)
   | Path path ->
       let ident = Fmt.render_path path in
       let ptr = Context.find_local ctx.env ident in
@@ -49,6 +50,22 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
               builder
           in
           phi)
+  | Call (path, args) ->
+      let fn_ty = Hashtbl.find ctx.func_map path in
+      let args = List.map (fun e -> lower e builder ctx) args in
+      if fn_ty.is_extern && fn_ty.abi = "intrinsic" then
+        Builder.intrinsic ty fn_ty.name args builder
+      else (
+        let ty =
+          FnTy
+            ( List.map (fun (t, _) -> t) fn_ty.args,
+              fn_ty.ret_ty,
+              fn_ty.is_variadic )
+        in
+        let name =
+          if fn_ty.is_extern then fn_ty.name else fn_ty.linkage_name
+        in
+        Builder.call ty name args builder)
   | _ -> assert false
 
 and lower_lvalue (expr : expr) (_builder : Builder.t) (ctx : Context.t) :
@@ -60,8 +77,21 @@ and lower_lvalue (expr : expr) (_builder : Builder.t) (ctx : Context.t) :
   | _ -> assert false
 
 and lower_block (block : block) (ctx : Context.t) : Inst.value =
+  let tmp = ctx.env in
+  ctx.env <- { parent = Some tmp; locals = Hashtbl.create 0 };
   let bb = Option.get ctx.block in
   let builder = Builder.create bb in
+  if bb.is_entry then (
+    let fn = Option.get ctx.fn in
+    match fn with
+    | Def { def_ty = ty; _ } ->
+        List.iter2
+          (fun (ty, name) param ->
+            let ptr = Builder.alloca ty builder in
+            Context.add_local ctx name ptr;
+            Builder.store param ptr builder)
+          ty.args ty.params
+    | _ -> ());
   let f stmt =
     match stmt with
     | Stmt expr | Expr expr -> ignore (lower expr builder ctx)
@@ -79,6 +109,10 @@ and lower_block (block : block) (ctx : Context.t) : Inst.value =
           Builder.store src dst builder)
   in
   List.iter f block.block_stmts;
-  match block.last_expr with
-  | Some expr -> lower expr builder ctx
-  | None -> Builder.nop builder
+  let ret =
+    match block.last_expr with
+    | Some expr -> lower expr builder ctx
+    | None -> Builder.nop builder
+  in
+  ctx.env <- tmp;
+  ret

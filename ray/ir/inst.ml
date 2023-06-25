@@ -31,6 +31,8 @@ and inst_kind =
   | Phi of ty * (value * value) list
   | Store of value * value
   | Load of value
+  | Call of ty * string * value list
+  | Intrinsic of string * value list
   | Ret of value
   | RetUnit
   | Nop
@@ -39,16 +41,20 @@ and value =
   | Const of const * ty
   | VReg of t * int * ty
   | Label of basic_block
+  | Param of ty * string * int
 
 and const =
   | Int of int
   | Float of float
+  | Str of string
+  | Bool of bool
 
 and basic_block = {
   mutable pred : basic_block list;
   mutable succ : basic_block list;
   mutable insts : t list;
   mutable bid : int;
+  mutable is_entry : bool;
 }
 [@@deriving show]
 
@@ -83,12 +89,15 @@ let has_value = function
 let render_const = function
   | Int value -> sprintf "%d" value
   | Float value -> sprintf "%f" value
+  | Str value -> sprintf "\"%s\"" value
+  | Bool value -> sprintf "%b" value
 
 let render_value = function
   | Const (const, ty) ->
       sprintf "%s %s" (Fmt.render_ty ty) (render_const const)
   | VReg (_, i, ty) -> sprintf "%s%%%i" (Fmt.render_ty ty ^ " ") i
   | Label bb -> sprintf "label %%bb%d" bb.bid
+  | Param (ty, name, _) -> sprintf "%s %%%s" (Fmt.render_ty ty) name
 
 let get_ty = function
   | Const (_, ty) | VReg (_, _, ty) -> ty
@@ -121,6 +130,12 @@ let render_inst inst : string =
         | Ptr ty -> Fmt.render_ty ty
         | _ -> assert false)
         (render_value ptr)
+  | Call (ty, name, args) ->
+      sprintf "call %s, %s(%s)" (Fmt.render_ty ty) name
+        (String.concat ", " (List.map render_value args))
+  | Intrinsic (name, args) ->
+      sprintf "intrinsic %s(%s)" name
+        (String.concat ", " (List.map render_value args))
   | Ret ret -> sprintf "ret %s" (render_value ret)
   | RetUnit -> "ret"
   | Nop -> "nop"

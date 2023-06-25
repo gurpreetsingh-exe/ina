@@ -6,6 +6,7 @@ type fn_type = {
   name : string;
   linkage_name : string;
   args : (ty * string) list;
+  params : Inst.value list;
   ret_ty : ty;
   is_variadic : bool;
   is_extern : bool;
@@ -14,9 +15,9 @@ type fn_type = {
 
 let render_fn_type fn_ty =
   sprintf "fn %s(%s) -> %s" fn_ty.name
-    (String.concat ","
+    (String.concat ", "
        (List.map
-          (fun (ty, name) -> sprintf "%s: %s" name (Fmt.render_ty ty))
+          (fun (ty, name) -> sprintf "%s %%%s" (Fmt.render_ty ty) name)
           fn_ty.args)
     ^ if fn_ty.is_variadic then ", ..." else "")
     (Fmt.render_ty fn_ty.ret_ty)

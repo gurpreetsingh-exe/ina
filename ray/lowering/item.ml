@@ -21,10 +21,23 @@ let rec lower_fn (fn : func) (ctx : Context.t) : Func.t =
     fn
   in
   let ret_ty = match ret_ty with Some ty -> ty | None -> Unit in
-  let linkage_name = mangle (Option.get func_path) in
+  let fn_path = Option.get func_path in
+  let linkage_name = mangle fn_path in
   let fn_ty =
-    Func.{ name; args; ret_ty; is_variadic; abi; is_extern; linkage_name }
+    Func.
+      {
+        name;
+        args;
+        params =
+          List.mapi (fun i (ty, name) -> Inst.Param (ty, name, i)) args;
+        ret_ty;
+        is_variadic;
+        abi;
+        is_extern;
+        linkage_name;
+      }
   in
+  Hashtbl.add ctx.func_map fn_path fn_ty;
   match body with
   | Some body ->
       let fn = Func.Def { def_ty = fn_ty; basic_blocks = { bbs = [] } } in
@@ -35,6 +48,7 @@ let rec lower_fn (fn : func) (ctx : Context.t) : Func.t =
 
 and lower_fn_body body ctx =
   let entry = Basicblock.create () in
+  entry.is_entry <- true;
   Context.block_append ctx entry;
   let ret = Expr.lower_block body ctx in
   let builder = Builder.create (Option.get ctx.block) in
@@ -60,12 +74,19 @@ let gen_id (items : Func.t list) =
   in
   List.iter f items
 
-let lower_ast (ctx : Context.t) : Module.t =
+let rec lower_ast (ctx : Context.t) : Module.t =
   let items = ref [] in
   let f (item : item) =
     match item with
     | Fn (func, _) -> items := !items @ [lower_fn func ctx]
-    | Import _ -> ()
+    | Import path -> (
+      match Hashtbl.find ctx.globl_env path with
+      | Mod modd ->
+          let tmp = ctx.modd in
+          ctx.modd <- modd;
+          items := (lower_ast ctx).items @ !items;
+          ctx.modd <- tmp
+      | _ -> ())
     | _ -> assert false
   in
   List.iter f ctx.modd.items;

@@ -119,6 +119,8 @@ and resolve resolver : (path, lang_item) Hashtbl.t =
     | Import path ->
         let env2, modd = import resolver path in
         Hashtbl.add resolver.modd.imported_mods modd.mod_name modd;
+        (* sus *)
+        if not (Hashtbl.mem env path) then Hashtbl.add env path (Mod modd);
         Hashtbl.iter
           (fun path item ->
             if not (Hashtbl.mem env path) then Hashtbl.add env path item)

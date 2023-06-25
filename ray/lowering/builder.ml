@@ -46,6 +46,14 @@ let load (ptr : Inst.value) (builder : t) : value =
   let ty = match ty with Ptr ty -> ty | _ -> assert false in
   add_inst_with_ty ty (Load ptr) builder
 
+let call (ty : Ast.ty) (name : string) (args : value list) (builder : t) :
+    value =
+  add_inst_with_ty ty (Call (ty, name, args)) builder
+
+let intrinsic (ty : Ast.ty) (name : string) (args : value list) (builder : t)
+    : value =
+  add_inst_with_ty ty (Intrinsic (name, args)) builder
+
 let ret (ret : Inst.value) (builder : t) : unit = add_inst (Ret ret) builder
 
 let ret_unit (builder : t) : unit = add_inst RetUnit builder
@@ -55,3 +63,11 @@ let nop _ =
   VReg (inst, -1, Unit)
 
 let const_int (ty : Ast.ty) (value : int) : value = Const (Int value, ty)
+
+let const_float (ty : Ast.ty) (value : float) : value =
+  Const (Float value, ty)
+
+let const_string (ty : Ast.ty) (value : string) : value =
+  Const (Str value, ty)
+
+let const_bool (ty : Ast.ty) (value : bool) : value = Const (Bool value, ty)
