@@ -27,7 +27,7 @@ let () =
       if !Infer.error <> 0 then exit 1;
       let lowering_ctx = Lowering.Context.create modd env in
       let modulee = Lowering.Item.lower_ast lowering_ctx in
-      Ir.Module.render modulee;
+      if context.options.print_ir then Ir.Module.render modulee;
       let modd = Llvm_gen.gen_module context modulee in
       Llvm_gen.emit modd context
   | Fmt -> Printf.printf "%s" (Fmt.render_mod modd)

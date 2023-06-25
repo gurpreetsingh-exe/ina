@@ -32,6 +32,7 @@ let parse_args () =
   let input_file = ref None in
   let output = ref Exe in
   let opt_level = ref Default in
+  let print_ir = ref false in
   let i = ref (argc - 1) in
   while !i > 0 do
     let arg = Sys.argv.(argc - !i) in
@@ -39,6 +40,7 @@ let parse_args () =
       if String.starts_with ~prefix:"--" arg then (
         match arg with
         | "--help" -> usage arg0
+        | "--print-ir" -> print_ir := true
         | _ ->
             if String.contains arg '=' then (
               let pair = String.split_on_char '=' arg in
@@ -77,5 +79,6 @@ let parse_args () =
       config.opt_level <- !opt_level;
       config.output_type <- !output;
       config.command <- !command;
+      config.print_ir <- !print_ir;
       config
   | None -> usage arg0
