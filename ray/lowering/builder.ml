@@ -9,6 +9,8 @@ let vreg () =
   let v = !_vreg in
   incr _vreg; v
 
+let reset () = _vreg := 0
+
 let create (bb : basic_block) : t = { block = bb }
 
 let with_ctx f (ctx : Context.t) builder =
@@ -48,7 +50,10 @@ let load (ptr : Inst.value) (builder : t) : value =
 
 let call (ty : Ast.ty) (name : string) (args : value list) (builder : t) :
     value =
-  add_inst_with_ty ty (Call (ty, name, args)) builder
+  let ret_ty =
+    match ty with FnTy (_, ret_ty, _) -> ret_ty | _ -> assert false
+  in
+  add_inst_with_ty ret_ty (Call (ty, name, args)) builder
 
 let intrinsic (ty : Ast.ty) (name : string) (args : value list) (builder : t)
     : value =

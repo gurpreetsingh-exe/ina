@@ -14,7 +14,8 @@ type fn_type = {
 }
 
 let render_fn_type fn_ty =
-  sprintf "fn %s(%s) -> %s" fn_ty.name
+  sprintf "fn %s(%s) -> %s"
+    (if fn_ty.is_extern then fn_ty.name else fn_ty.linkage_name)
     (String.concat ", "
        (List.map
           (fun (ty, name) -> sprintf "%s %%%s" (Fmt.render_ty ty) name)

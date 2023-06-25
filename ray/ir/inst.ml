@@ -131,7 +131,10 @@ let render_inst inst : string =
         | _ -> assert false)
         (render_value ptr)
   | Call (ty, name, args) ->
-      sprintf "call %s, %s(%s)" (Fmt.render_ty ty) name
+      let ty =
+        match ty with FnTy (_, ret_ty, _) -> ret_ty | _ -> assert false
+      in
+      sprintf "call %s %s(%s)" (Fmt.render_ty ty) name
         (String.concat ", " (List.map render_value args))
   | Intrinsic (name, args) ->
       sprintf "intrinsic %s(%s)" name

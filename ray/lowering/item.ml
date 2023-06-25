@@ -10,6 +10,7 @@ let mangle path =
          path.segments)
 
 let rec lower_fn (fn : func) (ctx : Context.t) : Func.t =
+  Builder.reset ();
   let {
     fn_sig = { name; args; ret_ty; is_variadic; _ };
     body;
