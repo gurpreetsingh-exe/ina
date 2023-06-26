@@ -158,10 +158,10 @@ and resolve_body body resolver =
     | Deref expr | Ref expr -> handle_expr expr
     | Block body -> resolve_body (Some body) resolver
     | Path _ -> ()
-    | If { cond; then_block; else_block } ->
+    | If { cond; then_block; else_block } -> (
         handle_expr cond;
         resolve_body (Some then_block) resolver;
-        resolve_body else_block resolver
+        match else_block with Some expr -> handle_expr expr | None -> ())
     | Lit _ -> ()
   in
   let f stmt =

@@ -139,7 +139,7 @@ and expr_kind =
 and iff = {
   cond : expr;
   then_block : block;
-  else_block : block option;
+  else_block : expr option;
 }
 
 and lit =

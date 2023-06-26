@@ -76,7 +76,7 @@ let rec render_expr (expr : expr) (indent : int) : string =
       sprintf "if %s %s%s" (render_expr cond indent)
         (render_block then_block (indent + 1))
         (match else_block with
-        | Some expr -> " else " ^ render_block expr (indent + 1)
+        | Some expr -> " else " ^ render_expr expr (indent + 1)
         | None -> "")
   | Block block -> render_block block (indent + 1)
   | Deref expr -> sprintf "*%s" (render_expr expr indent)

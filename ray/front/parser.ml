@@ -316,14 +316,31 @@ and parse_primary pctx : expr =
     expr_span = span s pctx;
   }
 
+(* parses else expr when `else` token is already eaten *)
+and parse_else pctx : expr option =
+  let s = pctx.curr_tok.span.start in
+  let kind =
+    match pctx.curr_tok.kind with
+    | If -> Some (Ast.If (parse_if pctx))
+    | LBrace -> Some (Block (parse_block pctx))
+    | _ -> None
+  in
+  if Option.is_none kind then None
+  else
+    Some
+      {
+        expr_kind = Option.get kind;
+        expr_ty = None;
+        expr_id = gen_id pctx;
+        expr_span = span s pctx;
+      }
+
 and parse_if pctx =
   advance pctx;
   let cond = parse_expr pctx in
   let then_block = parse_block pctx in
   let else_block =
-    if pctx.curr_tok.kind = Else then (
-      advance pctx;
-      Some (parse_block pctx))
+    if pctx.curr_tok.kind = Else then (advance pctx; parse_else pctx)
     else None
   in
   { cond; then_block; else_block }

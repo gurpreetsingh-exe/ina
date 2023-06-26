@@ -37,8 +37,11 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
       Context.block_append ctx else_bb;
       (match else_block with
       | Some else_block ->
-          false_expr := Some (lower_block else_block ctx);
-          last_else_bb := Option.get ctx.block
+          Builder.with_ctx
+            (fun builder ->
+              false_expr := Some (lower else_block builder ctx);
+              last_else_bb := Option.get ctx.block)
+            ctx builder
       | None -> ());
       Builder.with_ctx (Builder.jmp (Label join_bb)) ctx builder;
       Context.block_append ctx join_bb;

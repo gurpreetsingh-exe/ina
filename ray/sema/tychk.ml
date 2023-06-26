@@ -46,7 +46,7 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
         fexpr cond;
         fblock then_block;
         match else_block with
-        | Some else_block -> fblock else_block
+        | Some else_block -> fexpr else_block
         | None -> ())
     | Block body -> fblock body
     | _ -> ()

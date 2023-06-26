@@ -253,7 +253,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : infer_kind =
         let then_ty = infer_block infer_ctx then_block in
         match else_block with
         | Some elze -> (
-            let else_ty = infer_block infer_ctx elze in
+            let else_ty = infer infer_ctx elze in
             match (then_ty, else_ty) with
             | Normal t0, Normal t1 ->
                 if t0 <> t1 then
@@ -316,7 +316,7 @@ and unify (infer_ctx : infer_ctx) (ty : infer_kind) (expected : ty) :
         match fblock then_block with
         | None -> (
           match else_block with
-          | Some else_block -> fblock else_block
+          | Some else_block -> set_type else_block
           | None -> None)
         | err -> err)
       | _ -> None
