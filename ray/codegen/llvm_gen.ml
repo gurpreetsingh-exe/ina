@@ -249,11 +249,11 @@ let gen_blocks (blocks : Func.blocks) =
   List.iter f blocks.bbs
 
 let gen_item (func : Func.t) (ll_mod : llmodule) =
-  let intrinsic (fn : Func.fn_type) =
+  let intrinsic (fn : Func.fn_type) declare =
     let fn_ty = gen_function_type fn in
     if fn.abi = "intrinsic" then
       Hashtbl.add codegen_ctx.intrinsics { segments = [fn.name] } fn
-    else if fn.is_extern then (
+    else if declare then (
       let llfn = declare_function fn.name fn_ty ll_mod in
       codegen_ctx.curr_fn <- Some llfn;
       Hashtbl.add codegen_ctx.func_map { segments = [fn.name] } fn_ty;
@@ -265,8 +265,9 @@ let gen_item (func : Func.t) (ll_mod : llmodule) =
       if fn.name = "main" then codegen_ctx.main <- Some llfn)
   in
   match func with
-  | Decl fn_ty -> intrinsic fn_ty
-  | Def { def_ty; basic_blocks } -> intrinsic def_ty; gen_blocks basic_blocks
+  | Decl fn_ty -> intrinsic fn_ty true
+  | Def { def_ty; basic_blocks } ->
+      intrinsic def_ty false; gen_blocks basic_blocks
 
 let gen_module (ctx : Context.t) (modd : Module.t) : llmodule =
   let ll_mod = create_module codegen_ctx.llctx ctx.options.input in

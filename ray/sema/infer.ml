@@ -430,6 +430,7 @@ let infer_begin infer_ctx (modd : modd) =
     match item with
     | Fn (func, _) -> infer_func infer_ctx func
     | Import _ -> ()
+    | Foreign funcs -> List.iter (fun f -> infer_func infer_ctx f) funcs
     | _ -> assert false
   in
   List.iter f modd.items

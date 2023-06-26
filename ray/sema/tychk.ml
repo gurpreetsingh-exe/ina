@@ -109,6 +109,7 @@ let tychk ty_ctx (modd : modd) =
   let f (item : item) =
     match item with
     | Fn (func, _) -> tychk_func ty_ctx func
+    | Foreign funcs -> List.iter (fun f -> tychk_func ty_ctx f) funcs
     | Import _ -> ()
     | _ -> assert false
   in

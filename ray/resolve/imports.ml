@@ -5,6 +5,13 @@ open Sema
 
 type sess = { env : (path, lang_item) Hashtbl.t }
 
+let print_env env =
+  let ritem = function Mod _ -> "module" | Fn _ -> "fn" in
+  Hashtbl.iter
+    (fun path item ->
+      printf "%s = %s\n" (String.concat "::" path.segments) (ritem item))
+    env
+
 let sess = { env = Hashtbl.create 0 }
 
 type resolver = {
@@ -130,9 +137,15 @@ and resolve resolver : (path, lang_item) Hashtbl.t =
         let path = { segments = abs_path @ [fn.fn_sig.name] } in
         resolve_body fn.body resolver;
         fn.func_path <- Some path;
-        Hashtbl.add env path (Fn fn);
-        if fn.is_extern then
-          Hashtbl.add env { segments = [fn.fn_sig.name] } (Fn fn)
+        Hashtbl.add env path (Fn fn)
+    | Foreign funcs ->
+        List.iter
+          (fun fn ->
+            Hashtbl.add resolver.func_map fn.fn_sig.name fn;
+            let path = { segments = abs_path @ [fn.fn_sig.name] } in
+            fn.func_path <- Some path;
+            Hashtbl.add env path (Fn fn))
+          funcs
     | _ -> ()
   in
   List.iter f resolver.modd.items;
@@ -175,10 +188,3 @@ and resolve_body body resolver =
       List.iter f body.block_stmts;
       match body.last_expr with Some expr -> handle_expr expr | None -> ())
   | None -> ()
-
-let print_env env =
-  let ritem = function Mod _ -> "module" | Fn _ -> "fn" in
-  Hashtbl.iter
-    (fun path item ->
-      printf "%s = %s\n" (String.concat "::" path.segments) (ritem item))
-    env

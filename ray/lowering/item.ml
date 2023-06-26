@@ -80,6 +80,8 @@ let rec lower_ast (ctx : Context.t) : Module.t =
   let f (item : item) =
     match item with
     | Fn (func, _) -> items := !items @ [lower_fn func ctx]
+    | Foreign funcs ->
+        items := !items @ List.map (fun f -> lower_fn f ctx) funcs
     | Import path -> (
       match Hashtbl.find ctx.globl_env path with
       | Mod modd ->

@@ -32,6 +32,7 @@ type modd = {
 
 and item =
   | Fn of func * attr_list
+  | Foreign of func list
   | Const of constant
   | Import of path
 

@@ -449,7 +449,20 @@ let parse_extern pctx attrs : item =
         s
     | _ -> "C"
   in
-  Fn (parse_fn pctx abi true, attrs)
+  match pctx.curr_tok.kind with
+  | LBrace ->
+      let f () =
+        advance pctx;
+        let items = ref [] in
+        while pctx.curr_tok.kind <> RBrace do
+          items := !items @ [parse_fn pctx abi true]
+        done;
+        ignore (eat pctx RBrace);
+        !items
+      in
+      Foreign (f ())
+  | Fn -> Fn (parse_fn pctx abi true, attrs)
+  | _ -> assert false
 
 let parse_item pctx : item =
   let attrs = parse_outer_attrs pctx in

@@ -11,6 +11,7 @@ type t = {
   mutable output_type : output_type;
   mutable command : command;
   mutable print_ir : bool;
+  mutable display_time : bool;
 }
 
 and opt_level =
@@ -37,12 +38,13 @@ let get_output_type = function
   | "llvm-ir" -> Some LlvmIr
   | _ -> None
 
-let config input : t =
+let config () : t =
   {
-    input;
-    output = List.hd (String.split_on_char '.' input);
+    input = "";
+    output = "";
     opt_level = Default;
     output_type = Exe;
     command = Nan;
     print_ir = false;
+    display_time = false;
   }

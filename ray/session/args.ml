@@ -33,11 +33,7 @@ let parse_args () =
   let argc = Array.length Sys.argv in
   let arg0 = Sys.argv.(0) in
   if argc < 2 then usage arg0;
-  let command = ref Nan in
-  let input_file = ref None in
-  let output = ref Exe in
-  let opt_level = ref Default in
-  let print_ir = ref false in
+  let config = config () in
   let i = ref (argc - 1) in
   while !i > 0 do
     let arg = Sys.argv.(argc - !i) in
@@ -45,7 +41,8 @@ let parse_args () =
       if String.starts_with ~prefix:"--" arg then (
         match arg with
         | "--help" -> usage arg0
-        | "--print-ir" -> print_ir := true
+        | "--print-ir" -> config.print_ir <- true
+        | "--time" -> config.display_time <- true
         | _ ->
             if String.contains arg '=' then (
               let pair = String.split_on_char '=' arg in
@@ -56,8 +53,8 @@ let parse_args () =
                 | None -> invalid_option_value named_option
               in
               match named_option with
-              | "--emit" -> output := f get_output_type value
-              | "--opt" -> opt_level := f get_opt_level value
+              | "--emit" -> config.output_type <- f get_output_type value
+              | "--opt" -> config.opt_level <- f get_opt_level value
               | _ ->
                   printf "Unknown option `%s`\n" named_option;
                   usage arg0)
@@ -65,9 +62,9 @@ let parse_args () =
               printf "Unknown option `%s`\n" arg;
               usage arg0))
       else usage arg0
-    else if !command == Nan then (
-      command :=
-        match arg with
+    else if config.command == Nan then
+      config.command <-
+        (match arg with
         | "build" -> Build
         | "fmt" -> Fmt
         | "test" -> Test
@@ -75,15 +72,9 @@ let parse_args () =
             printf "unknown command `%s`\n" arg;
             usage arg0)
     else (
-      match !command with Nan -> usage arg0 | _ -> input_file := Some arg);
+      match config.command with
+      | Nan -> usage arg0
+      | _ -> config.input <- arg);
     decr i
   done;
-  match !input_file with
-  | Some input ->
-      let config = config input in
-      config.opt_level <- !opt_level;
-      config.output_type <- !output;
-      config.command <- !command;
-      config.print_ir <- !print_ir;
-      config
-  | None -> usage arg0
+  config

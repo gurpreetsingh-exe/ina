@@ -76,7 +76,7 @@ let rec render_expr (expr : expr) (indent : int) : string =
       sprintf "if %s %s%s" (render_expr cond indent)
         (render_block then_block (indent + 1))
         (match else_block with
-        | Some expr -> " else " ^ render_expr expr (indent + 1)
+        | Some expr -> " else " ^ render_expr expr indent
         | None -> "")
   | Block block -> render_block block (indent + 1)
   | Deref expr -> sprintf "*%s" (render_expr expr indent)
@@ -136,6 +136,9 @@ let render_item (item : item) : string =
       sprintf "\n%s%s\n"
         (render attrs (fun attr -> render_attr attr) "")
         (render_fn func)
+  | Foreign funcs ->
+      sprintf "\nextern {\n%s\n}\n"
+        (String.concat "\n" (List.map (fun f -> "    " ^ render_fn f) funcs))
   | Const constant -> render_const constant
   | Import path -> sprintf "import %s;\n" (String.concat "::" path.segments)
 
