@@ -275,16 +275,19 @@ let gen_module (ctx : Context.t) (modd : Module.t) : llmodule =
   set_target_triple (Target.default_triple ()) ll_mod;
   ignore (List.map (fun item -> gen_item item ll_mod) modd.items);
   gen_main ll_mod ctx.options.input;
-  match verify_module ll_mod with
-  | Some reason ->
-      Printf.fprintf stderr "%s\n" reason;
-      ll_mod
-  | None -> ll_mod
-
-let emit (modd : llmodule) (ctx : Context.t) =
+  let modd =
+    match verify_module ll_mod with
+    | Some reason ->
+        Printf.fprintf stderr "%s\n" reason;
+        ll_mod
+    | None -> ll_mod
+  in
   (match ctx.options.opt_level with
   | Default -> ()
   | Agressive -> run_passes modd "default<O3>" codegen_ctx.machine);
+  modd
+
+let emit (modd : llmodule) (ctx : Context.t) =
   match ctx.options.output_type with
   | LlvmIr ->
       let ic = open_out (ctx.options.output ^ ".ll") in

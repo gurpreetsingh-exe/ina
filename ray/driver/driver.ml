@@ -4,6 +4,7 @@ open Sema
 open Codegen
 open Resolve
 open Session
+open Utils
 
 let open_file (ctx : Context.t) =
   let name = ctx.options.input in
@@ -27,27 +28,45 @@ let open_file (ctx : Context.t) =
 
 let () =
   let start = Sys.time () in
-  let context = Context.{ options = Args.parse_args () } in
+  let context = Context.create (Args.parse_args ()) in
   let s = open_file context in
   let tokenizer = Tokenizer.tokenize context.options.input s in
   let pctx = Parser.parse_ctx_create tokenizer s in
-  let modd = Parser.parse_mod pctx in
+  let time, modd = Timer.time (fun () -> Parser.parse_mod pctx) in
+  context.timings.parse <- time;
   (match context.options.command with
   | Build ->
-      let resolver = Imports.resolver_create modd in
-      let env = Imports.resolve resolver in
-      let infer_ctx = Infer.infer_ctx_create env in
-      ignore (Infer.infer_begin infer_ctx modd);
-      let ty_ctx = Tychk.ty_ctx_create infer_ctx in
-      ignore (Tychk.tychk ty_ctx modd);
+      let time, env =
+        Timer.time (fun () ->
+            let resolver = Imports.resolver_create modd in
+            Imports.resolve resolver)
+      in
+      context.timings.resolve <- time;
+      let time, _ =
+        Timer.time (fun () ->
+            let infer_ctx = Infer.infer_ctx_create env in
+            ignore (Infer.infer_begin infer_ctx modd);
+            let ty_ctx = Tychk.ty_ctx_create infer_ctx in
+            ignore (Tychk.tychk ty_ctx modd))
+      in
+      context.timings.sema <- time;
       if !Infer.error <> 0 then exit 1;
-      let lowering_ctx = Lowering.Context.create modd env in
-      let modulee = Lowering.Item.lower_ast lowering_ctx in
+      let time, modulee =
+        Timer.time (fun () ->
+            let lowering_ctx = Lowering.Context.create modd env in
+            Lowering.Item.lower_ast lowering_ctx)
+      in
+      context.timings.lowering <- time;
       if context.options.print_ir then Ir.Module.render modulee;
-      let modd = Llvm_gen.gen_module context modulee in
-      Llvm_gen.emit modd context
+      let time, modd =
+        Timer.time (fun () -> Llvm_gen.gen_module context modulee)
+      in
+      context.timings.llvm <- time;
+      let time, _ = Timer.time (fun () -> Llvm_gen.emit modd context) in
+      context.timings.gen_and_link <- time
   | Fmt -> printf "%s" (Fmt.render_mod modd)
   | _ -> ());
   let time = (Sys.time () -. start) *. 1000. in
-  if context.options.display_time then printf "  time: %f ms\n" time;
+  if context.options.display_time then
+    printf "  total: %f ms\n%s" time (Context.display context.timings);
   exit 0
