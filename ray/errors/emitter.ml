@@ -19,10 +19,9 @@ let extract_span_line (span : Token.span) (s : string array) : string =
   s.(get_span_line span - 1)
 
 let add_annotation (buf : Styled_buffer.t) (span : Token.span) =
-  let line = get_span_line span + 2 in
   let col = get_span_col span - 1 in
   let str = String.make col ' ' in
-  Styled_buffer.append buf ~line (str ^ "^ ") (Level Err)
+  Styled_buffer.append buf ~line:4 (str ^ "^ ") (Level Err)
 
 let draw_col_sep (buf : Styled_buffer.t) (line : int) (col : int) =
   Styled_buffer.puts buf line col "| " LineNum
@@ -51,9 +50,8 @@ let emit emitter diagnostic =
   Styled_buffer.append buf ~line:4 (pad ^ " | ") LineNum;
   add_annotation buf prim_span;
   List.iter
-    (fun (span, msg, is_prim) ->
-      let line = get_span_line span + 2 in
-      if is_prim then Styled_buffer.append buf ~line msg (Level Err)
-      else Styled_buffer.append buf ~line msg (Level Note))
+    (fun (_, msg, is_prim) ->
+      if is_prim then Styled_buffer.append buf ~line:4 msg (Level Err)
+      else Styled_buffer.append buf ~line:4 msg (Level Note))
     diagnostic.span.labels;
   eprintf "%s\n\n" (Styled_buffer.render buf)
