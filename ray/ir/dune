@@ -1,6 +1,6 @@
 (library
  (name ir)
  (libraries ast front)
- (preprocess (pps ppx_deriving.show))
+ (preprocess
+  (pps ppx_deriving.show))
  (modules inst basicblock func module))
-

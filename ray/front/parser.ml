@@ -1,6 +1,8 @@
 open Ast
 open Token
 open Tokenizer
+open Errors
+open Diagnostic
 
 type parse_ctx = {
   tokenizer : tokenizer;
@@ -10,16 +12,13 @@ type parse_ctx = {
   mutable stop : bool;
   mutable extern_block : bool;
   mutable node_id : node_id;
+  emitter : Emitter.t;
 }
 
 let span (start : pos) (pctx : parse_ctx) =
   match pctx.prev_tok with
   | Some t -> { start; ending = t.span.ending }
   | None -> assert false
-
-type perr = UnexpectedToken of (string * span)
-
-exception ParseError of perr
 
 let advance pctx =
   match next pctx.tokenizer with
@@ -29,21 +28,41 @@ let advance pctx =
       pctx.curr_tok <- t
   | None -> assert false
 
-let unexpected_token _pctx expected t =
-  ParseError
-    (UnexpectedToken
-       ( Printf.sprintf " expected `%s` found `%s`"
-           (display_token_kind expected)
-           (display_token_kind t.kind),
-         t.span ))
+let unexpected_token pctx expected t =
+  let msg =
+    Printf.sprintf "expected `%s`, found `%s`"
+      (display_token_kind expected)
+      (display_token_kind t.kind)
+  in
+  let span = pctx.curr_tok.span in
+  {
+    level = Err;
+    message = "unexpected token";
+    span = { primary_spans = [span]; labels = [(span, msg, true)] };
+    children = [];
+    sugg = [];
+    loc = Diagnostic.dg_loc_from_span span;
+  }
+
+let unexpected_type pctx =
+  Emitter.emit pctx.emitter
+    {
+      level = Err;
+      message = "unexpected type";
+      span = { primary_spans = [pctx.curr_tok.span]; labels = [] };
+      children = [];
+      sugg = [];
+      loc = Diagnostic.dg_loc_from_span pctx.curr_tok.span;
+    };
+  exit 1
 
 let eat pctx kind =
   if pctx.curr_tok.kind == kind then (
     let t = pctx.curr_tok in
     advance pctx; t)
   else (
-    print_endline (display_span pctx.curr_tok.span);
-    raise (unexpected_token pctx kind pctx.curr_tok))
+    Emitter.emit pctx.emitter (unexpected_token pctx kind pctx.curr_tok);
+    exit 1)
 
 let gen_id pctx : node_id =
   pctx.node_id <- pctx.node_id + 1;
@@ -60,15 +79,9 @@ let parse_ctx_create tokenizer s =
         stop = false;
         extern_block = false;
         node_id = 0;
+        emitter = { source = Array.of_list (String.split_on_char '\n' s) };
       }
   | None -> exit 0
-
-let emit_err e =
-  match e with
-  | UnexpectedToken (msg, span) ->
-      let filename, _, line, col = span.start in
-      Printf.fprintf stderr "%s:%d:%d %s\n" filename line col msg;
-      exit 1
 
 let strip_comments pctx =
   let rec impl = function
@@ -87,22 +100,28 @@ let parse_attr pctx : normal_attr =
 
 let parse_outer_attrs pctx : attr list =
   let unexpected_inner_attr () =
-    ParseError
-      (UnexpectedToken
-         ( "unexpected inner attribute after outer attribute",
-           pctx.curr_tok.span ))
+    Emitter.emit pctx.emitter
+      {
+        level = Err;
+        message = "unexpected inner attribute after outer attribute";
+        span = { primary_spans = [pctx.curr_tok.span]; labels = [] };
+        children = [];
+        sugg = [];
+        loc = Diagnostic.dg_loc_from_span pctx.curr_tok.span;
+      };
+    exit 1
   in
   let rec parse_outer_attrs_impl () =
     let attr_kind =
       match pctx.curr_tok.kind with
-      | Bang -> raise (unexpected_inner_attr ())
+      | Bang -> unexpected_inner_attr ()
       | LBracket -> Some (NormalAttr (parse_attr pctx))
       | Comment style -> (
         match style with
         | Some Outer ->
             let outer = get_token_str pctx.curr_tok pctx.src in
             advance pctx; Some (Doc outer)
-        | Some Inner -> raise (unexpected_inner_attr ())
+        | Some Inner -> unexpected_inner_attr ()
         | None -> advance pctx; None)
       | _ -> None
     in
@@ -160,8 +179,8 @@ let rec parse_ty pctx : ty =
         | "f64" -> F64
         | "bool" -> Bool
         | "str" -> Str
-        | _ -> raise (unexpected_token pctx Ident t))
-  | _ -> raise (unexpected_token pctx Ident t)
+        | _ -> unexpected_type pctx)
+  | _ -> unexpected_type pctx
 
 let parse_fn_args pctx : (ty * ident) list * bool =
   assert (pctx.curr_tok.kind == LParen);
@@ -214,7 +233,9 @@ let parse_path pctx : path =
             advance pctx;
             segment @ parse_path_impl ()
         | _ -> segment)
-    | _ -> raise (unexpected_token pctx Ident pctx.curr_tok)
+    | _ ->
+        Emitter.emit pctx.emitter (unexpected_token pctx Ident pctx.curr_tok);
+        exit 1
   in
   { segments = parse_path_impl () }
 
@@ -234,7 +255,9 @@ and parse_call_args pctx : expr list =
     match pctx.curr_tok.kind with
     | Comma -> advance pctx
     | RParen -> ()
-    | _ -> raise (unexpected_token pctx RParen pctx.curr_tok)
+    | _ ->
+        Emitter.emit pctx.emitter
+          (unexpected_token pctx RParen pctx.curr_tok)
   done;
   ignore (eat pctx RParen);
   !args

@@ -1,0 +1,4 @@
+(library
+ (name errors)
+ (modules diagnostic emitter styled_buffer)
+ (libraries token))

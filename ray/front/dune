@@ -1,4 +1,4 @@
 (library
  (name front)
- (libraries token ast)
+ (libraries token ast errors)
  (modules tokenizer parser fmt))
