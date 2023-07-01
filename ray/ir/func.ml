@@ -1,5 +1,5 @@
 open Front
-open Ast
+open Ty
 open Printf
 
 type fn_type = {

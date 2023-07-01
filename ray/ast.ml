@@ -1,4 +1,5 @@
 open Token
+open Ty
 
 type ident = string
 
@@ -85,29 +86,6 @@ and path_segment = ident
 
 and path = { mutable segments : path_segment list }
 
-and ty =
-  | Prim of prim_ty
-  | Ptr of ty
-  | RefTy of ty
-  | FnTy of (ty list * ty * bool)
-  | Unit
-
-and prim_ty =
-  | I8
-  | I16
-  | I32
-  | I64
-  | Isize
-  | U8
-  | U16
-  | U32
-  | U64
-  | Usize
-  | F64
-  | F32
-  | Bool
-  | Str
-
 and expr = {
   expr_kind : expr_kind;
   mutable expr_ty : ty option;
@@ -161,31 +139,3 @@ let binary_kind_from_token = function
 type lang_item =
   | Mod of modd
   | Fn of func
-
-let signed_range (n : int) : int * int =
-  let n = float_of_int (n - 1) in
-  let lo = Float.pow (-2.0) n in
-  let hi = Float.pow 2.0 n in
-  (int_of_float lo, int_of_float hi - 1)
-
-let unsigned_range (n : int) : int * int =
-  let n = float_of_int n in
-  let hi = Float.pow 2.0 n in
-  (0, int_of_float hi - 1)
-
-let integer_ranges = function
-  | I8 -> signed_range 8
-  | U8 -> unsigned_range 8
-  | I16 -> signed_range 16
-  | U16 -> unsigned_range 16
-  | I32 -> signed_range 32
-  | U32 -> unsigned_range 32
-  | I64 | Isize -> signed_range 64
-  | U64 | Usize -> unsigned_range 64
-  | _ -> assert false
-
-let is_unsigned = function
-  | U8 | U16 | U32 | U64 | Usize -> true
-  | _ -> false
-
-let is_signed = function I8 | I16 | I32 | I64 | Isize -> true | _ -> false

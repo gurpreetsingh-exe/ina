@@ -1,4 +1,5 @@
 open Ast
+open Ty
 open Infer
 open Token
 open Front.Fmt
@@ -80,8 +81,8 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
              | None -> binding.binding_ty <- Some ty);
             let check_overflow _value ty =
               match ty with
-              | Prim prim ->
-                  let _ = integer_ranges prim in
+              | Ty.Int ty ->
+                  let _ = integer_ranges ty in
                   ()
               | _ -> ()
             in

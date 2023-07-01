@@ -1,4 +1,5 @@
 open Ast
+open Ty
 open Ir
 open Llvm
 open Llvm_target
@@ -39,7 +40,7 @@ let _ =
   x86AsmPrinterInit ();
   enable_pretty_stacktrace ()
 
-let is_float = function Prim F64 | Prim F32 -> true | _ -> false
+let is_float = function Float _ -> true | _ -> false
 
 let codegen_ctx =
   let ctx = global_context () in
@@ -79,20 +80,20 @@ let rec find_val scope ident =
 let get_llvm_ty (ty : ty) : lltype =
   let { llctx = ctx; size_type; _ } = codegen_ctx in
   match ty with
-  | Ptr _ | RefTy _ -> pointer_type ctx
-  | Prim ty -> (
+  | Float ty -> (
+    match ty with F32 -> float_type ctx | F64 -> double_type ctx)
+  | Bool -> i1_type ctx
+  | Str -> struct_type ctx [|pointer_type ctx; size_type|]
+  | Int ty -> (
     match ty with
     | Isize | Usize -> size_type
     | I64 | U64 -> i64_type ctx
     | I32 | U32 -> i32_type ctx
     | I16 | U16 -> i16_type ctx
-    | I8 | U8 -> i8_type ctx
-    | F32 -> float_type ctx
-    | F64 -> double_type ctx
-    | Bool -> i1_type ctx
-    | Str -> struct_type ctx [|pointer_type ctx; size_type|])
+    | I8 | U8 -> i8_type ctx)
+  | Ptr _ | RefTy _ -> pointer_type ctx
+  | FnTy _ | Infer _ -> assert false
   | Unit -> void_type ctx
-  | FnTy _ -> assert false
 
 let gen_function_type (fn_ty : Func.fn_type) : lltype =
   let args = List.map (fun (ty, _) -> get_llvm_ty ty) fn_ty.args in
@@ -102,7 +103,7 @@ let gen_function_type (fn_ty : Func.fn_type) : lltype =
 
 let gen_main ll_mod name =
   let main = Option.get codegen_ctx.main in
-  let main_ty = function_type (get_llvm_ty (Prim I32)) [||] in
+  let main_ty = function_type (get_llvm_ty (Int I32)) [||] in
   let fn = define_function "main" main_ty ll_mod in
   let builder = builder_at_end codegen_ctx.llctx (entry_block fn) in
   let ret = build_call main_ty main [||] "" builder in
@@ -172,7 +173,7 @@ let gen_blocks (blocks : Func.blocks) =
             | Mul -> build_mul
             | Div -> (
               match pty with
-              | Prim t ->
+              | Int t ->
                   if is_unsigned t then build_udiv
                   else if is_signed t then build_sdiv
                   else assert false

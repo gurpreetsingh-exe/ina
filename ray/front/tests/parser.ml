@@ -1,7 +1,7 @@
 open Front
 open Tokenizer
 open Parser
-open Ast
+open Ty
 open Fmt
 
 let render_input f g input =
@@ -32,19 +32,19 @@ let%test "types" =
   in
   let cases =
     [
-      ("i8", Prim I8);
-      ("i16", Prim I16);
-      ("i32", Prim I32);
-      ("i64", Prim I64);
-      ("isize", Prim Isize);
-      ("u8", Prim U8);
-      ("u16", Prim U16);
-      ("u32", Prim U32);
-      ("u64", Prim U64);
-      ("usize", Prim Usize);
-      ("f32", Prim F32);
-      ("f64", Prim F64);
-      ("bool", Prim Bool);
+      ("i8", Int I8);
+      ("i16", Int I16);
+      ("i32", Int I32);
+      ("i64", Int I64);
+      ("isize", Int Isize);
+      ("u8", Int U8);
+      ("u16", Int U16);
+      ("u32", Int U32);
+      ("u64", Int U64);
+      ("usize", Int Usize);
+      ("f32", Float F32);
+      ("f64", Float F64);
+      ("bool", Bool);
     ]
   in
   List.length (List.filter (fun (case, exp) -> f case <> exp) cases) = 0

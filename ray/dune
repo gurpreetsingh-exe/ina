@@ -3,6 +3,11 @@
  (modules token))
 
 (library
+ (name ty)
+ (modules ty)
+ (libraries token))
+
+(library
  (name ast)
  (modules ast)
- (libraries token))
+ (libraries token ty))

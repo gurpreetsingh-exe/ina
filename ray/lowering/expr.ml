@@ -1,4 +1,5 @@
 open Ast
+open Ty
 open Front
 open Ir
 
