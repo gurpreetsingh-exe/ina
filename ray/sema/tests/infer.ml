@@ -27,32 +27,32 @@ let infer_unify expr ty =
 let%test "infer literal int" =
   let ctx = infer_ctx_create dummy_env in
   let expr = mk_expr (Lit (LitInt 20)) 0 in
-  infer ctx expr = Int 0
+  infer ctx expr = Infer (IntVar 0)
 
 let%test "infer literal bool" =
   let ctx = infer_ctx_create dummy_env in
   let expr = mk_expr (Lit (LitBool true)) 0 in
-  infer ctx expr = Normal (Prim Bool)
+  infer ctx expr = Bool
 
 let%test "infer literal bool" =
   let ctx = infer_ctx_create dummy_env in
   let expr = mk_expr (Lit (LitBool true)) 0 in
-  infer ctx expr = Normal (Prim Bool)
+  infer ctx expr = Bool
 
 let%test "infer + unify literal int" =
   let expr = mk_expr (Lit (LitInt 20)) 0 in
-  infer_unify expr (Prim I64)
+  infer_unify expr (Int I64)
 
 let%test "unify let int binding" =
   let ctx = infer_ctx_create dummy_env in
   let expr = mk_expr (Lit (LitInt 20)) 0 in
   let expr2 = mk_expr (Path { segments = ["a"] }) 1 in
   let ty = infer ctx expr in
-  assert (ty = Int 0);
+  assert (ty = Infer (IntVar 0));
   Hashtbl.add ctx.ty_env.bindings "a" ty;
   let ty2 = infer ctx expr2 in
-  ignore (unify ctx ty2 (Prim I64));
-  Hashtbl.find ctx.ty_env.bindings "a" = Normal (Prim I64)
+  ignore (unify ctx ty2 (Int I64));
+  Hashtbl.find ctx.ty_env.bindings "a" = Int I64
 
 let%test "infer" =
   let input =
@@ -67,5 +67,5 @@ let%test "infer" =
   in
   let binding = List.nth (Option.get fn.body).block_stmts 0 in
   match binding with
-  | Binding binding -> binding.binding_expr.expr_ty = Some (Prim I32)
+  | Binding binding -> binding.binding_expr.expr_ty = Some (Int I32)
   | _ -> false

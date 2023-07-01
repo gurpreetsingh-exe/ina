@@ -1,4 +1,5 @@
 open Ast
+open Ty
 open Token
 open Tokenizer
 open Errors
@@ -44,15 +45,15 @@ let unexpected_token pctx expected t =
     loc = Diagnostic.dg_loc_from_span span;
   }
 
-let unexpected_type pctx =
+let unexpected_type pctx span =
   Emitter.emit pctx.emitter
     {
       level = Err;
       message = "unexpected type";
-      span = { primary_spans = [pctx.curr_tok.span]; labels = [] };
+      span = { primary_spans = [span]; labels = [] };
       children = [];
       sugg = [];
-      loc = Diagnostic.dg_loc_from_span pctx.curr_tok.span;
+      loc = Diagnostic.dg_loc_from_span span;
     };
   exit 1
 
@@ -162,25 +163,24 @@ let rec parse_ty pctx : ty =
   | Ampersand ->
       advance pctx;
       RefTy (parse_ty pctx)
-  | Ident ->
-      Prim
-        (match get_token_str (eat pctx Ident) pctx.src with
-        | "i8" -> I8
-        | "i16" -> I16
-        | "i32" -> I32
-        | "i64" -> I64
-        | "isize" -> Isize
-        | "u8" -> U8
-        | "u16" -> U16
-        | "u32" -> U32
-        | "u64" -> U64
-        | "usize" -> Usize
-        | "f32" -> F32
-        | "f64" -> F64
-        | "bool" -> Bool
-        | "str" -> Str
-        | _ -> unexpected_type pctx)
-  | _ -> unexpected_type pctx
+  | Ident -> (
+    match get_token_str (eat pctx Ident) pctx.src with
+    | "i8" -> Int I8
+    | "i16" -> Int I16
+    | "i32" -> Int I32
+    | "i64" -> Int I64
+    | "isize" -> Int Isize
+    | "u8" -> Int U8
+    | "u16" -> Int U16
+    | "u32" -> Int U32
+    | "u64" -> Int U64
+    | "usize" -> Int Usize
+    | "f32" -> Float F32
+    | "f64" -> Float F64
+    | "bool" -> Bool
+    | "str" -> Str
+    | _ -> unexpected_type pctx t.span)
+  | _ -> unexpected_type pctx t.span
 
 let parse_fn_args pctx : (ty * ident) list * bool =
   assert (pctx.curr_tok.kind == LParen);

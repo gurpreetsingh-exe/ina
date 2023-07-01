@@ -1,4 +1,4 @@
-open Ast
+open Ty
 open Front
 open Printf
 
@@ -90,7 +90,7 @@ let has_value = function
 let render_const = function
   | Int value -> sprintf "%d" value
   | Float value -> sprintf "%f" value
-  | Str value -> sprintf "\"%s\"" value
+  | Str value -> sprintf "\"%s\"" (String.escaped value)
   | Bool value -> sprintf "%b" value
 
 let render_value = function

@@ -1,4 +1,5 @@
 open Ir
+open Ty
 open Inst
 
 type t = { mutable block : basic_block }
@@ -21,15 +22,15 @@ let with_ctx f (ctx : Context.t) builder =
 
 let add_inst_with_ty ty kind builder : value =
   let i = vreg () in
-  let inst = Inst.{ kind; id = i } in
+  let inst = { kind; id = i } in
   builder.block.insts <- builder.block.insts @ [inst];
   VReg (inst, i, ty)
 
 let add_inst (kind : inst_kind) (builder : t) : unit =
-  let inst = Inst.{ kind; id = -1 } in
+  let inst = { kind; id = -1 } in
   builder.block.insts <- builder.block.insts @ [inst]
 
-let alloca (ty : Ast.ty) (builder : t) : value =
+let alloca (ty : ty) (builder : t) : value =
   add_inst_with_ty (Ptr ty) (Alloca ty) builder
 
 let br (cond : value) (true_bb : value) (false_bb : value) (builder : t) =
@@ -37,44 +38,42 @@ let br (cond : value) (true_bb : value) (false_bb : value) (builder : t) =
 
 let jmp (bb : value) (builder : t) = add_inst (Jmp bb) builder
 
-let phi (ty : Ast.ty) (args : (value * value) list) (builder : t) : value =
+let phi (ty : ty) (args : (value * value) list) (builder : t) : value =
   add_inst_with_ty ty (Phi (ty, args)) builder
 
-let store (src : Inst.value) (dst : Inst.value) (builder : t) : unit =
+let store (src : value) (dst : value) (builder : t) : unit =
   add_inst (Store (src, dst)) builder
 
-let load (ptr : Inst.value) (builder : t) : value =
+let load (ptr : value) (builder : t) : value =
   let ty = get_ty ptr in
   let ty =
     match ty with Ptr ty -> ty | RefTy ty -> ty | _ -> assert false
   in
   add_inst_with_ty ty (Load ptr) builder
 
-let call (ty : Ast.ty) (name : string) (args : value list) (builder : t) :
-    value =
+let call (ty : ty) (name : string) (args : value list) (builder : t) : value
+    =
   let ret_ty =
     match ty with FnTy (_, ret_ty, _) -> ret_ty | _ -> assert false
   in
   add_inst_with_ty ret_ty (Call (ty, name, args)) builder
 
-let intrinsic (ty : Ast.ty) (name : string) (args : value list) (builder : t)
-    : value =
+let intrinsic (ty : ty) (name : string) (args : value list) (builder : t) :
+    value =
   add_inst_with_ty ty (Intrinsic (name, args)) builder
 
-let ret (ret : Inst.value) (builder : t) : unit = add_inst (Ret ret) builder
+let ret (ret : value) (builder : t) : unit = add_inst (Ret ret) builder
 
 let ret_unit (builder : t) : unit = add_inst RetUnit builder
 
 let nop _ =
-  let inst = Inst.{ kind = Nop; id = -1 } in
+  let inst = { kind = Nop; id = -1 } in
   VReg (inst, -1, Unit)
 
-let const_int (ty : Ast.ty) (value : int) : value = Const (Int value, ty)
+let const_int (ty : ty) (value : int) : value = Const (Int value, ty)
 
-let const_float (ty : Ast.ty) (value : float) : value =
-  Const (Float value, ty)
+let const_float (ty : ty) (value : float) : value = Const (Float value, ty)
 
-let const_string (ty : Ast.ty) (value : string) : value =
-  Const (Str value, ty)
+let const_string (ty : ty) (value : string) : value = Const (Str value, ty)
 
-let const_bool (ty : Ast.ty) (value : bool) : value = Const (Bool value, ty)
+let const_bool (ty : ty) (value : bool) : value = Const (Bool value, ty)
