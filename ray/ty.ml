@@ -57,15 +57,11 @@ type float_ty =
 
 let display_float_ty = function F32 -> "f32" | F64 -> "f64"
 
-type int_vid = { index : int }
-
-type float_vid = { index : int }
-
 type ty_vid = { index : int }
 
 type infer_ty =
-  | IntVar of int_vid
-  | FloatVar of float_vid
+  | IntVar of ty_vid
+  | FloatVar of ty_vid
   | TyVar of ty_vid
 
 let i, f = (ref 0, ref 0)

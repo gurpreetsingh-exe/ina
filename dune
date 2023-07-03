@@ -1,4 +1,10 @@
 (env
  (dev
   (flags
-   (:standard -warn-error "-unused-value-declaration"))))
+   (:standard
+    -warn-error
+    "-unused-value-declaration"
+    -warn-error
+    "-unused-var"
+    -warn-error
+    "-unused-var-strict"))))

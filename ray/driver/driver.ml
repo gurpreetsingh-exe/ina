@@ -46,7 +46,6 @@ let () =
         Timer.time (fun () ->
             let infer_ctx = Infer.infer_ctx_create env in
             ignore (Infer.infer_begin infer_ctx modd);
-            print_endline (Fmt.render_mod modd);
             let ty_ctx = Tychk.ty_ctx_create infer_ctx in
             ignore (Tychk.tychk ty_ctx modd))
       in
