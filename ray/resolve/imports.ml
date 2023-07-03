@@ -2,6 +2,7 @@ open Front
 open Ast
 open Printf
 open Sema
+open Session
 
 type sess = { env : (path, lang_item) Hashtbl.t }
 
@@ -15,11 +16,13 @@ let print_env env =
 let sess = { env = Hashtbl.create 0 }
 
 type resolver = {
+  globl_ctx : Context.t;
   modd : modd;
   func_map : (ident, func) Hashtbl.t;
 }
 
-let resolver_create modd = { modd; func_map = Hashtbl.create 0 }
+let resolver_create globl_ctx modd =
+  { globl_ctx; modd; func_map = Hashtbl.create 0 }
 
 let rec mod_exists resolver name =
   let path =
@@ -91,10 +94,18 @@ let rec import (resolver : resolver) (path : path) =
     let src = really_input_string ic (in_channel_length ic) in
     close_in ic;
     let tokenizer = Tokenizer.tokenize lib_path src in
-    let pctx = Parser.parse_ctx_create tokenizer src in
+    let pctx = Parser.parse_ctx_create resolver.globl_ctx tokenizer src in
     let modd = Parser.parse_mod pctx in
-    let env, modd = (resolve { modd; func_map = Hashtbl.create 0 }, modd) in
-    let infer_ctx = Infer.infer_ctx_create env in
+    let env, modd =
+      ( resolve
+          {
+            globl_ctx = resolver.globl_ctx;
+            modd;
+            func_map = Hashtbl.create 0;
+          },
+        modd )
+    in
+    let infer_ctx = Infer.infer_ctx_create resolver.globl_ctx env in
     ignore (Infer.infer_begin infer_ctx modd);
     (env, modd)
   in

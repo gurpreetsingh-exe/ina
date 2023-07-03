@@ -31,20 +31,20 @@ let () =
   let context = Context.create (Args.parse_args ()) in
   let s = open_file context in
   let tokenizer = Tokenizer.tokenize context.options.input s in
-  let pctx = Parser.parse_ctx_create tokenizer s in
+  let pctx = Parser.parse_ctx_create context tokenizer s in
   let time, modd = Timer.time (fun () -> Parser.parse_mod pctx) in
   context.timings.parse <- time;
   (match context.options.command with
   | Build ->
       let time, env =
         Timer.time (fun () ->
-            let resolver = Imports.resolver_create modd in
+            let resolver = Imports.resolver_create context modd in
             Imports.resolve resolver)
       in
       context.timings.resolve <- time;
       let time, _ =
         Timer.time (fun () ->
-            let infer_ctx = Infer.infer_ctx_create env in
+            let infer_ctx = Infer.infer_ctx_create context env in
             ignore (Infer.infer_begin infer_ctx modd);
             let ty_ctx = Tychk.ty_ctx_create infer_ctx in
             ignore (Tychk.tychk ty_ctx modd))

@@ -5,14 +5,17 @@ open Infer
 open Front
 open Tokenizer
 open Parser
+open Session
 
 let dummy_span = { start = ("", 0, 0, 0); ending = ("", 0, 0, 0) }
+
+let dummy_ctx = Context.create (Config.config ())
 
 let dummy_env = Hashtbl.create 0
 
 let parse_input input =
   let tokenizer = tokenize "<test>" input in
-  let pctx = parse_ctx_create tokenizer input in
+  let pctx = parse_ctx_create dummy_ctx tokenizer input in
   let modd = parse_mod pctx in
   modd
 
@@ -20,22 +23,22 @@ let mk_expr expr_kind id =
   { expr_kind; expr_ty = None; expr_id = id; expr_span = dummy_span }
 
 let infer_unify expr ty =
-  let ctx = infer_ctx_create dummy_env in
+  let ctx = infer_ctx_create dummy_ctx dummy_env in
   ignore (unify ctx (infer ctx expr) ty);
   Option.get expr.expr_ty = ty
 
 let%test "infer literal int" =
-  let ctx = infer_ctx_create dummy_env in
+  let ctx = infer_ctx_create dummy_ctx dummy_env in
   let expr = mk_expr (Lit (LitInt 20)) 0 in
   infer ctx expr = Infer (IntVar { index = 0 })
 
 let%test "infer literal bool" =
-  let ctx = infer_ctx_create dummy_env in
+  let ctx = infer_ctx_create dummy_ctx dummy_env in
   let expr = mk_expr (Lit (LitBool true)) 0 in
   infer ctx expr = Bool
 
 let%test "infer literal bool" =
-  let ctx = infer_ctx_create dummy_env in
+  let ctx = infer_ctx_create dummy_ctx dummy_env in
   let expr = mk_expr (Lit (LitBool true)) 0 in
   infer ctx expr = Bool
 
@@ -44,7 +47,7 @@ let%test "infer + unify literal int" =
   infer_unify expr (Int I64)
 
 let%test "unify let int binding" =
-  let ctx = infer_ctx_create dummy_env in
+  let ctx = infer_ctx_create dummy_ctx dummy_env in
   let expr = mk_expr (Lit (LitInt 20)) 0 in
   let expr2 = mk_expr (Path { segments = ["a"] }) 1 in
   let ty = infer ctx expr in
@@ -59,7 +62,7 @@ let%test "infer" =
     "\n    fn main() -> i32 {\n        let a = 20;\n        a\n    }\n    "
   in
   let modd = parse_input input in
-  let ctx = infer_ctx_create dummy_env in
+  let ctx = infer_ctx_create dummy_ctx dummy_env in
   let fn =
     match List.nth modd.items 0 with
     | Fn (fn, _) -> infer_func ctx fn; fn

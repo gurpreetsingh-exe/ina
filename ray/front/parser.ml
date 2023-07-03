@@ -4,8 +4,10 @@ open Token
 open Tokenizer
 open Errors
 open Diagnostic
+open Session
 
 type parse_ctx = {
+  ctx : Context.t;
   tokenizer : tokenizer;
   src : string;
   mutable curr_tok : token;
@@ -69,10 +71,11 @@ let gen_id pctx : node_id =
   pctx.node_id <- pctx.node_id + 1;
   pctx.node_id
 
-let parse_ctx_create tokenizer s =
+let parse_ctx_create ctx tokenizer s =
   match next tokenizer with
   | Some t ->
       {
+        ctx;
         tokenizer;
         src = s;
         curr_tok = t;
@@ -80,7 +83,8 @@ let parse_ctx_create tokenizer s =
         stop = false;
         extern_block = false;
         node_id = 0;
-        emitter = { source = Array.of_list (String.split_on_char '\n' s) };
+        emitter =
+          { ctx; source = Array.of_list (String.split_on_char '\n' s) };
       }
   | None -> exit 0
 

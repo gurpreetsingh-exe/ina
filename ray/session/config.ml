@@ -12,6 +12,8 @@ type t = {
   mutable command : command;
   mutable print_ir : bool;
   mutable display_time : bool;
+  mutable display_type_vars : bool;
+  mutable ui_testing : bool;
 }
 
 and opt_level =
@@ -47,4 +49,6 @@ let config () : t =
     command = Nan;
     print_ir = false;
     display_time = false;
+    display_type_vars = false;
+    ui_testing = false;
   }

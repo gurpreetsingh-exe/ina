@@ -3,6 +3,7 @@ open Ty
 open Token
 open Front.Fmt
 open Printf
+open Session
 
 type env = {
   parent : env option;
@@ -30,6 +31,7 @@ let fn_ty func =
   FnTy (List.map (fun (ty, _) -> ty) args, ret_ty, is_variadic)
 
 type infer_ctx = {
+  globl_ctx : Context.t;
   mutable ty_env : env;
   env : (node_id, expr) Hashtbl.t;
   int_unifiction_table : (ty, ty) Hashtbl.t;
@@ -43,8 +45,9 @@ let add_binding (infer_ctx : infer_ctx) ident ty =
     Hashtbl.replace infer_ctx.ty_env.bindings ident ty
   else Hashtbl.add infer_ctx.ty_env.bindings ident ty
 
-let infer_ctx_create globl_env =
+let infer_ctx_create globl_ctx globl_env =
   {
+    globl_ctx;
     ty_env = env_create None;
     env = Hashtbl.create 0;
     int_unifiction_table = Hashtbl.create 0;
@@ -353,6 +356,8 @@ let infer_func (infer_ctx : infer_ctx) (func : func) =
         (fun (ty, ident) -> Hashtbl.add infer_ctx.ty_env.bindings ident ty)
         args;
       let ty = infer_block infer_ctx body in
+      if infer_ctx.globl_ctx.options.display_type_vars then
+        print_endline (render_fn func);
       (match (unify infer_ctx ty ret_ty, body.last_expr) with
       | Some err, Some expr -> infer_err_emit err expr.expr_span
       | None, (None | _) -> ()

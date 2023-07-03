@@ -1,7 +1,11 @@
 open Printf
 open Diagnostic
+open Session
 
-type t = { source : string array }
+type t = {
+  ctx : Context.t;
+  source : string array;
+}
 
 let get_span_str (span : Token.span) (s : string array) : string =
   let Token.{ start = _, _, line, st; ending = _, _, _, e } = span in
@@ -26,11 +30,14 @@ let add_annotation (buf : Styled_buffer.t) (span : Token.span) =
 let draw_col_sep (buf : Styled_buffer.t) (line : int) (col : int) =
   Styled_buffer.puts buf line col "| " LineNum
 
-let render_source_line (buf : Styled_buffer.t) (line : int) (line_off : int)
-    (s : string array) =
+let render_source_line emitter (buf : Styled_buffer.t) (line : int)
+    (line_off : int) (s : string array) =
   let src_line = s.(line_off - 1) in
   Styled_buffer.append buf ~line src_line NoStyle;
-  Styled_buffer.puts buf line 1 (string_of_int line_off) LineNum
+  let ln =
+    if emitter.ctx.options.ui_testing then "LL" else string_of_int line_off
+  in
+  Styled_buffer.puts buf line 1 ln LineNum
 
 let emit emitter diagnostic =
   let buf = Styled_buffer.{ lines = [||] } in
@@ -41,12 +48,15 @@ let emit emitter diagnostic =
   Styled_buffer.append buf ~line:1
     ("  " ^ Diagnostic.render_dg_loc diagnostic.loc)
     LineCol;
-  let max_line_num_len = get_max_line_num_len diagnostic.span in
+  let max_line_num_len =
+    if emitter.ctx.options.ui_testing then 2
+    else get_max_line_num_len diagnostic.span
+  in
   let pad = String.make (max_line_num_len + 1) ' ' in
   Styled_buffer.append buf ~line:2 (pad ^ " | ") LineNum;
   Styled_buffer.append buf ~line:3 (pad ^ " | ") LineNum;
   let prim_span = primary_span diagnostic.span in
-  render_source_line buf 3 (get_span_line prim_span) emitter.source;
+  render_source_line emitter buf 3 (get_span_line prim_span) emitter.source;
   Styled_buffer.append buf ~line:4 (pad ^ " | ") LineNum;
   add_annotation buf prim_span;
   List.iter

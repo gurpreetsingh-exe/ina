@@ -3,10 +3,13 @@ open Tokenizer
 open Parser
 open Ty
 open Fmt
+open Session
+
+let dummy_ctx = Context.create (Config.config ())
 
 let render_input f g input =
   let tokenizer = tokenize "<test>" input in
-  let pctx = parse_ctx_create tokenizer input in
+  let pctx = parse_ctx_create dummy_ctx tokenizer input in
   let modd = f pctx in
   g modd = input
 
@@ -26,7 +29,7 @@ let%test "function with args" =
 let%test "types" =
   let f input =
     let tokenizer = tokenize "<test>" input in
-    let pctx = parse_ctx_create tokenizer input in
+    let pctx = parse_ctx_create dummy_ctx tokenizer input in
     let ty = parse_ty pctx in
     ty
   in

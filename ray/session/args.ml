@@ -43,6 +43,7 @@ let parse_args () =
         | "--help" -> usage arg0
         | "--print-ir" -> config.print_ir <- true
         | "--time" -> config.display_time <- true
+        | "--type-vars" -> config.display_type_vars <- true
         | _ ->
             if String.contains arg '=' then (
               let pair = String.split_on_char '=' arg in
