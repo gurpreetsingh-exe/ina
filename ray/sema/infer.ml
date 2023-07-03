@@ -110,10 +110,10 @@ let rec print_bindings ty_env =
   match ty_env.parent with Some env -> print_bindings env | None -> ()
 
 let rec resolve_block (infer_ctx : infer_ctx) body =
-  let rec sub expr ty =
+  let rec sub ty =
     match ty with
     | Infer ((IntVar _ | FloatVar _) as i) ->
-        sub expr
+        sub
           (if Hashtbl.mem infer_ctx.int_unifiction_table ty then
            Hashtbl.find infer_ctx.int_unifiction_table ty
           else (
@@ -121,7 +121,9 @@ let rec resolve_block (infer_ctx : infer_ctx) body =
             | IntVar _ -> Int I64
             | FloatVar _ -> Float F32
             | _ -> assert false))
-    | _ -> expr.expr_ty <- Some ty
+    | RefTy ty -> RefTy (sub ty)
+    | Ptr ty -> Ptr (sub ty)
+    | _ -> ty
   in
   let rec f stmt =
     match stmt with
@@ -130,7 +132,7 @@ let rec resolve_block (infer_ctx : infer_ctx) body =
     | Assign (l, init) -> g l; g init
   and g expr =
     let ty = Option.get expr.expr_ty in
-    sub expr ty;
+    expr.expr_ty <- Some (sub ty);
     match expr.expr_kind with
     | Binary (_, left, right) -> g left; g right
     | Block block -> resolve_block infer_ctx block
@@ -200,13 +202,16 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
         let left, right = (infer infer_ctx left, infer infer_ctx right) in
         equate infer_ctx left right;
         let cmp t1 : ty = match kind with Eq | NotEq -> Bool | _ -> t1 in
+        (* TODO: move all then non infer stuff to tychk *)
         match (left, right) with
         | Infer (IntVar t0), Infer (IntVar t1) ->
             cmp (Infer (IntVar { index = min t0.index t1.index }))
         | Infer (FloatVar _), Infer (FloatVar _) ->
             cmp (Infer (FloatVar { index = expr.expr_id }))
         | Infer (IntVar _), Infer (FloatVar _)
-         |Infer (FloatVar _), Infer (IntVar _) ->
+         |Infer (FloatVar _), Infer (IntVar _)
+         |Infer (IntVar _ | FloatVar _), (RefTy _ | Ptr _)
+         |(RefTy _ | Ptr _), Infer (IntVar _ | FloatVar _) ->
             infer_err_emit (MismatchTy (left, right)) expr.expr_span;
             cmp left
         | t0, Infer (IntVar _ | FloatVar _) ->
