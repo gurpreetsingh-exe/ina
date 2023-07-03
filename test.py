@@ -113,8 +113,10 @@ def run_test(case: pathlib.Path):
     with open(case, 'r') as f:
         src = f.readlines()
         if skip(src):
+            print(f"skipping {case}")
             tests.skipped += 1
             return
+        print(f"compiling {case}")
         fmt_test(tests, case, "".join(src))
         expected = parse_expected_result(src)
         command = "./bin/ray build {}".format(case).split(" ")
@@ -127,6 +129,7 @@ def run_test(case: pathlib.Path):
         exe = case.with_suffix("")
         proc = subprocess.Popen(
             exe, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        print(f"executing {exe}")
         output = TestResult()
         if proc.stdout:
             if stdout := proc.stdout.read().decode():

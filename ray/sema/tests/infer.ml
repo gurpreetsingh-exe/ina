@@ -27,7 +27,7 @@ let infer_unify expr ty =
 let%test "infer literal int" =
   let ctx = infer_ctx_create dummy_env in
   let expr = mk_expr (Lit (LitInt 20)) 0 in
-  infer ctx expr = Infer (IntVar 0)
+  infer ctx expr = Infer (IntVar { index = 0 })
 
 let%test "infer literal bool" =
   let ctx = infer_ctx_create dummy_env in
@@ -48,7 +48,7 @@ let%test "unify let int binding" =
   let expr = mk_expr (Lit (LitInt 20)) 0 in
   let expr2 = mk_expr (Path { segments = ["a"] }) 1 in
   let ty = infer ctx expr in
-  assert (ty = Infer (IntVar 0));
+  assert (ty = Infer (IntVar { index = 0 }));
   Hashtbl.add ctx.ty_env.bindings "a" ty;
   let ty2 = infer ctx expr2 in
   ignore (unify ctx ty2 (Int I64));

@@ -2,30 +2,14 @@ open Ast
 open Ty
 open Token
 open Front.Fmt
+open Printf
 
 type env = {
   parent : env option;
-  unresolved : (node_id, ty) Hashtbl.t;
   bindings : (string, ty) Hashtbl.t;
-  bindings_id : (node_id, string) Hashtbl.t;
-  expr_paren : (node_id, node_id) Hashtbl.t;
 }
 
-let env_create parent : env =
-  {
-    parent;
-    unresolved = Hashtbl.create 0;
-    bindings = Hashtbl.create 0;
-    bindings_id = Hashtbl.create 0;
-    expr_paren = Hashtbl.create 0;
-  }
-
-let rec ty_exists (ty_env : env) ident : bool =
-  if not (Hashtbl.mem ty_env.bindings ident) then (
-    match ty_env.parent with
-    | Some env -> ty_exists env ident
-    | None -> false)
-  else true
+let env_create parent : env = { parent; bindings = Hashtbl.create 0 }
 
 let rec find_ty (ty_env : env) ident : ty =
   if Hashtbl.mem ty_env.bindings ident then
@@ -33,21 +17,6 @@ let rec find_ty (ty_env : env) ident : ty =
   else (
     match ty_env.parent with
     | Some env -> find_ty env ident
-    | None -> assert false)
-
-let rec bindings_id_exists (ty_env : env) id : bool =
-  if not (Hashtbl.mem ty_env.bindings_id id) then (
-    match ty_env.parent with
-    | Some env -> bindings_id_exists env id
-    | None -> false)
-  else true
-
-let rec find_binding_id (ty_env : env) id : string =
-  if Hashtbl.mem ty_env.bindings_id id then
-    Hashtbl.find ty_env.bindings_id id
-  else (
-    match ty_env.parent with
-    | Some env -> find_binding_id env id
     | None -> assert false)
 
 let ty_is_int (ty : ty) : bool = match ty with Int _ -> true | _ -> false
@@ -63,6 +32,8 @@ let fn_ty func =
 type infer_ctx = {
   mutable ty_env : env;
   env : (node_id, expr) Hashtbl.t;
+  int_unifiction_table : (ty, ty) Hashtbl.t;
+  int_ut : (ty_vid, ty option) Unification_table.t;
   globl_env : (path, lang_item) Hashtbl.t;
   func_map : (ident, ty) Hashtbl.t;
 }
@@ -76,9 +47,34 @@ let infer_ctx_create globl_env =
   {
     ty_env = env_create None;
     env = Hashtbl.create 0;
+    int_unifiction_table = Hashtbl.create 0;
+    int_ut = { values = [||] };
     func_map = Hashtbl.create 0;
     globl_env;
   }
+
+let equate infer_ctx t0 t1 =
+  if not (Hashtbl.mem infer_ctx.int_unifiction_table t0) then
+    Hashtbl.add infer_ctx.int_unifiction_table t0 t1;
+  if not (Hashtbl.mem infer_ctx.int_unifiction_table t1) then
+    Hashtbl.add infer_ctx.int_unifiction_table t1 t0;
+  Hashtbl.iter
+    (fun k v ->
+      try
+        let found_v = Hashtbl.find infer_ctx.int_unifiction_table k in
+        let found_k = Hashtbl.find infer_ctx.int_unifiction_table v in
+        if found_v = v && found_k = k then
+          Hashtbl.remove infer_ctx.int_unifiction_table v
+      with Not_found -> ())
+    infer_ctx.int_unifiction_table
+
+let print_uf_tbl infer_ctx =
+  printf "{%s }\n"
+    (String.concat "\n"
+       (List.of_seq
+          (Seq.map
+             (fun (k, v) -> sprintf " %s -> %s" (render_ty k) (render_ty v))
+             (Hashtbl.to_seq infer_ctx.int_unifiction_table))))
 
 type infer_err =
   | MismatchTy of ty * ty
@@ -106,40 +102,48 @@ let infer_err_emit (ty_err : infer_err) (span : span) =
       Printf.printf "\x1b[31;1m%s\x1b[0m: `%s` cannot be dereferenced\n"
         (display_span span) (render_ty ty)
 
-let print_unresolved unresolved =
-  Hashtbl.iter
-    (fun key value -> Printf.printf "%d: %s\n" key (render_ty value))
-    unresolved
-
 let rec print_bindings ty_env =
   Hashtbl.iter
     (fun key value -> Printf.printf "%s: %s\n" key (render_ty value))
     ty_env.bindings;
   print_endline "======================";
-  Hashtbl.iter
-    (fun key value -> Printf.printf "%d: %s\n" key value)
-    ty_env.bindings_id;
   match ty_env.parent with Some env -> print_bindings env | None -> ()
 
-let resolve (infer_ctx : infer_ctx) (node_id : node_id) (infer_kind : ty) =
-  let f id else_ty =
-    if bindings_id_exists infer_ctx.ty_env id then (
-      let name = find_binding_id infer_ctx.ty_env id in
-      let ty = find_ty infer_ctx.ty_env name in
-      match ty with Infer _ -> else_ty | _ -> ty)
-    else else_ty
+let rec resolve_block (infer_ctx : infer_ctx) body =
+  let rec sub expr ty =
+    match ty with
+    | Infer ((IntVar _ | FloatVar _) as i) ->
+        sub expr
+          (if Hashtbl.mem infer_ctx.int_unifiction_table ty then
+           Hashtbl.find infer_ctx.int_unifiction_table ty
+          else (
+            match i with
+            | IntVar _ -> Int I64
+            | FloatVar _ -> Float F32
+            | _ -> assert false))
+    | _ -> expr.expr_ty <- Some ty
   in
-  let ty =
-    match infer_kind with
-    | Infer ty -> (
-      match ty with
-      | IntVar id -> f id (Int I64)
-      | FloatVar id -> f id (Float F32)
-      | TyVar _ -> assert false)
-    | _ -> infer_kind
+  let rec f stmt =
+    match stmt with
+    | Stmt expr | Expr expr -> g expr
+    | Binding { binding_expr; _ } -> g binding_expr
+    | Assign (l, init) -> g l; g init
+  and g expr =
+    let ty = Option.get expr.expr_ty in
+    sub expr ty;
+    match expr.expr_kind with
+    | Binary (_, left, right) -> g left; g right
+    | Block block -> resolve_block infer_ctx block
+    | Call (_, exprs) -> List.iter g exprs
+    | Deref expr | Ref expr -> g expr
+    | If { cond; then_block; else_block } -> (
+        g cond;
+        resolve_block infer_ctx then_block;
+        match else_block with Some e -> g e | None -> ())
+    | _ -> ()
   in
-  let expr = Hashtbl.find infer_ctx.env node_id in
-  expr.expr_ty <- Some ty
+  List.iter f body.block_stmts;
+  match body.last_expr with Some e -> g e | None -> ()
 
 let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
   Hashtbl.add infer_ctx.env expr.expr_id expr;
@@ -147,13 +151,13 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
     match expr.expr_kind with
     | Lit lit -> (
       match lit with
-      | LitInt _ -> Infer (IntVar expr.expr_id)
-      | LitFloat _ -> Infer (FloatVar expr.expr_id)
+      | LitInt _ ->
+          Infer (IntVar (Unification_table.new_key infer_ctx.int_ut None))
+      | LitFloat _ -> Infer (FloatVar { index = float_var_id () })
       | LitBool _ -> Bool
       | LitStr _ -> Str)
     | Path path ->
         let ident = render_path path in
-        Hashtbl.add infer_ctx.ty_env.bindings_id expr.expr_id ident;
         find_ty infer_ctx.ty_env ident
     | Call (path, exprs) ->
         let f func ident =
@@ -193,15 +197,18 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
           infer_err_emit (FnNotFound ident) expr.expr_span;
           Unit)
     | Binary (kind, left, right) -> (
-        Hashtbl.add infer_ctx.ty_env.expr_paren left.expr_id expr.expr_id;
-        Hashtbl.add infer_ctx.ty_env.expr_paren right.expr_id expr.expr_id;
         let left, right = (infer infer_ctx left, infer infer_ctx right) in
+        equate infer_ctx left right;
         let cmp t1 : ty = match kind with Eq | NotEq -> Bool | _ -> t1 in
         match (left, right) with
-        | Infer (IntVar _), Infer (IntVar _) ->
-            cmp (Infer (IntVar expr.expr_id))
+        | Infer (IntVar t0), Infer (IntVar t1) ->
+            cmp (Infer (IntVar { index = min t0.index t1.index }))
         | Infer (FloatVar _), Infer (FloatVar _) ->
-            cmp (Infer (FloatVar expr.expr_id))
+            cmp (Infer (FloatVar { index = expr.expr_id }))
+        | Infer (IntVar _), Infer (FloatVar _)
+         |Infer (FloatVar _), Infer (IntVar _) ->
+            infer_err_emit (MismatchTy (left, right)) expr.expr_span;
+            cmp left
         | t0, Infer (IntVar _ | FloatVar _) ->
             ignore (unify infer_ctx right t0);
             cmp left
@@ -221,11 +228,16 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
         match else_block with
         | Some elze -> (
             let else_ty = infer infer_ctx elze in
+            equate infer_ctx then_ty else_ty;
             match (then_ty, else_ty) with
             | Infer (IntVar _), Infer (IntVar _) ->
-                Infer (IntVar expr.expr_id)
+                Infer (IntVar { index = expr.expr_id })
             | Infer (FloatVar _), Infer (FloatVar _) ->
-                Infer (FloatVar expr.expr_id)
+                Infer (FloatVar { index = expr.expr_id })
+            | Infer (IntVar _), Infer (FloatVar _)
+             |Infer (FloatVar _), Infer (IntVar _) ->
+                infer_err_emit (MismatchTy (then_ty, else_ty)) expr.expr_span;
+                then_ty
             | t0, Infer (IntVar _ | FloatVar _) ->
                 ignore (unify infer_ctx else_ty t0);
                 then_ty
@@ -249,64 +261,22 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
     | Ref expr -> RefTy (infer infer_ctx expr)
   in
   (match ty with
-  | Infer (IntVar _) | Infer (FloatVar _) ->
-      Hashtbl.add infer_ctx.ty_env.unresolved expr.expr_id ty
+  | Infer (IntVar _ | FloatVar _) -> expr.expr_ty <- Some ty
   | ty -> expr.expr_ty <- Some ty);
   ty
 
+and rec_replace (infer_ctx : infer_ctx) k ty =
+  if Hashtbl.mem infer_ctx.int_unifiction_table k then (
+    let vty = Hashtbl.find infer_ctx.int_unifiction_table k in
+    Hashtbl.replace infer_ctx.int_unifiction_table k ty;
+    rec_replace infer_ctx vty ty)
+  else Hashtbl.add infer_ctx.int_unifiction_table k ty
+
 and unify (infer_ctx : infer_ctx) (ty : ty) (expected : ty) :
     infer_err option =
-  let rec set_type expr : infer_err option =
-    Hashtbl.remove infer_ctx.ty_env.unresolved expr.expr_id;
-    let err =
-      match expr.expr_kind with
-      | Binary (_, left, right) -> (
-        match set_type left with
-        | Some err -> Some err
-        | None -> set_type right)
-      | Path path ->
-          let name = render_path path in
-          let binding = Hashtbl.find infer_ctx.ty_env.bindings name in
-          Hashtbl.replace infer_ctx.ty_env.bindings name expected;
-          unify infer_ctx binding expected
-      | Block block -> fblock block
-      | If { then_block; else_block; _ } -> (
-        match fblock then_block with
-        | None -> (
-          match else_block with
-          | Some else_block -> set_type else_block
-          | None -> None)
-        | err -> err)
-      | _ -> None
-    in
-    (match expr.expr_ty with
-    | Some _ -> ()
-    | None -> expr.expr_ty <- Some expected);
-    err
-  and fblock block =
-    match block.last_expr with Some expr -> set_type expr | None -> None
-  in
   let f (check_ty : ty -> bool) (ty_kind : ty) =
     if check_ty expected then (
-      Hashtbl.iter
-        (fun id t ->
-          if t = ty then (
-            let expr = Hashtbl.find infer_ctx.env id in
-            (match set_type expr with
-            | Some err -> infer_err_emit err expr.expr_span
-            | None -> ());
-            if Hashtbl.mem infer_ctx.ty_env.expr_paren id then (
-              let p_id = Hashtbl.find infer_ctx.ty_env.expr_paren id in
-              let pexpr = Hashtbl.find infer_ctx.env p_id in
-              match set_type pexpr with
-              | Some err -> infer_err_emit err pexpr.expr_span
-              | None -> ());
-            try
-              let name = Hashtbl.find infer_ctx.ty_env.bindings_id id in
-              Hashtbl.replace infer_ctx.ty_env.bindings name expected;
-              Hashtbl.remove infer_ctx.ty_env.bindings_id id
-            with Not_found -> ()))
-        infer_ctx.ty_env.unresolved;
+      rec_replace infer_ctx ty_kind expected;
       None)
     else Some (MismatchTy (expected, ty_kind))
   in
@@ -332,6 +302,7 @@ and infer_block (infer_ctx : infer_ctx) (block : block) : ty =
     | Assign (l, init) ->
         let lty = infer infer_ctx l in
         let rty = infer infer_ctx init in
+        equate infer_ctx lty rty;
         let f ty exp =
           match unify infer_ctx exp ty with
           | Some err -> infer_err_emit err init.expr_span
@@ -341,6 +312,9 @@ and infer_block (infer_ctx : infer_ctx) (block : block) : ty =
         | Infer (IntVar _), Infer (IntVar _)
          |Infer (FloatVar _), Infer (FloatVar _) ->
             ()
+        | Infer (IntVar _), Infer (FloatVar _)
+         |Infer (FloatVar _), Infer (IntVar _) ->
+            infer_err_emit (MismatchTy (lty, rty)) init.expr_span
         | ty, Infer (IntVar _ | FloatVar _) -> f ty rty
         | Infer (IntVar _ | FloatVar _), ty -> f ty lty
         | l, r ->
@@ -348,12 +322,15 @@ and infer_block (infer_ctx : infer_ctx) (block : block) : ty =
               infer_err_emit (MismatchTy (lty, rty)) init.expr_span);
         Unit
   in
+  let tmp_env = infer_ctx.ty_env in
+  infer_ctx.ty_env <- env_create (Some tmp_env);
   ignore (List.map f block.block_stmts);
   let ty =
     match block.last_expr with
     | Some expr -> infer infer_ctx expr
     | None -> Unit
   in
+  infer_ctx.ty_env <- tmp_env;
   ty
 
 let infer_func (infer_ctx : infer_ctx) (func : func) =
@@ -375,7 +352,7 @@ let infer_func (infer_ctx : infer_ctx) (func : func) =
       | Some err, Some expr -> infer_err_emit err expr.expr_span
       | None, (None | _) -> ()
       | Some err, None -> infer_err_emit err fn_span);
-      Hashtbl.iter (resolve infer_ctx) infer_ctx.ty_env.unresolved;
+      resolve_block infer_ctx body;
       infer_ctx.ty_env <- tmp_env
   | None -> ()
 

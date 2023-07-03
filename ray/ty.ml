@@ -57,15 +57,27 @@ type float_ty =
 
 let display_float_ty = function F32 -> "f32" | F64 -> "f64"
 
+type ty_vid = { index : int }
+
 type infer_ty =
-  | IntVar of int
-  | FloatVar of int
-  | TyVar of int
+  | IntVar of ty_vid
+  | FloatVar of ty_vid
+  | TyVar of ty_vid
+
+let i, f = (ref 0, ref 0)
+
+let int_var_id () =
+  let t = !i in
+  incr i; t
+
+let float_var_id () =
+  let t = !f in
+  incr f; t
 
 let display_infer_ty = function
-  | IntVar i -> sprintf "\x1b[1;31m?%di\x1b[0m" i
-  | FloatVar i -> sprintf "\x1b[1;31m?%df\x1b[0m" i
-  | TyVar i -> sprintf "\x1b[1;31m?%d\x1b[0m" i
+  | IntVar i -> sprintf "\x1b[1;31m?%di\x1b[0m" i.index
+  | FloatVar i -> sprintf "\x1b[1;31m?%df\x1b[0m" i.index
+  | TyVar i -> sprintf "\x1b[1;31m?%d\x1b[0m" i.index
 
 type ty =
   | Int of int_ty

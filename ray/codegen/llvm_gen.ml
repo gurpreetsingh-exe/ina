@@ -117,7 +117,7 @@ let gen_blocks (blocks : Func.blocks) =
     (fun (bb : Inst.basic_block) ->
       Hashtbl.add bbs bb.bid
         (if bb.is_entry then entry_block fn
-        else append_block codegen_ctx.llctx (sprintf "bb%d" bb.bid) fn))
+         else append_block codegen_ctx.llctx (sprintf "bb%d" bb.bid) fn))
     blocks.bbs;
   let get_value (value : Inst.value) : llvalue =
     match value with
@@ -220,8 +220,7 @@ let gen_blocks (blocks : Func.blocks) =
             | FnTy (args, ret_ty, is_variadic) ->
                 let args = List.map (fun ty -> get_llvm_ty ty) args in
                 let ret_ty = get_llvm_ty ret_ty in
-                (if is_variadic then var_arg_function_type
-                else function_type)
+                (if is_variadic then var_arg_function_type else function_type)
                   ret_ty (Array.of_list args)
             | _ -> assert false
           in
