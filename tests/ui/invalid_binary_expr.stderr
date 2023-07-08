@@ -1,0 +1,6 @@
+error: cannot add `i64` and `f32`
+   --> invalid_binary_expr.ray:6:13
+    |
+ LL |     let c = a + b;
+    |             ^^^^^ cannot add `i64` and `f32`
+

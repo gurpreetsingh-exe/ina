@@ -1,0 +1,6 @@
+error: local variable `a` is not found in this scope
+   --> var_not_found.ray:4:5
+    |
+ LL |     a;
+    |     ^ not found in this scope
+

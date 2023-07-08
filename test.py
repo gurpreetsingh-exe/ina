@@ -5,6 +5,7 @@ import pathlib
 import sys
 from typing import List
 import subprocess
+import argparse
 
 
 class Color:
@@ -50,10 +51,11 @@ tests = Tests()
 
 
 class TestResult:
-    def __init__(self, stdout: str | None = None, stderr: str | None = None, exit_code: int = 0):
-        self.stdout = stdout
-        self.stderr = stderr
-        self.exit_code = exit_code
+    def __init__(self):
+        self.stdout: str | None = None
+        self.stderr: str | None = None
+        self.exit_code: int = 0
+        self.compile_fail: bool = False
 
     def __eq__(self, other: TestResult) -> bool:
         return self.stdout == other.stdout \
@@ -75,24 +77,29 @@ def extract_value(lines: List[str], value: str):
     return [l.strip(value) for l in lines if l.startswith(value)]
 
 
+def extract_flag(lines: List[str], value: str):
+    value = "// {}".format(value)
+    return any([l.strip(value) for l in lines if l.startswith(value)])
+
+
 def skip(lines: List[str]):
     return any([True for l in lines if l.startswith("// SKIP")])
 
 
 def parse_expected_result(lines: List[str]) -> TestResult:
-    stdout = None
-    stderr = None
-    exit_code = None
+    test_result = TestResult()
     if res := extract_value(lines, "STDOUT"):
-        stdout = "".join(res)
+        test_result.stdout = "".join(res)
     if res := extract_value(lines, "STDERR"):
-        stderr = "".join(res)
+        test_result.stderr = "".join(res)
     if res := extract_value(lines, "EXIT_CODE"):
         assert len(res) == 1
-        exit_code = int(res[0])
+        test_result.exit_code = int(res[0])
     else:
-        exit_code = 0
-    return TestResult(stdout, stderr, exit_code)
+        test_result.exit_code = 0
+    if res := extract_flag(lines, "COMPILE_FAIL"):
+        test_result.compile_fail = True
+    return test_result
 
 
 def fmt_test(tests: Tests, case: pathlib.Path, src: str):
@@ -104,9 +111,16 @@ def fmt_test(tests: Tests, case: pathlib.Path, src: str):
                 tests.fmt += 1
 
 
-def run_test(case: pathlib.Path):
+def run_test(case: pathlib.Path, options: argparse.Namespace):
     if case.is_dir():
-        test_dir(case)
+        test_dir(case, options)
+        return
+
+    if case.suffix in {'.o'}:
+        subprocess.call("rm -f {}".format(case).split(" "))
+        return
+
+    if case.suffix in {'.stderr'}:
         return
 
     tests.n += 1
@@ -119,13 +133,39 @@ def run_test(case: pathlib.Path):
         print(f"compiling {case}")
         fmt_test(tests, case, "".join(src))
         expected = parse_expected_result(src)
-        command = "./bin/ray build {}".format(case).split(" ")
-        proc = subprocess.Popen(command)
+        command = "./bin/ray build {} --ui-testing".format(case).split(" ")
+        proc = subprocess.Popen(
+            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stderr = None
+        if proc.stderr:
+            stderr = proc.stderr.read().decode()
         proc.communicate()
-        if proc.returncode != 0:
-            print("compile fail: {}".format(case))
-            tests.failed += 1
-            return
+        if expected.compile_fail:
+            if proc.returncode == 0:
+                tests.failed += 1
+                print("compile pass: {}".format(case))
+            else:
+                if not stderr:
+                    tests.failed += 1
+                    return
+                stderr_file = case.with_suffix(".stderr")
+                if options.bless:
+                    tests.passed += 1
+                    with open(stderr_file, 'w') as f:
+                        f.write(stderr)
+                        return
+                with open(stderr_file, 'r') as f:
+                    if stderr != f.read():
+                        print("failed {}".format(case))
+                        tests.failed += 1
+                    else:
+                        tests.passed += 1
+                return
+        else:
+            if proc.returncode != 0:
+                print("compile fail: {}".format(case))
+                tests.failed += 1
+                return
         exe = case.with_suffix("")
         proc = subprocess.Popen(
             exe, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -148,24 +188,22 @@ def run_test(case: pathlib.Path):
             tests.passed += 1
 
 
-def test_dir(dirname):
+def test_dir(dirname, options):
     for test in dirname.iterdir():
-        run_test(test)
+        run_test(test, options)
 
 
 if __name__ == "__main__":
-    test_path = None
-    if len(sys.argv) > 1:
-        test_path = sys.argv[1]
+    parser = argparse.ArgumentParser()
+    parser.add_argument("test_dir")
+    parser.add_argument("--bless", action='store_true')
+    args = parser.parse_args()
 
-    if not test_path:
-        sys.stderr.write("error: no test path provided\n")
-        exit(1)
-
+    test_path = args.test_dir
     test = pathlib.Path(test_path)
     if not test.exists():
         sys.stderr.write("error: {} doesn't exist\n".format(test))
         exit(1)
 
-    run_test(test)
+    run_test(test, args)
     tests.print_results()
