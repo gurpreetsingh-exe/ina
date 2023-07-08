@@ -1,0 +1,11 @@
+// COMPILE_FAIL
+
+fn main() {
+    let a = if true { 50 } else { 20. };
+    let a = if true {
+        50
+    } else {
+        20.
+    };
+}
+

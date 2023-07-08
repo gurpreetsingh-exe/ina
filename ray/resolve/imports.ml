@@ -87,7 +87,9 @@ let rec import (resolver : resolver) (path : path) =
     if mod_exists resolver s then create_path resolver s
     else if Array.mem s (Sys.readdir "library") then
       find_std (String.concat Filename.dir_sep ["library"; s])
-    else raise Not_found
+    else (
+      eprintf "error: module `%s` not found\n" s;
+      exit 1)
   in
   let f lib_path =
     let ic = open_in lib_path in
@@ -105,7 +107,9 @@ let rec import (resolver : resolver) (path : path) =
           },
         modd )
     in
-    let infer_ctx = Infer.infer_ctx_create resolver.globl_ctx env in
+    let infer_ctx =
+      Infer.infer_ctx_create pctx.emitter resolver.globl_ctx env
+    in
     ignore (Infer.infer_begin infer_ctx modd);
     (env, modd)
   in
@@ -114,8 +118,8 @@ let rec import (resolver : resolver) (path : path) =
     List.fold_left
       (fun h next ->
         if not (Hashtbl.mem h.imported_mods next) then (
-          printf "error: %s not found\n" next;
-          assert false)
+          eprintf "error: `%s` not found in `%s`\n" next h.mod_name;
+          exit 1)
         else (
           let path =
             String.concat Filename.dir_sep

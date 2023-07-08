@@ -26,7 +26,7 @@ let bump tokenizer =
     let c = !(tokenizer.src).[id + 1] in
     tokenizer.pos <-
       (if c = '\n' then (filename, id + 1, line + 1, 0)
-       else (filename, id + 1, line, col + 1));
+      else (filename, id + 1, line, col + 1));
     tokenizer.c <- Some c)
   else (
     tokenizer.c <- None;
@@ -97,6 +97,14 @@ let get_token_type c tokenizer : token_kind =
   | '\000' -> Eof
   | _ -> raise Invalid_token
 
+let newline_check tokenizer f =
+  let filename, id, line, col = tokenizer.pos in
+  if !(tokenizer.src).[id] = '\n' then (
+    tokenizer.pos <- (filename, id, line - 1, col);
+    f ();
+    tokenizer.pos <- (filename, id, line, col))
+  else f ()
+
 let next tokenizer : token option =
   let tok = ref None in
   try
@@ -118,9 +126,10 @@ let next tokenizer : token option =
               | Some _ | None -> raise I
             done
           with I ->
-            mk_tok tokenizer
-              (Lit (if !is_float then Float else Int))
-              tok start;
+            newline_check tokenizer (fun _ ->
+                mk_tok tokenizer
+                  (Lit (if !is_float then Float else Int))
+                  tok start);
             raise Exit)
       | Some ('a' .. 'z' | 'A' .. 'Z' | '_') -> (
           let start = tokenizer.pos in
@@ -135,13 +144,14 @@ let next tokenizer : token option =
               | Some _ | None -> raise I
             done
           with I ->
-            (match !buf with
-            | "true" | "false" -> mk_tok tokenizer (Lit Bool) tok start
-            | _ ->
+            newline_check tokenizer (fun _ ->
                 mk_tok tokenizer
-                  (if Hashtbl.mem keywords !buf then
-                     Hashtbl.find keywords !buf
-                   else Ident)
+                  (match !buf with
+                  | "true" | "false" -> Lit Bool
+                  | _ ->
+                      if Hashtbl.mem keywords !buf then
+                        Hashtbl.find keywords !buf
+                      else Ident)
                   tok start);
             raise Exit)
       | Some '"' -> (
@@ -156,7 +166,8 @@ let next tokenizer : token option =
               | None -> raise I
             done
           with I ->
-            mk_tok tokenizer (Lit String) tok start;
+            newline_check tokenizer (fun _ ->
+                mk_tok tokenizer (Lit String) tok start);
             raise Exit)
       | Some c ->
           let start = tokenizer.pos in
@@ -171,9 +182,13 @@ let next tokenizer : token option =
                   | Some '\n' | None -> raise I
                   | Some _ -> bump tokenizer
                 done
-              with I -> ())
-          | _ -> bump tokenizer);
-          mk_tok tokenizer kind tok start;
+              with I ->
+                ();
+                mk_tok tokenizer kind tok start)
+          | _ ->
+              bump tokenizer;
+              newline_check tokenizer (fun _ ->
+                  mk_tok tokenizer kind tok start));
           raise Exit
       | None ->
           let start = tokenizer.pos in

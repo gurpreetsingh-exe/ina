@@ -79,6 +79,11 @@ let display_infer_ty = function
   | FloatVar i -> sprintf "\x1b[1;31m?%df\x1b[0m" i.index
   | TyVar i -> sprintf "\x1b[1;31m?%d\x1b[0m" i.index
 
+let render_infer_ty = function
+  | IntVar _ -> "int"
+  | FloatVar _ -> "float"
+  | TyVar _ -> "T"
+
 type ty =
   | Int of int_ty
   | Float of float_ty

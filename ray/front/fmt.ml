@@ -28,7 +28,7 @@ let rec render_ty (ty : ty) : string =
         (render ty_list (fun ty -> render_ty ty) ", ")
         (if is_variadic then ", ..." else "")
         (render_ty ret_ty)
-  | Infer ty -> display_infer_ty ty
+  | Infer ty -> render_infer_ty ty
 
 let render_fn_sig (fn_sig : fn_sig) : string =
   sprintf "fn %s(%s)%s" fn_sig.name

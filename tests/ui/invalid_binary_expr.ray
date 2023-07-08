@@ -1,0 +1,7 @@
+// COMPILE_FAIL
+
+fn main() {
+    let a = 20;
+    let b = 50.;
+    let c = a + b;
+}

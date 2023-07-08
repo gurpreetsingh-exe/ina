@@ -16,7 +16,7 @@ let level_to_color = function
 
 let display_level = function
   | Note -> "note"
-  | Warn -> "warn"
+  | Warn -> "warning"
   | Err -> "error"
   | Bug -> "bug"
 
@@ -36,7 +36,7 @@ let get_max_line_num_len ms : int =
        (List.fold_left
           (fun max_len next -> max next max_len)
           0
-          (List.map (fun { start = _, _, l, _; _ } -> l) ms.primary_spans)))
+          (List.map (fun { ending = _, _, l, _; _ } -> l) ms.primary_spans)))
 
 type substitution = { parts : (span * string) list }
 
@@ -61,7 +61,10 @@ let dg_loc_from_span (span : span) =
   let file, _, line, col = span.start in
   { line; col; file }
 
-let render_dg_loc loc = sprintf "%s:%d:%d" loc.file loc.line loc.col
+let render_dg_loc loc anon_file =
+  if anon_file then
+    sprintf "%s:%d:%d" (Filename.basename loc.file) loc.line loc.col
+  else sprintf "%s:%d:%d" loc.file loc.line loc.col
 
 type t = {
   level : level;

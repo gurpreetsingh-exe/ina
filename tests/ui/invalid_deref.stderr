@@ -1,0 +1,6 @@
+error: invalid dereference
+   --> invalid_deref.ray:4:14
+    |
+ LL |     let a = *20;
+    |              ^^ `int` cannot be dereferenced
+

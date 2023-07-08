@@ -1,0 +1,14 @@
+error: `if` and `else` have incompatible types
+   --> mismatch_if_else.ray:4:13
+    |
+ LL |     let a = if true { 50 } else { 20. };
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `i64`, found `f32`
+
+error: `if` and `else` have incompatible types
+   --> mismatch_if_else.ray:5:13
+    |
+ LL |     let a = if true {
+ ...| 
+ LL |     };
+    | 
+
