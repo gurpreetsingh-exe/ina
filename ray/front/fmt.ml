@@ -14,21 +14,21 @@ let render_lit (lit : lit) : string =
   | LitBool value -> sprintf "%b" value
   | LitStr value -> sprintf "\"%s\"" (String.escaped value)
 
-let rec render_ty (ty : ty) : string =
+let rec render_ty ?(dbg = true) (ty : ty) : string =
   match ty with
   | Int ty -> display_int_ty ty
   | Float ty -> display_float_ty ty
   | Bool -> "bool"
   | Str -> "str"
-  | Ptr ty -> sprintf "*%s" (render_ty ty)
-  | RefTy ty -> sprintf "&%s" (render_ty ty)
+  | Ptr ty -> sprintf "*%s" (render_ty ?dbg:(Some dbg) ty)
+  | RefTy ty -> sprintf "&%s" (render_ty ?dbg:(Some dbg) ty)
   | Unit -> "()"
   | FnTy (ty_list, ret_ty, is_variadic) ->
       sprintf "fn(%s%s) -> %s"
         (render ty_list (fun ty -> render_ty ty) ", ")
         (if is_variadic then ", ..." else "")
         (render_ty ret_ty)
-  | Infer ty -> render_infer_ty ty
+  | Infer ty -> render_infer_ty ty dbg
 
 let render_fn_sig (fn_sig : fn_sig) : string =
   sprintf "fn %s(%s)%s" fn_sig.name

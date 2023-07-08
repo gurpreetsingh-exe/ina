@@ -30,7 +30,9 @@ let error = ref 0
 
 let mismatch_ty expected ty span =
   let msg =
-    sprintf "expected `%s`, found `%s`" (render_ty expected) (render_ty ty)
+    sprintf "expected `%s`, found `%s`"
+      (render_ty ?dbg:(Some false) expected)
+      (render_ty ?dbg:(Some false) ty)
   in
   Diagnostic.
     {
@@ -51,7 +53,8 @@ let invalid_binary_expr kind left right span =
       | Mul -> "multiply"
       | Div -> "divide"
       | Eq | NotEq | Gt | GtEq | Lt | LtEq -> "compare")
-      (render_ty left) (render_ty right)
+      (render_ty ?dbg:(Some false) left)
+      (render_ty ?dbg:(Some false) right)
   in
   Diagnostic.
     {
@@ -102,6 +105,7 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
             ty_err_emit ty_ctx.emitter
               (InvalidBinaryExpression (kind, left, right))
               expr.expr_span)
+    | Call (_, args) -> ignore (List.map fexpr args)
     | If { cond; then_block; else_block } -> (
         if fexpr cond <> Bool then ();
         let then_ty = fblock then_block in
@@ -111,8 +115,9 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
             if then_ty <> else_ty then (
               let span = expr.expr_span in
               let msg =
-                sprintf "expected `%s`, found `%s`" (render_ty then_ty)
-                  (render_ty else_ty)
+                sprintf "expected `%s`, found `%s`"
+                  (render_ty ?dbg:(Some false) then_ty)
+                  (render_ty ?dbg:(Some false) else_ty)
               in
               incr error;
               Emitter.emit ty_ctx.emitter
@@ -132,8 +137,9 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
                   })
         | None -> ())
     | Deref expr -> ignore (fexpr expr)
+    | Ref expr -> ignore (fexpr expr)
     | Block body -> ignore (fblock body)
-    | _ -> ());
+    | Lit _ | Path _ -> ());
     Option.get expr.expr_ty
   and fblock body =
     List.iter f body.block_stmts;

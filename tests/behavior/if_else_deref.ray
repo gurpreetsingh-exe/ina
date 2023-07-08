@@ -1,0 +1,7 @@
+// EXIT_CODE: 1
+
+fn main() -> bool {
+    let a: i32 = 34;
+    *(if a == 34 { &a } else { let _ = 0; &_ }) + 35 == 69
+}
+

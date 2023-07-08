@@ -92,7 +92,9 @@ type infer_err =
 
 let mismatch_ty expected ty span =
   let msg =
-    sprintf "expected `%s`, found `%s`" (render_ty expected) (render_ty ty)
+    sprintf "expected `%s`, found `%s`"
+      (render_ty ?dbg:(Some false) expected)
+      (render_ty ?dbg:(Some false) ty)
   in
   Diagnostic.
     {
@@ -135,7 +137,9 @@ let local_var_not_found name span =
     }
 
 let invalid_deref ty span =
-  let msg = sprintf "`%s` cannot be dereferenced" (render_ty ty) in
+  let msg =
+    sprintf "`%s` cannot be dereferenced" (render_ty ?dbg:(Some false) ty)
+  in
   Diagnostic.
     {
       level = Err;
@@ -270,11 +274,8 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
         let cmp t1 : ty = match kind with Eq | NotEq -> Bool | _ -> t1 in
         cmp
           (compare_types infer_ctx left right
+             (fun t0 t1 -> Infer (IntVar { index = min t0.index t1.index }))
              (fun t0 t1 ->
-               equate infer_ctx left right;
-               Infer (IntVar { index = min t0.index t1.index }))
-             (fun t0 t1 ->
-               equate infer_ctx left right;
                Infer (FloatVar { index = min t0.index t1.index })))
     | If { cond; then_block; else_block } -> (
         let cond_ty = infer infer_ctx cond in
@@ -286,11 +287,8 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
         | Some elze ->
             let else_ty = infer infer_ctx elze in
             compare_types infer_ctx then_ty else_ty
+              (fun t0 t1 -> Infer (IntVar { index = min t0.index t1.index }))
               (fun t0 t1 ->
-                equate infer_ctx then_ty else_ty;
-                Infer (IntVar { index = min t0.index t1.index }))
-              (fun t0 t1 ->
-                equate infer_ctx else_ty then_ty;
                 Infer (FloatVar { index = min t0.index t1.index }))
         | None -> Unit)
     | Block block -> infer_block infer_ctx block
@@ -309,13 +307,17 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
 
 and compare_types infer_ctx ty1 ty2 fi ff : ty =
   match (ty1, ty2) with
-  | Infer (IntVar t0), Infer (IntVar t1) -> fi t0 t1
-  | Infer (FloatVar t0), Infer (FloatVar t1) -> ff t0 t1
+  | Infer (IntVar t0), Infer (IntVar t1) ->
+      equate infer_ctx ty1 ty2; fi t0 t1
+  | Infer (FloatVar t0), Infer (FloatVar t1) ->
+      equate infer_ctx ty1 ty2; ff t0 t1
   | Infer (IntVar _), Infer (FloatVar _)
    |Infer (FloatVar _), Infer (IntVar _)
    |Infer (IntVar _ | FloatVar _), (RefTy _ | Ptr _)
    |(RefTy _ | Ptr _), Infer (IntVar _ | FloatVar _) ->
       ty1
+  | RefTy t0, RefTy t1 -> RefTy (compare_types infer_ctx t0 t1 fi ff)
+  | Ptr t0, Ptr t1 -> Ptr (compare_types infer_ctx t0 t1 fi ff)
   | t0, Infer (IntVar _ | FloatVar _) ->
       ignore (unify infer_ctx ty2 t0);
       ty1
@@ -368,11 +370,8 @@ and infer_block (infer_ctx : infer_ctx) (block : block) : ty =
         let rty = infer infer_ctx init in
         ignore
           (compare_types infer_ctx lty rty
+             (fun t0 t1 -> Infer (IntVar { index = min t0.index t1.index }))
              (fun t0 t1 ->
-               equate infer_ctx lty rty;
-               Infer (IntVar { index = min t0.index t1.index }))
-             (fun t0 t1 ->
-               equate infer_ctx lty rty;
                Infer (FloatVar { index = min t0.index t1.index })));
         Unit
   in
