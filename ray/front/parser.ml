@@ -13,7 +13,6 @@ type parse_ctx = {
   mutable curr_tok : token;
   mutable prev_tok : token option;
   mutable stop : bool;
-  mutable extern_block : bool;
   mutable node_id : node_id;
   emitter : Emitter.t;
 }
@@ -81,7 +80,6 @@ let parse_ctx_create ctx tokenizer s =
         curr_tok = t;
         prev_tok = None;
         stop = false;
-        extern_block = false;
         node_id = 0;
         emitter =
           { ctx; source = Array.of_list (String.split_on_char '\n' s) };

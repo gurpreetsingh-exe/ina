@@ -1,8 +1,9 @@
 open Ast
 open Ty
 open Infer
-open Token
 open Front.Fmt
+open Errors
+open Printf
 
 let ty_unwrap (ty : ty option) = Option.value ty ~default:Unit
 
@@ -16,68 +17,149 @@ let env_create parent : env = { parent; bindings = Hashtbl.create 0 }
 type ty_ctx = {
   ty_env : env;
   func_map : (ident, ty) Hashtbl.t;
+  emitter : Emitter.t;
 }
 
 type ty_err =
   | MismatchTy of ty * ty
-  | NoReturn of func
+  | InvalidBinaryExpression of binary_kind * ty * ty
 
 exception TypeError of ty_err
 
-let ty_err_emit ty_err span =
+let error = ref 0
+
+let mismatch_ty expected ty span =
+  let msg =
+    sprintf "expected `%s`, found `%s`" (render_ty expected) (render_ty ty)
+  in
+  Diagnostic.
+    {
+      level = Err;
+      message = "mismatch types";
+      span = { primary_spans = [span]; labels = [(span, msg, true)] };
+      children = [];
+      sugg = [];
+      loc = Diagnostic.dg_loc_from_span span;
+    }
+
+let invalid_binary_expr kind left right span =
+  let msg =
+    sprintf "cannot %s `%s` and `%s`"
+      (match kind with
+      | Add -> "add"
+      | Sub -> "subtract"
+      | Mul -> "multiply"
+      | Div -> "divide"
+      | Eq | NotEq | Gt | GtEq | Lt | LtEq -> "compare")
+      (render_ty left) (render_ty right)
+  in
+  Diagnostic.
+    {
+      level = Err;
+      message = msg;
+      span = { primary_spans = [span]; labels = [(span, msg, true)] };
+      children = [];
+      sugg = [];
+      loc = Diagnostic.dg_loc_from_span span;
+    }
+
+let unused_value span =
+  let msg = "expression result unused" in
+  Diagnostic.
+    {
+      level = Warn;
+      message = msg;
+      span = { primary_spans = [span]; labels = [(span, "", true)] };
+      children = [];
+      sugg = [];
+      loc = Diagnostic.dg_loc_from_span span;
+    }
+
+let ty_err_emit emitter ty_err span =
+  incr error;
   match ty_err with
   | MismatchTy (expected, ty) ->
-      Printf.printf "\x1b[31;1m%s\x1b[0m: expected `%s`, found `%s`\n"
-        (display_span span) (render_ty expected) (render_ty ty)
-  | NoReturn func ->
-      Printf.printf
-        "\x1b[31;1m%s\x1b[0m: function `%s` returns nothing, but `%s` \
-         expected\n"
-        (display_span span) func.fn_sig.name
-        (render_ty (ty_unwrap func.fn_sig.ret_ty))
+      Emitter.emit emitter (mismatch_ty expected ty span)
+  | InvalidBinaryExpression (kind, left, right) ->
+      Emitter.emit emitter (invalid_binary_expr kind left right span)
 
 let ty_ctx_create (infer_ctx : infer_ctx) =
-  { ty_env = env_create None; func_map = infer_ctx.func_map }
+  {
+    ty_env = env_create None;
+    func_map = infer_ctx.func_map;
+    emitter = infer_ctx.emitter;
+  }
 
 let tychk_func (ty_ctx : ty_ctx) (func : func) =
   let { fn_sig = { ret_ty; fn_span; _ }; body; _ } = func in
-  let rec fexpr expr =
-    match expr.expr_kind with
+  let rec fexpr expr : ty =
+    (match expr.expr_kind with
+    | Binary (kind, left, right) -> (
+        let left, right = (fexpr left, fexpr right) in
+        match (left, right) with
+        | Int _, Int _ | Float _, Float _ -> ()
+        | _ ->
+            ty_err_emit ty_ctx.emitter
+              (InvalidBinaryExpression (kind, left, right))
+              expr.expr_span)
     | If { cond; then_block; else_block } -> (
-        fexpr cond;
-        fblock then_block;
+        if fexpr cond <> Bool then ();
+        let then_ty = fblock then_block in
         match else_block with
-        | Some else_block -> fexpr else_block
+        | Some else_block ->
+            let else_ty = fexpr else_block in
+            if then_ty <> else_ty then (
+              let span = expr.expr_span in
+              let msg =
+                sprintf "expected `%s`, found `%s`" (render_ty then_ty)
+                  (render_ty else_ty)
+              in
+              incr error;
+              Emitter.emit ty_ctx.emitter
+                Diagnostic.
+                  {
+                    level = Err;
+                    message =
+                      sprintf "`if` and `else` have incompatible types";
+                    span =
+                      {
+                        primary_spans = [span];
+                        labels = [(span, msg, true)];
+                      };
+                    children = [];
+                    sugg = [];
+                    loc = Diagnostic.dg_loc_from_span span;
+                  })
         | None -> ())
-    | Block body -> fblock body
-    | _ -> ()
+    | Deref expr -> ignore (fexpr expr)
+    | Block body -> ignore (fblock body)
+    | _ -> ());
+    Option.get expr.expr_ty
   and fblock body =
     List.iter f body.block_stmts;
-    match body.last_expr with Some expr -> fexpr expr | None -> ()
+    match body.last_expr with Some expr -> fexpr expr | None -> Unit
   and f stmt =
     match stmt with
     | Assign (expr1, expr2) ->
-        expr2.expr_ty <- expr1.expr_ty;
-        fexpr expr1;
-        fexpr expr2
-    | Stmt expr | Expr expr -> fexpr expr
+        let left = fexpr expr1 in
+        let right = fexpr expr2 in
+        if left <> right then
+          Emitter.emit ty_ctx.emitter
+            (mismatch_ty left right expr2.expr_span)
+    | Stmt expr | Expr expr ->
+        let ty = fexpr expr in
+        if ty <> Unit then
+          Emitter.emit ty_ctx.emitter (unused_value expr.expr_span)
     | Binding ({ binding_pat; binding_ty; binding_expr; _ } as binding) -> (
-        fexpr binding_expr;
+        let ty = fexpr binding_expr in
         match binding_pat with
         | PatIdent ident -> (
-            (let ty =
-               match binding_expr.expr_ty with
-               | Some ty ->
-                   Hashtbl.add ty_ctx.ty_env.bindings ident ty;
-                   ty
-               | None -> assert false
-             in
+            (Hashtbl.add ty_ctx.ty_env.bindings ident ty;
              match binding_ty with
              | Some expected ->
                  if expected <> ty then
-                   ty_err_emit
-                     (MismatchTy (expected, ty))
-                     binding_expr.expr_span
+                   Emitter.emit ty_ctx.emitter
+                     (mismatch_ty expected ty binding_expr.expr_span)
              | None -> binding.binding_ty <- Some ty);
             let check_overflow _value ty =
               match ty with
@@ -99,11 +181,17 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
   | Some body -> (
       List.iter f body.block_stmts;
       match body.last_expr with
-      | Some expr -> fexpr expr
+      | Some expr ->
+          let ty = fexpr expr in
+          if ty <> ret_ty then
+            ty_err_emit ty_ctx.emitter
+              (MismatchTy (ret_ty, ty))
+              expr.expr_span
       | None -> (
         match ret_ty with
         | Unit -> ()
-        | _ -> ty_err_emit (NoReturn func) fn_span))
+        | _ -> ty_err_emit ty_ctx.emitter (MismatchTy (ret_ty, Unit)) fn_span
+        ))
   | None -> ()
 
 let tychk ty_ctx (modd : modd) =

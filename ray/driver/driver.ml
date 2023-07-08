@@ -44,13 +44,15 @@ let () =
       context.timings.resolve <- time;
       let time, _ =
         Timer.time (fun () ->
-            let infer_ctx = Infer.infer_ctx_create context env in
+            let infer_ctx =
+              Infer.infer_ctx_create pctx.emitter context env
+            in
             ignore (Infer.infer_begin infer_ctx modd);
             let ty_ctx = Tychk.ty_ctx_create infer_ctx in
             ignore (Tychk.tychk ty_ctx modd))
       in
       context.timings.sema <- time;
-      if !Infer.error <> 0 then exit 1;
+      if !Infer.error <> 0 || !Tychk.error <> 0 then exit 1;
       let time, modulee =
         Timer.time (fun () ->
             let lowering_ctx = Lowering.Context.create modd env in

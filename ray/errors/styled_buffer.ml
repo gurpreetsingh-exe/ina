@@ -38,16 +38,18 @@ let append (buf : t) ~(line : int) (str : string) (style : style) =
     let col = Array.length buf.lines.(line) in
     puts buf line col str style)
 
-let render (buf : t) =
+let render (buf : t) colors =
   let f chr =
-    let col =
-      match chr.style with
-      | Level level -> Diagnostic.level_to_color level
-      | Header | LineCol -> "\x1b[1m"
-      | LineNum -> "\x1b[1;34m"
-      | NoStyle -> ""
-    in
-    sprintf "%s%c\x1b[0m" col chr.chr
+    if colors then (
+      let col =
+        match chr.style with
+        | Level level -> Diagnostic.level_to_color level
+        | Header | LineCol -> "\x1b[1m"
+        | LineNum -> "\x1b[1;34m"
+        | NoStyle -> ""
+      in
+      sprintf "%s%c\x1b[0m" col chr.chr)
+    else sprintf "%c" chr.chr
   in
   let g line = String.concat "" (Array.to_list (Array.map f line)) in
   String.concat "\n" (Array.to_list (Array.map g buf.lines))
