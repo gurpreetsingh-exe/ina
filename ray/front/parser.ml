@@ -268,13 +268,27 @@ and should_continue_as_binary_expr pctx expr =
   let is_block =
     match expr.expr_kind with If _ | Block _ -> true | _ -> false
   in
-  match (is_block, pctx.curr_tok.kind) with
-  | true, Star ->
-      Printf.printf "\x1b[31;1m%s\x1b[0m: expression is ambiguous\n"
-        (display_span expr.expr_span);
+  match (is_block, pctx.curr_tok.kind, (Option.get pctx.prev_tok).kind) with
+  | true, Star, RParen -> true
+  | true, Star, _ ->
+      let span = expr.expr_span in
+      Emitter.emit pctx.emitter
+        {
+          level = Err;
+          message = "ambiguous expression";
+          span =
+            {
+              primary_spans = [span];
+              labels =
+                [(span, "try adding parenthesis around expression", true)];
+            };
+          children = [];
+          sugg = [];
+          loc = Diagnostic.dg_loc_from_span span;
+        };
       false
-  | false, _ -> true
-  | _, _ -> true
+  | false, _, _ -> true
+  | _ -> true
 
 and prec = function
   | Star | Slash -> 70
@@ -282,9 +296,28 @@ and prec = function
   | EqEq | BangEq -> 30
   | _ -> -1
 
+and parse_prefix pctx : expr =
+  let s = pctx.curr_tok.span.start in
+  let expr_kind =
+    match pctx.curr_tok.kind with
+    | Star ->
+        advance pctx;
+        Deref (parse_prefix pctx)
+    | Ampersand ->
+        advance pctx;
+        Ref (parse_prefix pctx)
+    | _ -> (parse_primary pctx).expr_kind
+  in
+  {
+    expr_kind;
+    expr_ty = None;
+    expr_id = gen_id pctx;
+    expr_span = span s pctx;
+  }
+
 and parse_precedence pctx min_prec : expr =
   let s = pctx.curr_tok.span.start in
-  let left = ref (parse_primary pctx) in
+  let left = ref (parse_prefix pctx) in
   let p = ref (prec pctx.curr_tok.kind) in
   if should_continue_as_binary_expr pctx !left then (
     while
@@ -310,12 +343,6 @@ and parse_primary pctx : expr =
   let s = pctx.curr_tok.span.start in
   let expr_kind =
     match pctx.curr_tok.kind with
-    | Star ->
-        advance pctx;
-        Deref (parse_expr pctx)
-    | Ampersand ->
-        advance pctx;
-        Ref (parse_expr pctx)
     | Lit lit as kind ->
         let buf = get_token_str (eat pctx kind) pctx.src in
         Ast.Lit
@@ -332,6 +359,11 @@ and parse_primary pctx : expr =
               assert false)
     | If -> If (parse_if pctx)
     | LBrace -> Block (parse_block pctx)
+    | LParen ->
+        advance pctx;
+        let e = parse_expr pctx in
+        ignore (eat pctx RParen);
+        e.expr_kind
     | _ -> parse_path_or_call pctx
   in
   {
