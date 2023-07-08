@@ -1,0 +1,9 @@
+// EXIT_CODE: 1
+
+fn main() -> bool {
+    let a = 34;
+    let b = 20;
+    let c: i8 = 69;
+    *(if b == 20 { &a } else { let _ = b; &_ }) + 35 == c
+}
+
