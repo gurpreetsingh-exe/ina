@@ -46,9 +46,7 @@ let store (src : value) (dst : value) (builder : t) : unit =
 
 let load (ptr : value) (builder : t) : value =
   let ty = get_ty ptr in
-  let ty =
-    match ty with Ptr ty -> ty | RefTy ty -> ty | _ -> assert false
-  in
+  let ty = match ty with Ptr ty | RefTy ty -> ty | _ -> assert false in
   add_inst_with_ty ty (Load ptr) builder
 
 let call (ty : ty) (fn : value) (args : value list) (builder : t) : value =

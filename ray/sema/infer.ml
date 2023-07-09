@@ -167,6 +167,22 @@ let invalid_call ty span =
       loc = Diagnostic.dg_loc_from_span span;
     }
 
+let mismatch_args func expected found span =
+  let msg =
+    sprintf "`%s` expected %d arg%s, found %d" func expected
+      (if expected = 1 then "" else "s")
+      found
+  in
+  Diagnostic.
+    {
+      level = Err;
+      message = "invalid function call";
+      span = { primary_spans = [span]; labels = [(span, msg, true)] };
+      children = [];
+      sugg = [];
+      loc = Diagnostic.dg_loc_from_span span;
+    }
+
 let error = ref 0
 
 let infer_err_emit emitter (ty_err : infer_err) (span : span) =
@@ -177,10 +193,7 @@ let infer_err_emit emitter (ty_err : infer_err) (span : span) =
   | FnNotFound name -> Emitter.emit emitter (fn_not_found name span)
   | VarNotFound name -> Emitter.emit emitter (local_var_not_found name span)
   | MismatchArgs (func, expected, args) ->
-      Printf.printf "\x1b[31;1m%s\x1b[0m: `%s` expected %d arg%s, found %d\n"
-        (display_span span) func expected
-        (if expected = 1 then "" else "s")
-        args
+      Emitter.emit emitter (mismatch_args func expected args span)
   | InvalidDeref ty -> Emitter.emit emitter (invalid_deref ty span)
   | InvalidCall ty -> Emitter.emit emitter (invalid_call ty span)
 
@@ -229,19 +242,19 @@ let rec resolve_block (infer_ctx : infer_ctx) body =
   List.iter f body.block_stmts;
   match body.last_expr with Some e -> g e | None -> ()
 
-let find_value infer_ctx path : ty option =
+let find_value infer_ctx path : ty option * string =
   let name = render_path path in
   match find_ty infer_ctx.ty_env name with
   | None ->
       if Hashtbl.mem infer_ctx.func_map name then (
         let func = Hashtbl.find infer_ctx.func_map name in
-        Some func)
+        (Some func, name))
       else if Hashtbl.mem infer_ctx.globl_env path then (
         match Hashtbl.find infer_ctx.globl_env path with
-        | Fn func -> Some (fn_ty func)
-        | _ -> None)
-      else None
-  | ty -> ty
+        | Fn func -> (Some (fn_ty func), func.fn_sig.name)
+        | _ -> (None, name))
+      else (None, name)
+  | ty -> (ty, name)
 
 let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
   Hashtbl.add infer_ctx.env expr.expr_id expr;
@@ -256,11 +269,14 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
       | LitStr _ -> Str)
     | Path path -> (
       match find_value infer_ctx path with
-      | Some ty -> ty
-      | None ->
+      | Some ty, _ -> ty
+      | None, _ ->
           infer_err_emit infer_ctx.emitter (VarNotFound path) expr.expr_span;
           Unit)
     | Call (path, exprs) -> (
+        let check_args _ =
+          List.iter (fun expr -> ignore (infer infer_ctx expr)) exprs
+        in
         let f func ident =
           let check (expr : expr) (expected : ty) =
             let ty = infer infer_ctx expr in
@@ -278,23 +294,25 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
                     check (List.nth exprs i) (List.nth args_ty i)
                   else ignore (infer infer_ctx (List.nth exprs i))
                 done
-              else if expr_len <> ty_len then
+              else if expr_len <> ty_len then (
+                check_args ();
                 infer_err_emit infer_ctx.emitter
                   (MismatchArgs (ident, ty_len, expr_len))
-                  expr.expr_span
+                  expr.expr_span)
               else List.iter2 (fun expr ty -> check expr ty) exprs args_ty;
               ret_ty
           | ty ->
+              check_args ();
               infer_err_emit infer_ctx.emitter (InvalidCall ty)
                 expr.expr_span;
               Unit
         in
         match find_value infer_ctx path with
-        | Some ty -> f ty (render_path path)
-        | None ->
+        | Some ty, name -> f ty name
+        | None, _ ->
             infer_err_emit infer_ctx.emitter (FnNotFound path) expr.expr_span;
             (* infer types for arguments even if function is not found *)
-            List.iter (fun expr -> ignore (infer infer_ctx expr)) exprs;
+            check_args ();
             Unit)
     | Binary (kind, left, right) ->
         let left, right = (infer infer_ctx left, infer infer_ctx right) in

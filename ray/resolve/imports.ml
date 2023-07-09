@@ -184,31 +184,30 @@ and resolve resolver : (path, lang_item) Hashtbl.t =
   env
 
 and resolve_body body resolver =
+  let handle_path path =
+    let st = List.hd path.segments in
+    if Hashtbl.mem resolver.func_map st then (
+      let abs_path = get_abs_ray_path resolver.modd.mod_path in
+      let segs = abs_path @ path.segments in
+      path.segments <- segs)
+    else if Hashtbl.mem resolver.modd.imported_mods st then (
+      let modd = Hashtbl.find resolver.modd.imported_mods st in
+      let abs_path = get_abs_ray_path modd.mod_path in
+      path.segments <- List.tl path.segments;
+      let segs = abs_path @ path.segments in
+      path.segments <- segs)
+  in
   let rec handle_expr expr =
     match expr.expr_kind with
     | Call (path, exprs) ->
-        let st = List.hd path.segments in
-        if Hashtbl.mem resolver.func_map st then (
-          let abs_path = get_abs_ray_path resolver.modd.mod_path in
-          let segs = abs_path @ path.segments in
-          path.segments <- segs)
-        else if Hashtbl.mem resolver.modd.imported_mods st then (
-          let modd = Hashtbl.find resolver.modd.imported_mods st in
-          let abs_path = get_abs_ray_path modd.mod_path in
-          path.segments <- List.tl path.segments;
-          let segs = abs_path @ path.segments in
-          path.segments <- segs);
+        handle_path path;
         List.iter handle_expr exprs
     | Binary (_, left, right) -> handle_expr left; handle_expr right
     | Deref expr | Ref expr -> handle_expr expr
     | Block body -> resolve_body (Some body) resolver
     | Path path ->
-        if not (find_ty resolver.env (Fmt.render_path path)) then (
-          let st = List.hd path.segments in
-          if Hashtbl.mem resolver.func_map st then (
-            let abs_path = get_abs_ray_path resolver.modd.mod_path in
-            let segs = abs_path @ path.segments in
-            path.segments <- segs))
+        let name = Fmt.render_path path in
+        if not (find_ty resolver.env name) then handle_path path
     | If { cond; then_block; else_block } -> (
         handle_expr cond;
         resolve_body (Some then_block) resolver;

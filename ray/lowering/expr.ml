@@ -3,6 +3,13 @@ open Ty
 open Front
 open Ir
 
+let load (ptr : Inst.value) builder =
+  let ty = Inst.get_ty ptr in
+  match ty with
+  | Ptr ty | RefTy ty -> (Builder.load ptr builder, ty)
+  | FnTy _ as ty -> (ptr, ty)
+  | _ -> assert false
+
 let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
     Inst.value =
   let ty = Option.get expr.expr_ty in
@@ -21,8 +28,8 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
   | Path path -> (
       let ident = Fmt.render_path path in
       try
-        let ptr = Context.find_local ctx.env ident in
-        Builder.load ptr builder
+        let ptr, _ = load (Context.find_local ctx.env ident) builder in
+        ptr
       with Not_found ->
         let fn_ty = Hashtbl.find ctx.func_map path in
         let name =
@@ -69,8 +76,7 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
   | Call (path, args) -> (
       let ident = Fmt.render_path path in
       try
-        let ptr = Context.find_local ctx.env ident in
-        let ty = Inst.get_ty ptr in
+        let ptr, ty = load (Context.find_local ctx.env ident) builder in
         let args = List.map (fun e -> lower e builder ctx) args in
         Builder.call ty ptr args builder
       with Not_found ->
@@ -129,17 +135,12 @@ and lower_block (block : block) (ctx : Context.t) : Inst.value =
         Builder.store right left builder
     | Binding { binding_pat; binding_ty; binding_expr; _ } -> (
       match binding_pat with
-      | PatIdent ident -> (
+      | PatIdent ident ->
           let ty = Option.get binding_ty in
-          match ty with
-          | FnTy _ ->
-              let src = lower binding_expr builder ctx in
-              Context.add_local ctx ident src
-          | _ ->
-              let dst = Builder.alloca ty builder in
-              Context.add_local ctx ident dst;
-              let src = lower binding_expr builder ctx in
-              Builder.store src dst builder))
+          let dst = Builder.alloca ty builder in
+          Context.add_local ctx ident dst;
+          let src = lower binding_expr builder ctx in
+          Builder.store src dst builder)
   in
   List.iter f block.block_stmts;
   let ret =
