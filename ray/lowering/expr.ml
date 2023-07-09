@@ -18,10 +18,17 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
     | LitFloat value -> Builder.const_float ty value
     | LitStr value -> Builder.const_string ty value
     | LitBool value -> Builder.const_bool ty value)
-  | Path path ->
+  | Path path -> (
       let ident = Fmt.render_path path in
-      let ptr = Context.find_local ctx.env ident in
-      Builder.load ptr builder
+      try
+        let ptr = Context.find_local ctx.env ident in
+        Builder.load ptr builder
+      with Not_found ->
+        let fn_ty = Hashtbl.find ctx.func_map path in
+        let name =
+          if fn_ty.is_extern then fn_ty.name else fn_ty.linkage_name
+        in
+        Global name)
   | If { cond; then_block; else_block } -> (
       let cond = lower cond builder ctx in
       let then_bb = Basicblock.create () in
@@ -59,22 +66,29 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
               builder
           in
           phi)
-  | Call (path, args) ->
-      let fn_ty = Hashtbl.find ctx.func_map path in
-      let args = List.map (fun e -> lower e builder ctx) args in
-      if fn_ty.is_extern && fn_ty.abi = "intrinsic" then
-        Builder.intrinsic ty fn_ty.name args builder
-      else (
-        let ty =
-          FnTy
-            ( List.map (fun (t, _) -> t) fn_ty.args,
-              fn_ty.ret_ty,
-              fn_ty.is_variadic )
-        in
-        let name =
-          if fn_ty.is_extern then fn_ty.name else fn_ty.linkage_name
-        in
-        Builder.call ty name args builder)
+  | Call (path, args) -> (
+      let ident = Fmt.render_path path in
+      try
+        let ptr = Context.find_local ctx.env ident in
+        let ty = Inst.get_ty ptr in
+        let args = List.map (fun e -> lower e builder ctx) args in
+        Builder.call ty ptr args builder
+      with Not_found ->
+        let fn_ty = Hashtbl.find ctx.func_map path in
+        let args = List.map (fun e -> lower e builder ctx) args in
+        if fn_ty.is_extern && fn_ty.abi = "intrinsic" then
+          Builder.intrinsic ty fn_ty.name args builder
+        else (
+          let ty =
+            FnTy
+              ( List.map (fun (t, _) -> t) fn_ty.args,
+                fn_ty.ret_ty,
+                fn_ty.is_variadic )
+          in
+          let name =
+            if fn_ty.is_extern then fn_ty.name else fn_ty.linkage_name
+          in
+          Builder.call ty (Global name) args builder))
   | Block block -> lower_block block ctx
   | Deref expr -> Builder.load (lower expr builder ctx) builder
   | Ref expr -> lower_lvalue expr builder ctx
@@ -98,9 +112,12 @@ and lower_block (block : block) (ctx : Context.t) : Inst.value =
     | Def { def_ty = ty; _ } ->
         List.iter2
           (fun (ty, name) param ->
-            let ptr = Builder.alloca ty builder in
-            Context.add_local ctx name ptr;
-            Builder.store param ptr builder)
+            match ty with
+            | FnTy _ -> Context.add_local ctx name param
+            | _ ->
+                let ptr = Builder.alloca ty builder in
+                Context.add_local ctx name ptr;
+                Builder.store param ptr builder)
           ty.args ty.params
     | _ -> ());
   let f stmt =
@@ -112,12 +129,17 @@ and lower_block (block : block) (ctx : Context.t) : Inst.value =
         Builder.store right left builder
     | Binding { binding_pat; binding_ty; binding_expr; _ } -> (
       match binding_pat with
-      | PatIdent ident ->
+      | PatIdent ident -> (
           let ty = Option.get binding_ty in
-          let dst = Builder.alloca ty builder in
-          Context.add_local ctx ident dst;
-          let src = lower binding_expr builder ctx in
-          Builder.store src dst builder)
+          match ty with
+          | FnTy _ ->
+              let src = lower binding_expr builder ctx in
+              Context.add_local ctx ident src
+          | _ ->
+              let dst = Builder.alloca ty builder in
+              Context.add_local ctx ident dst;
+              let src = lower binding_expr builder ctx in
+              Builder.store src dst builder))
   in
   List.iter f block.block_stmts;
   let ret =

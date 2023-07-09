@@ -85,9 +85,10 @@ let print_uf_tbl infer_ctx =
 
 type infer_err =
   | MismatchTy of ty * ty
-  | FnNotFound of ident
-  | VarNotFound of ident
+  | FnNotFound of path
+  | VarNotFound of path
   | MismatchArgs of ident * int * int
+  | InvalidCall of ty
   | InvalidDeref of ty
 
 let mismatch_ty expected ty span =
@@ -107,6 +108,7 @@ let mismatch_ty expected ty span =
     }
 
 let fn_not_found name span =
+  let name = render_path name in
   Diagnostic.
     {
       level = Err;
@@ -121,7 +123,8 @@ let fn_not_found name span =
       loc = Diagnostic.dg_loc_from_span span;
     }
 
-let local_var_not_found name span =
+let local_var_not_found path span =
+  let name = render_path path in
   Diagnostic.
     {
       level = Err;
@@ -150,6 +153,20 @@ let invalid_deref ty span =
       loc = Diagnostic.dg_loc_from_span span;
     }
 
+let invalid_call ty span =
+  let msg =
+    sprintf "`%s` is not callable" (render_ty ?dbg:(Some false) ty)
+  in
+  Diagnostic.
+    {
+      level = Err;
+      message = "invalid function call";
+      span = { primary_spans = [span]; labels = [(span, msg, true)] };
+      children = [];
+      sugg = [];
+      loc = Diagnostic.dg_loc_from_span span;
+    }
+
 let error = ref 0
 
 let infer_err_emit emitter (ty_err : infer_err) (span : span) =
@@ -157,7 +174,7 @@ let infer_err_emit emitter (ty_err : infer_err) (span : span) =
   match ty_err with
   | MismatchTy (expected, ty) ->
       Emitter.emit emitter (mismatch_ty expected ty span)
-  | FnNotFound ident -> Emitter.emit emitter (fn_not_found ident span)
+  | FnNotFound name -> Emitter.emit emitter (fn_not_found name span)
   | VarNotFound name -> Emitter.emit emitter (local_var_not_found name span)
   | MismatchArgs (func, expected, args) ->
       Printf.printf "\x1b[31;1m%s\x1b[0m: `%s` expected %d arg%s, found %d\n"
@@ -165,6 +182,7 @@ let infer_err_emit emitter (ty_err : infer_err) (span : span) =
         (if expected = 1 then "" else "s")
         args
   | InvalidDeref ty -> Emitter.emit emitter (invalid_deref ty span)
+  | InvalidCall ty -> Emitter.emit emitter (invalid_call ty span)
 
 let rec print_bindings ty_env =
   Hashtbl.iter
@@ -211,6 +229,20 @@ let rec resolve_block (infer_ctx : infer_ctx) body =
   List.iter f body.block_stmts;
   match body.last_expr with Some e -> g e | None -> ()
 
+let find_value infer_ctx path : ty option =
+  let name = render_path path in
+  match find_ty infer_ctx.ty_env name with
+  | None ->
+      if Hashtbl.mem infer_ctx.func_map name then (
+        let func = Hashtbl.find infer_ctx.func_map name in
+        Some func)
+      else if Hashtbl.mem infer_ctx.globl_env path then (
+        match Hashtbl.find infer_ctx.globl_env path with
+        | Fn func -> Some (fn_ty func)
+        | _ -> None)
+      else None
+  | ty -> ty
+
 let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
   Hashtbl.add infer_ctx.env expr.expr_id expr;
   let ty =
@@ -223,14 +255,12 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
       | LitBool _ -> Bool
       | LitStr _ -> Str)
     | Path path -> (
-        let ident = render_path path in
-        match find_ty infer_ctx.ty_env ident with
-        | Some ty -> ty
-        | None ->
-            infer_err_emit infer_ctx.emitter (VarNotFound ident)
-              expr.expr_span;
-            Unit)
-    | Call (path, exprs) ->
+      match find_value infer_ctx path with
+      | Some ty -> ty
+      | None ->
+          infer_err_emit infer_ctx.emitter (VarNotFound path) expr.expr_span;
+          Unit)
+    | Call (path, exprs) -> (
         let f func ident =
           let check (expr : expr) (expected : ty) =
             let ty = infer infer_ctx expr in
@@ -254,21 +284,18 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
                   expr.expr_span
               else List.iter2 (fun expr ty -> check expr ty) exprs args_ty;
               ret_ty
-          | _ -> assert false
+          | ty ->
+              infer_err_emit infer_ctx.emitter (InvalidCall ty)
+                expr.expr_span;
+              Unit
         in
-        let ident = render_path path in
-        if Hashtbl.mem infer_ctx.func_map ident then (
-          let func = Hashtbl.find infer_ctx.func_map ident in
-          f func ident)
-        else if Hashtbl.mem infer_ctx.globl_env path then (
-          match Hashtbl.find infer_ctx.globl_env path with
-          | Fn func -> f (fn_ty func) ident
-          | _ -> assert false)
-        else (
-          infer_err_emit infer_ctx.emitter (FnNotFound ident) expr.expr_span;
-          (* infer types for arguments even if function is not found *)
-          List.iter (fun expr -> ignore (infer infer_ctx expr)) exprs;
-          Unit)
+        match find_value infer_ctx path with
+        | Some ty -> f ty (render_path path)
+        | None ->
+            infer_err_emit infer_ctx.emitter (FnNotFound path) expr.expr_span;
+            (* infer types for arguments even if function is not found *)
+            List.iter (fun expr -> ignore (infer infer_ctx expr)) exprs;
+            Unit)
     | Binary (kind, left, right) ->
         let left, right = (infer infer_ctx left, infer infer_ctx right) in
         let cmp t1 : ty = match kind with Eq | NotEq -> Bool | _ -> t1 in
@@ -276,7 +303,8 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
           (compare_types infer_ctx left right
              (fun t0 t1 -> Infer (IntVar { index = min t0.index t1.index }))
              (fun t0 t1 ->
-               Infer (FloatVar { index = min t0.index t1.index })))
+               Infer (FloatVar { index = min t0.index t1.index }))
+             expr.expr_span)
     | If { cond; then_block; else_block } -> (
         let cond_ty = infer infer_ctx cond in
         (match unify infer_ctx cond_ty Bool with
@@ -290,6 +318,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
               (fun t0 t1 -> Infer (IntVar { index = min t0.index t1.index }))
               (fun t0 t1 ->
                 Infer (FloatVar { index = min t0.index t1.index }))
+              expr.expr_span
         | None -> Unit)
     | Block block -> infer_block infer_ctx block
     | Deref expr -> (
@@ -305,7 +334,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
   | ty -> expr.expr_ty <- Some ty);
   ty
 
-and compare_types infer_ctx ty1 ty2 fi ff : ty =
+and compare_types infer_ctx ty1 ty2 fi ff span : ty =
   match (ty1, ty2) with
   | Infer (IntVar t0), Infer (IntVar t1) ->
       equate infer_ctx ty1 ty2; fi t0 t1
@@ -316,13 +345,17 @@ and compare_types infer_ctx ty1 ty2 fi ff : ty =
    |Infer (IntVar _ | FloatVar _), (RefTy _ | Ptr _)
    |(RefTy _ | Ptr _), Infer (IntVar _ | FloatVar _) ->
       ty1
-  | RefTy t0, RefTy t1 -> RefTy (compare_types infer_ctx t0 t1 fi ff)
-  | Ptr t0, Ptr t1 -> Ptr (compare_types infer_ctx t0 t1 fi ff)
+  | RefTy t0, RefTy t1 -> RefTy (compare_types infer_ctx t0 t1 fi ff span)
+  | Ptr t0, Ptr t1 -> Ptr (compare_types infer_ctx t0 t1 fi ff span)
   | t0, Infer (IntVar _ | FloatVar _) ->
-      ignore (unify infer_ctx ty2 t0);
+      (match unify infer_ctx ty2 t0 with
+      | Some err -> infer_err_emit infer_ctx.emitter err span
+      | None -> ());
       ty1
   | Infer (IntVar _ | FloatVar _), t0 ->
-      ignore (unify infer_ctx ty1 t0);
+      (match unify infer_ctx ty1 t0 with
+      | Some err -> infer_err_emit infer_ctx.emitter err span
+      | None -> ());
       ty2
   | _, _ -> ty1
 
@@ -341,7 +374,7 @@ and unify (infer_ctx : infer_ctx) (ty : ty) (expected : ty) :
     if check_ty expected then (
       rec_replace infer_ctx ty_kind expected;
       None)
-    else None
+    else Some (MismatchTy (expected, ty))
   in
   match ty with
   | Infer (IntVar _) -> f ty_is_int ty
@@ -372,7 +405,8 @@ and infer_block (infer_ctx : infer_ctx) (block : block) : ty =
           (compare_types infer_ctx lty rty
              (fun t0 t1 -> Infer (IntVar { index = min t0.index t1.index }))
              (fun t0 t1 ->
-               Infer (FloatVar { index = min t0.index t1.index })));
+               Infer (FloatVar { index = min t0.index t1.index }))
+             init.expr_span);
         Unit
   in
   let tmp_env = infer_ctx.ty_env in
