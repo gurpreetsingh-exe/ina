@@ -32,7 +32,7 @@ let rec find_local env name =
   else (
     match env.parent with
     | Some env -> find_local env name
-    | None -> assert false)
+    | None -> raise Not_found)
 
 let block_append ctx bb =
   ctx.block <- Some bb;

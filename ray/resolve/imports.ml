@@ -15,14 +15,30 @@ let print_env env =
 
 let sess = { env = Hashtbl.create 0 }
 
+type env = {
+  mutable parent : env option;
+  mutable bindings : string array;
+}
+
+let rec find_ty (env : env) (ident : string) : bool =
+  if Array.mem ident env.bindings then true
+  else (
+    match env.parent with Some env -> find_ty env ident | None -> false)
+
 type resolver = {
   globl_ctx : Context.t;
   modd : modd;
   func_map : (ident, func) Hashtbl.t;
+  mutable env : env;
 }
 
 let resolver_create globl_ctx modd =
-  { globl_ctx; modd; func_map = Hashtbl.create 0 }
+  {
+    globl_ctx;
+    modd;
+    func_map = Hashtbl.create 0;
+    env = { parent = None; bindings = [||] };
+  }
 
 let rec mod_exists resolver name =
   let path =
@@ -104,6 +120,7 @@ let rec import (resolver : resolver) (path : path) =
             globl_ctx = resolver.globl_ctx;
             modd;
             func_map = Hashtbl.create 0;
+            env = { parent = None; bindings = [||] };
           },
         modd )
     in
@@ -167,25 +184,30 @@ and resolve resolver : (path, lang_item) Hashtbl.t =
   env
 
 and resolve_body body resolver =
+  let handle_path path =
+    let st = List.hd path.segments in
+    if Hashtbl.mem resolver.func_map st then (
+      let abs_path = get_abs_ray_path resolver.modd.mod_path in
+      let segs = abs_path @ path.segments in
+      path.segments <- segs)
+    else if Hashtbl.mem resolver.modd.imported_mods st then (
+      let modd = Hashtbl.find resolver.modd.imported_mods st in
+      let abs_path = get_abs_ray_path modd.mod_path in
+      path.segments <- List.tl path.segments;
+      let segs = abs_path @ path.segments in
+      path.segments <- segs)
+  in
   let rec handle_expr expr =
     match expr.expr_kind with
     | Call (path, exprs) ->
-        let st = List.hd path.segments in
-        if Hashtbl.mem resolver.func_map st then (
-          let abs_path = get_abs_ray_path resolver.modd.mod_path in
-          let segs = abs_path @ path.segments in
-          path.segments <- segs)
-        else if Hashtbl.mem resolver.modd.imported_mods st then (
-          let modd = Hashtbl.find resolver.modd.imported_mods st in
-          let abs_path = get_abs_ray_path modd.mod_path in
-          path.segments <- List.tl path.segments;
-          let segs = abs_path @ path.segments in
-          path.segments <- segs);
+        handle_path path;
         List.iter handle_expr exprs
     | Binary (_, left, right) -> handle_expr left; handle_expr right
     | Deref expr | Ref expr -> handle_expr expr
     | Block body -> resolve_body (Some body) resolver
-    | Path _ -> ()
+    | Path path ->
+        let name = Fmt.render_path path in
+        if not (find_ty resolver.env name) then handle_path path
     | If { cond; then_block; else_block } -> (
         handle_expr cond;
         resolve_body (Some then_block) resolver;
@@ -194,12 +216,22 @@ and resolve_body body resolver =
   in
   let f stmt =
     match stmt with
-    | Binding { binding_expr; _ } -> handle_expr binding_expr
+    | Binding { binding_pat; binding_expr; _ } ->
+        (match binding_pat with
+        | PatIdent ident ->
+            resolver.env.bindings <-
+              Array.append resolver.env.bindings [|ident|]);
+        handle_expr binding_expr
     | Assign (expr1, expr2) -> handle_expr expr1; handle_expr expr2
     | Stmt expr | Expr expr -> handle_expr expr
   in
   match body with
-  | Some body -> (
+  | Some body ->
+      let tmp = resolver.env in
+      resolver.env <- { parent = Some tmp; bindings = [||] };
       List.iter f body.block_stmts;
-      match body.last_expr with Some expr -> handle_expr expr | None -> ())
+      (match body.last_expr with
+      | Some expr -> handle_expr expr
+      | None -> ());
+      resolver.env <- tmp
   | None -> ()

@@ -1,0 +1,12 @@
+// COMPILE_FAIL
+
+fn f(f0: fn()) {
+    f0();
+}
+
+fn g(_: i32) {}
+
+fn main() {
+    f(g);
+}
+

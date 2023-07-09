@@ -1,0 +1,6 @@
+error: invalid function call
+   --> mismatch_fn_ptr_param.ray:12:5
+    |
+ LL |     f(g)
+    |     ^^^^ `f` expected 2 args, found 1
+

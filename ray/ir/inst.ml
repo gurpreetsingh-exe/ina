@@ -32,7 +32,7 @@ and inst_kind =
   | Phi of ty * (value * value) list
   | Store of value * value
   | Load of value
-  | Call of ty * string * value list
+  | Call of ty * value * value list
   | Intrinsic of string * value list
   | Ret of value
   | RetUnit
@@ -43,6 +43,7 @@ and value =
   | VReg of t * int * ty
   | Label of basic_block
   | Param of ty * string * int
+  | Global of string
 
 and const =
   | Int of int
@@ -99,9 +100,10 @@ let render_value = function
   | VReg (_, i, ty) -> sprintf "%s%%%i" (Fmt.render_ty ty ^ " ") i
   | Label bb -> sprintf "label %%bb%d" bb.bid
   | Param (ty, name, _) -> sprintf "%s %%%s" (Fmt.render_ty ty) name
+  | Global name -> sprintf "@%s" name
 
 let get_ty = function
-  | Const (_, ty) | VReg (_, _, ty) -> ty
+  | Param (ty, _, _) | Const (_, ty) | VReg (_, _, ty) -> ty
   | _ -> assert false
 
 let render_inst inst : string =
@@ -132,11 +134,11 @@ let render_inst inst : string =
         | RefTy ty -> Fmt.render_ty ty
         | _ -> assert false)
         (render_value ptr)
-  | Call (ty, name, args) ->
+  | Call (ty, fn, args) ->
       let ty =
         match ty with FnTy (_, ret_ty, _) -> ret_ty | _ -> assert false
       in
-      sprintf "call %s %s(%s)" (Fmt.render_ty ty) name
+      sprintf "call %s %s(%s)" (Fmt.render_ty ty) (render_value fn)
         (String.concat ", " (List.map render_value args))
   | Intrinsic (name, args) ->
       sprintf "intrinsic %s(%s)" name

@@ -159,6 +159,27 @@ let parse_inner_attrs pctx : attr list =
 let rec parse_ty pctx : ty =
   let t = pctx.curr_tok in
   match t.kind with
+  | Fn ->
+      advance pctx;
+      ignore (eat pctx LParen);
+      let arg_list = ref [] in
+      let is_variadic = ref false in
+      while (not pctx.stop) && pctx.curr_tok.kind <> RParen do
+        match pctx.curr_tok.kind with
+        | Dot3 ->
+            advance pctx;
+            is_variadic := true
+        | _ -> (
+            let ty = parse_ty pctx in
+            arg_list := !arg_list @ [ty];
+            match pctx.curr_tok.kind with
+            | Comma -> advance pctx
+            | RParen -> ()
+            | _ -> assert false)
+      done;
+      ignore (eat pctx RParen);
+      let ret_ty = Option.value ~default:Unit (parse_ret_ty pctx) in
+      FnTy (!arg_list, ret_ty, !is_variadic)
   | Star ->
       advance pctx;
       Ptr (parse_ty pctx)
@@ -183,6 +204,13 @@ let rec parse_ty pctx : ty =
     | "str" -> Str
     | _ -> unexpected_type pctx t.span)
   | _ -> unexpected_type pctx t.span
+
+and parse_ret_ty pctx : ty option =
+  match pctx.curr_tok.kind with
+  | Arrow ->
+      advance pctx;
+      Some (parse_ty pctx)
+  | _ -> None
 
 let parse_fn_args pctx : (ty * ident) list * bool =
   assert (pctx.curr_tok.kind == LParen);
@@ -210,13 +238,6 @@ let parse_fn_args pctx : (ty * ident) list * bool =
   done;
   ignore (eat pctx RParen);
   (!arg_list, !is_variadic)
-
-let parse_ret_ty pctx : ty option =
-  match pctx.curr_tok.kind with
-  | Arrow ->
-      advance pctx;
-      Some (parse_ty pctx)
-  | _ -> None
 
 let parse_fn_sig pctx : fn_sig =
   let s = pctx.curr_tok.span.start in

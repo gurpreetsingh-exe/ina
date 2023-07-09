@@ -91,9 +91,9 @@ let get_llvm_ty (ty : ty) : lltype =
     | I32 | U32 -> i32_type ctx
     | I16 | U16 -> i16_type ctx
     | I8 | U8 -> i8_type ctx)
-  | Ptr _ | RefTy _ -> pointer_type ctx
-  | FnTy _ | Infer _ -> assert false
+  | Ptr _ | RefTy _ | FnTy _ -> pointer_type ctx
   | Unit -> void_type ctx
+  | Infer _ -> assert false
 
 let gen_function_type (fn_ty : Func.fn_type) : lltype =
   let args = List.map (fun (ty, _) -> get_llvm_ty ty) fn_ty.args in
@@ -117,7 +117,7 @@ let gen_blocks (blocks : Func.blocks) =
     (fun (bb : Inst.basic_block) ->
       Hashtbl.add bbs bb.bid
         (if bb.is_entry then entry_block fn
-         else append_block codegen_ctx.llctx (sprintf "bb%d" bb.bid) fn))
+        else append_block codegen_ctx.llctx (sprintf "bb%d" bb.bid) fn))
     blocks.bbs;
   let get_value (value : Inst.value) : llvalue =
     match value with
@@ -150,6 +150,8 @@ let gen_blocks (blocks : Func.blocks) =
     | VReg (inst, id, _) -> Hashtbl.find insts id
     | Label bb -> value_of_block (Hashtbl.find bbs bb.bid)
     | Param (_, _, i) -> (params (Option.get codegen_ctx.curr_fn)).(i)
+    | Global name ->
+        Option.get (lookup_function name (Option.get codegen_ctx.curr_mod))
   in
   let get_load_ty ptr =
     match Inst.get_ty ptr with
@@ -214,21 +216,19 @@ let gen_blocks (blocks : Func.blocks) =
             (build_load
                (get_llvm_ty (get_load_ty ptr))
                (get_value ptr) "" builder)
-      | Call (ty, name, args) ->
+      | Call (ty, fn, args) ->
           let fn_ty =
             match ty with
             | FnTy (args, ret_ty, is_variadic) ->
                 let args = List.map (fun ty -> get_llvm_ty ty) args in
                 let ret_ty = get_llvm_ty ret_ty in
-                (if is_variadic then var_arg_function_type else function_type)
+                (if is_variadic then var_arg_function_type
+                else function_type)
                   ret_ty (Array.of_list args)
             | _ -> assert false
           in
           let args = Array.map get_value (Array.of_list args) in
-          let fn =
-            Option.get
-              (lookup_function name (Option.get codegen_ctx.curr_mod))
-          in
+          let fn = get_value fn in
           Some (build_call fn_ty fn args "" builder)
       | Intrinsic (name, args) ->
           let args = Array.map get_value (Array.of_list args) in

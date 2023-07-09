@@ -1,0 +1,6 @@
+error: mismatch types
+   --> fn_as_param.ray:10:7
+    |
+ LL |     f(g);
+    |       ^ expected `fn() -> ()`, found `fn(i32) -> ()`
+
