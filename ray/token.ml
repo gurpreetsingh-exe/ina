@@ -20,6 +20,7 @@ let display_comment_style = function Inner -> "inner" | Outer -> "outer"
 
 type token_kind =
   | Fn
+  | Type
   | Extern
   | Let
   | Import
@@ -58,6 +59,7 @@ type token_kind =
 
 let display_token_kind = function
   | Fn -> "fn"
+  | Type -> "type"
   | Extern -> "extern"
   | Let -> "let"
   | Import -> "import"

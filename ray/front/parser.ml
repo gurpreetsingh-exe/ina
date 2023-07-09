@@ -516,6 +516,31 @@ let parse_fn pctx abi is_extern : func =
       func_path = None;
     })
 
+let parse_type pctx : typ =
+  advance pctx;
+  let name = parse_ident pctx in
+  let members = ref [] in
+  ignore (eat pctx Eq);
+  ignore (eat pctx LBrace);
+  while (not pctx.stop) && pctx.curr_tok.kind <> RBrace do
+    match pctx.curr_tok.kind with
+    | RBrace -> ()
+    | _ -> (
+        let arg =
+          let ident = parse_ident pctx in
+          ignore (eat pctx Colon);
+          let ty = parse_ty pctx in
+          (ty, ident)
+        in
+        members := !members @ [arg];
+        match pctx.curr_tok.kind with
+        | Comma -> advance pctx
+        | RBrace -> ()
+        | _ -> assert false)
+  done;
+  ignore (eat pctx RBrace);
+  Struct { ident = name; members = !members }
+
 let parse_extern pctx attrs : item =
   advance pctx;
   let abi =
@@ -546,6 +571,7 @@ let parse_item pctx : item =
   let attrs = parse_outer_attrs pctx in
   match pctx.curr_tok.kind with
   | Fn -> Fn (parse_fn pctx "C" false, attrs)
+  | Type -> Type (parse_type pctx)
   | Extern -> parse_extern pctx attrs
   | Import ->
       advance pctx;

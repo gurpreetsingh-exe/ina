@@ -122,12 +122,23 @@ let render_attr (attr : attr) : string =
 
 let render_const (constant : constant) : string = constant.const_name
 
+let render_struct s =
+  sprintf "%s = {\n%s\n}" s.ident
+    (String.concat ",\n"
+       (List.map
+          (fun (ty, name) -> sprintf "    %s%s" (name ^ ": ") (render_ty ty))
+          s.members))
+
+let render_type ty =
+  sprintf "\ntype %s\n" (match ty with Struct s -> render_struct s)
+
 let render_item (item : item) : string =
   match item with
   | Fn (func, attrs) ->
       sprintf "\n%s%s\n"
         (render attrs (fun attr -> render_attr attr) "")
         (render_fn func)
+  | Type ty -> render_type ty
   | Foreign funcs ->
       sprintf "\nextern {\n%s\n}\n"
         (String.concat "\n" (List.map (fun f -> "    " ^ render_fn f) funcs))

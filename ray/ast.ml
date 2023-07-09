@@ -31,8 +31,16 @@ type modd = {
   mod_id : node_id;
 }
 
+and strukt = {
+  ident : string;
+  members : (ty * string) list;
+}
+
+and typ = Struct of strukt
+
 and item =
   | Fn of func * attr_list
+  | Type of typ
   | Foreign of func list
   | Const of constant
   | Import of path
