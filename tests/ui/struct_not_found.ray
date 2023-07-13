@@ -1,0 +1,6 @@
+// COMPILE_FAIL
+
+fn main() {
+    let a = Foo { a: 32 };
+}
+
