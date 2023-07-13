@@ -33,7 +33,7 @@ type modd = {
 
 and strukt = {
   ident : string;
-  members : (ty * string) list;
+  mutable members : (ty * string) list;
   mutable struct_path : path option;
 }
 
@@ -48,7 +48,7 @@ and item =
 
 and fn_sig = {
   name : ident;
-  args : (ty * ident) list;
+  mutable args : (ty * ident) list;
   ret_ty : ty option;
   fn_span : span;
   is_variadic : bool;

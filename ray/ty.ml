@@ -101,4 +101,5 @@ type ty =
   | FnTy of ty list * ty * bool
   | Struct of string * (string * ty) list
   | Infer of infer_ty
+  | Ident of path
   | Unit

@@ -6,6 +6,24 @@ open Errors
 open Diagnostic
 open Session
 
+let builtin_types =
+  let tbl = Hashtbl.create 0 in
+  Hashtbl.add tbl "i8" Ty.(Int I8);
+  Hashtbl.add tbl "i16" (Int I16);
+  Hashtbl.add tbl "i32" (Int I32);
+  Hashtbl.add tbl "i64" (Int I64);
+  Hashtbl.add tbl "isize" (Int Isize);
+  Hashtbl.add tbl "u8" (Int U8);
+  Hashtbl.add tbl "u16" (Int U16);
+  Hashtbl.add tbl "u32" (Int U32);
+  Hashtbl.add tbl "u64" (Int U64);
+  Hashtbl.add tbl "usize" (Int Usize);
+  Hashtbl.add tbl "f32" (Float F32);
+  Hashtbl.add tbl "f64" (Float F64);
+  Hashtbl.add tbl "bool" Bool;
+  Hashtbl.add tbl "str" Str;
+  tbl
+
 type parse_ctx = {
   ctx : Context.t;
   tokenizer : tokenizer;
@@ -178,6 +196,22 @@ let parse_inner_attrs pctx : attr list =
   in
   parse_inner_attrs_impl ()
 
+let parse_path pctx : path =
+  let rec parse_path_impl () =
+    match pctx.curr_tok.kind with
+    | Ident -> (
+        let segment = [parse_ident pctx] in
+        match pctx.curr_tok.kind with
+        | Colon2 ->
+            advance pctx;
+            segment @ parse_path_impl ()
+        | _ -> segment)
+    | _ ->
+        Emitter.emit pctx.emitter (unexpected_token pctx Ident pctx.curr_tok);
+        exit 1
+  in
+  { segments = parse_path_impl () }
+
 let rec parse_ty pctx : ty =
   let t = pctx.curr_tok in
   match t.kind with
@@ -208,23 +242,12 @@ let rec parse_ty pctx : ty =
   | Ampersand ->
       advance pctx;
       RefTy (parse_ty pctx)
-  | Ident -> (
-    match get_token_str (eat pctx Ident) pctx.src with
-    | "i8" -> Int I8
-    | "i16" -> Int I16
-    | "i32" -> Int I32
-    | "i64" -> Int I64
-    | "isize" -> Int Isize
-    | "u8" -> Int U8
-    | "u16" -> Int U16
-    | "u32" -> Int U32
-    | "u64" -> Int U64
-    | "usize" -> Int Usize
-    | "f32" -> Float F32
-    | "f64" -> Float F64
-    | "bool" -> Bool
-    | "str" -> Str
-    | _ -> unexpected_type pctx t.span)
+  | Ident ->
+      let name = get_token_str pctx.curr_tok pctx.src in
+      if Hashtbl.mem builtin_types name then (
+        advance pctx;
+        Hashtbl.find builtin_types name)
+      else Ident (parse_path pctx)
   | _ -> unexpected_type pctx t.span
 
 and parse_ret_ty pctx : ty option =
@@ -267,22 +290,6 @@ let parse_fn_sig pctx : fn_sig =
   let args, is_variadic = parse_fn_args pctx in
   let ret_ty = parse_ret_ty pctx in
   { name = ident; args; ret_ty; fn_span = span s pctx; is_variadic }
-
-let parse_path pctx : path =
-  let rec parse_path_impl () =
-    match pctx.curr_tok.kind with
-    | Ident -> (
-        let segment = [parse_ident pctx] in
-        match pctx.curr_tok.kind with
-        | Colon2 ->
-            advance pctx;
-            segment @ parse_path_impl ()
-        | _ -> segment)
-    | _ ->
-        Emitter.emit pctx.emitter (unexpected_token pctx Ident pctx.curr_tok);
-        exit 1
-  in
-  { segments = parse_path_impl () }
 
 let parse_pat pctx : pat =
   let kind = pctx.curr_tok.kind in

@@ -95,14 +95,17 @@ let rec get_llvm_ty (ty : ty) : lltype =
     | I8 | U8 -> i8_type ctx)
   | Ptr _ | RefTy _ | FnTy _ -> pointer_type ctx
   | Struct (name, tys) ->
-      let ty =
-        struct_type ctx
+      if Hashtbl.mem codegen_ctx.struct_map name then
+        Hashtbl.find codegen_ctx.struct_map name
+      else (
+        let ty = named_struct_type ctx name in
+        struct_set_body ty
           (Array.of_list (List.map (fun (_, ty) -> get_llvm_ty ty) tys))
-      in
-      Hashtbl.add codegen_ctx.struct_map name ty;
-      ty
+          false;
+        Hashtbl.add codegen_ctx.struct_map name ty;
+        ty)
   | Unit -> void_type ctx
-  | Infer _ -> assert false
+  | Ident _ | Infer _ -> assert false
 
 let gen_function_type (fn_ty : Func.fn_type) : lltype =
   let args = List.map (fun (ty, _) -> get_llvm_ty ty) fn_ty.args in

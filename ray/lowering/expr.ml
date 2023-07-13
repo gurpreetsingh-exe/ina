@@ -123,13 +123,30 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
       let ptr = Builder.gep ty ptr index builder in
       Builder.load ptr builder
 
-and lower_lvalue (expr : expr) (_builder : Builder.t) (ctx : Context.t) :
+and lower_lvalue (expr : expr) (builder : Builder.t) (ctx : Context.t) :
     Inst.value =
   match expr.expr_kind with
   | Path path ->
       let ident = Fmt.render_path path in
       Context.find_local ctx.env ident
-  | _ -> assert false
+  | Field (expr, name) ->
+      let ptr = lower_lvalue expr builder ctx in
+      let sty = Inst.get_ty ptr in
+      let index, ty =
+        match sty with
+        | Ptr (Struct (_, tys) as ty) ->
+            let index = ref (-1) in
+            List.iteri
+              (fun i (field, _) -> if name = field then index := i)
+              tys;
+            (!index, ty)
+        | _ -> assert false
+      in
+      Builder.gep ty ptr index builder
+  | Deref expr -> lower expr builder ctx
+  | _ ->
+      Printf.printf "%s\n" (Fmt.render_expr expr 0);
+      assert false
 
 and lower_block (block : block) (ctx : Context.t) : Inst.value =
   let tmp = ctx.env in

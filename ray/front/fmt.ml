@@ -29,6 +29,7 @@ let rec render_ty ?(dbg = true) (ty : ty) : string =
         (if is_variadic then ", ..." else "")
         (render_ty ret_ty)
   | Struct (s, _) -> s
+  | Ident path -> render_path path
   | Infer ty -> render_infer_ty ty dbg
 
 let render_fn_sig (fn_sig : fn_sig) : string =

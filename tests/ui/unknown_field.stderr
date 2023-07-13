@@ -1,10 +1,10 @@
-error: `Foo` has no field `c`
+error: `unknown_field::Foo` has no field `c`
    --> unknown_field.ray:10:29
     |
  LL |     let a = Foo { a: &a, c: 20 };
     |                             ^^
 
-error: `Foo` has no field `c`
+error: `unknown_field::Foo` has no field `c`
    --> unknown_field.ray:11:13
     |
  LL |     let b = a.c;

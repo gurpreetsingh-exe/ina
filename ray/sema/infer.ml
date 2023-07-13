@@ -251,7 +251,7 @@ let find_value infer_ctx path : ty option * string =
         | Struct s ->
             ( Some
                 (Struct
-                   (name, List.map (fun (ty, field) -> (field, ty)) s.members)),
+                   (n, List.map (fun (ty, field) -> (field, ty)) s.members)),
               s.ident )
         | _ -> (None, name))
       else (None, name)

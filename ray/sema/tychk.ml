@@ -187,11 +187,10 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
     | Deref expr -> ignore (fexpr expr)
     | Ref expr -> ignore (fexpr expr)
     | Block body -> ignore (fblock body)
-    | StructExpr { struct_name; fields } -> (
-        let struct_name = List.hd (List.rev struct_name.segments) in
+    | StructExpr { fields; _ } -> (
         let ty = Option.get expr.expr_ty in
         match ty with
-        | Struct (_, tys) ->
+        | Struct (struct_name, tys) ->
             let strukt = Hashtbl.of_seq (List.to_seq tys) in
             if Hashtbl.length strukt <> List.length fields then
               ty_err_emit ty_ctx.emitter (UninitializedFields struct_name)
