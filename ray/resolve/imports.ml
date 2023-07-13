@@ -1,5 +1,6 @@
 open Front
 open Ast
+open Ty
 open Printf
 open Sema
 open Session
@@ -7,7 +8,11 @@ open Session
 type sess = { env : (path, lang_item) Hashtbl.t }
 
 let print_env env =
-  let ritem = function Mod _ -> "module" | Fn _ -> "fn" in
+  let ritem = function
+    | Mod _ -> "module"
+    | Fn _ -> "fn"
+    | Struct _ -> "struct"
+  in
   Hashtbl.iter
     (fun path item ->
       printf "%s = %s\n" (String.concat "::" path.segments) (ritem item))
@@ -29,6 +34,7 @@ type resolver = {
   globl_ctx : Context.t;
   modd : modd;
   func_map : (ident, func) Hashtbl.t;
+  struct_map : (ident, strukt) Hashtbl.t;
   mutable env : env;
 }
 
@@ -37,6 +43,7 @@ let resolver_create globl_ctx modd =
     globl_ctx;
     modd;
     func_map = Hashtbl.create 0;
+    struct_map = Hashtbl.create 0;
     env = { parent = None; bindings = [||] };
   }
 
@@ -120,6 +127,7 @@ let rec import (resolver : resolver) (path : path) =
             globl_ctx = resolver.globl_ctx;
             modd;
             func_map = Hashtbl.create 0;
+            struct_map = Hashtbl.create 0;
             env = { parent = None; bindings = [||] };
           },
         modd )
@@ -178,7 +186,12 @@ and resolve resolver : (path, lang_item) Hashtbl.t =
             fn.func_path <- Some path;
             Hashtbl.add env path (Fn fn))
           funcs
-    | _ -> ()
+    | Type (Struct s) ->
+        Hashtbl.add resolver.struct_map s.ident s;
+        let path = { segments = abs_path @ [s.ident] } in
+        s.struct_path <- Some path;
+        Hashtbl.add env path (Struct s)
+    | Const _ -> ()
   in
   List.iter f resolver.modd.items;
   env
@@ -187,6 +200,10 @@ and resolve_body body resolver =
   let handle_path path =
     let st = List.hd path.segments in
     if Hashtbl.mem resolver.func_map st then (
+      let abs_path = get_abs_ray_path resolver.modd.mod_path in
+      let segs = abs_path @ path.segments in
+      path.segments <- segs)
+    else if Hashtbl.mem resolver.struct_map st then (
       let abs_path = get_abs_ray_path resolver.modd.mod_path in
       let segs = abs_path @ path.segments in
       path.segments <- segs)
@@ -213,6 +230,10 @@ and resolve_body body resolver =
         resolve_body (Some then_block) resolver;
         match else_block with Some expr -> handle_expr expr | None -> ())
     | Lit _ -> ()
+    | StructExpr { fields; struct_name } ->
+        handle_path struct_name;
+        List.iter (fun (_, expr) -> handle_expr expr) fields
+    | Field (expr, _) -> handle_expr expr
   in
   let f stmt =
     match stmt with
