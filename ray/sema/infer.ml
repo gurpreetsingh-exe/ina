@@ -37,6 +37,7 @@ type infer_ctx = {
   int_ut : (ty_vid, ty option) Unification_table.t;
   globl_env : (path, lang_item) Hashtbl.t;
   func_map : (ident, ty) Hashtbl.t;
+  struct_map : (path, ty) Hashtbl.t;
   emitter : Emitter.t;
 }
 
@@ -53,6 +54,7 @@ let infer_ctx_create emitter globl_ctx globl_env =
     int_unifiction_table = Hashtbl.create 0;
     int_ut = { values = [||] };
     func_map = Hashtbl.create 0;
+    struct_map = Hashtbl.create 0;
     globl_env;
     emitter;
   }
@@ -85,8 +87,9 @@ let print_uf_tbl infer_ctx =
 
 type infer_err =
   | MismatchTy of ty * ty
-  | FnNotFound of path
-  | VarNotFound of path
+  | FnNotFound of ident
+  | StructNotFound of ident
+  | VarNotFound of ident
   | MismatchArgs of ident * int * int
   | InvalidCall of ty
   | InvalidDeref of ty
@@ -107,12 +110,11 @@ let mismatch_ty expected ty span =
       loc = Diagnostic.dg_loc_from_span span;
     }
 
-let fn_not_found name span =
-  let name = render_path name in
+let item_not_found item name span =
   Diagnostic.
     {
       level = Err;
-      message = sprintf "function `%s` is not found in this scope" name;
+      message = sprintf "%s `%s` is not found in this scope" item name;
       span =
         {
           primary_spans = [span];
@@ -123,21 +125,11 @@ let fn_not_found name span =
       loc = Diagnostic.dg_loc_from_span span;
     }
 
-let local_var_not_found path span =
-  let name = render_path path in
-  Diagnostic.
-    {
-      level = Err;
-      message = sprintf "local variable `%s` is not found in this scope" name;
-      span =
-        {
-          primary_spans = [span];
-          labels = [(span, "not found in this scope", true)];
-        };
-      children = [];
-      sugg = [];
-      loc = Diagnostic.dg_loc_from_span span;
-    }
+let fn_not_found name span = item_not_found "function" name span
+
+let local_var_not_found name span = item_not_found "local variable" name span
+
+let struct_not_found name span = item_not_found "struct" name span
 
 let invalid_deref ty span =
   let msg =
@@ -191,6 +183,7 @@ let infer_err_emit emitter (ty_err : infer_err) (span : span) =
   | MismatchTy (expected, ty) ->
       Emitter.emit emitter (mismatch_ty expected ty span)
   | FnNotFound name -> Emitter.emit emitter (fn_not_found name span)
+  | StructNotFound name -> Emitter.emit emitter (struct_not_found name span)
   | VarNotFound name -> Emitter.emit emitter (local_var_not_found name span)
   | MismatchArgs (func, expected, args) ->
       Emitter.emit emitter (mismatch_args func expected args span)
@@ -237,21 +230,28 @@ let rec resolve_block (infer_ctx : infer_ctx) body =
         g cond;
         resolve_block infer_ctx then_block;
         match else_block with Some e -> g e | None -> ())
+    | StructExpr { fields; _ } -> List.iter (fun (_, expr) -> g expr) fields
     | _ -> ()
   in
   List.iter f body.block_stmts;
   match body.last_expr with Some e -> g e | None -> ()
 
 let find_value infer_ctx path : ty option * string =
-  let name = render_path path in
-  match find_ty infer_ctx.ty_env name with
+  let n = render_path path in
+  let name = List.hd (List.rev path.segments) in
+  match find_ty infer_ctx.ty_env n with
   | None ->
-      if Hashtbl.mem infer_ctx.func_map name then (
-        let func = Hashtbl.find infer_ctx.func_map name in
+      if Hashtbl.mem infer_ctx.func_map n then (
+        let func = Hashtbl.find infer_ctx.func_map n in
         (Some func, name))
       else if Hashtbl.mem infer_ctx.globl_env path then (
         match Hashtbl.find infer_ctx.globl_env path with
         | Fn func -> (Some (fn_ty func), func.fn_sig.name)
+        | Struct s ->
+            ( Some
+                (Struct
+                   (name, List.map (fun (ty, field) -> (field, ty)) s.members)),
+              s.ident )
         | _ -> (None, name))
       else (None, name)
   | ty -> (ty, name)
@@ -270,8 +270,8 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
     | Path path -> (
       match find_value infer_ctx path with
       | Some ty, _ -> ty
-      | None, _ ->
-          infer_err_emit infer_ctx.emitter (VarNotFound path) expr.expr_span;
+      | None, name ->
+          infer_err_emit infer_ctx.emitter (VarNotFound name) expr.expr_span;
           Unit)
     | Call (path, exprs) -> (
         let check_args _ =
@@ -309,8 +309,8 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
         in
         match find_value infer_ctx path with
         | Some ty, name -> f ty name
-        | None, _ ->
-            infer_err_emit infer_ctx.emitter (FnNotFound path) expr.expr_span;
+        | None, name ->
+            infer_err_emit infer_ctx.emitter (FnNotFound name) expr.expr_span;
             (* infer types for arguments even if function is not found *)
             check_args ();
             Unit)
@@ -345,6 +345,40 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
       | ty ->
           infer_err_emit infer_ctx.emitter (InvalidDeref ty) expr.expr_span;
           ty)
+    | StructExpr { struct_name; fields } -> (
+        let ty = find_value infer_ctx struct_name in
+        match ty with
+        | Some ty, _ -> (
+          match ty with
+          | Struct (_, tys) ->
+              let strukt = Hashtbl.of_seq (List.to_seq tys) in
+              List.iter
+                (fun (name, expr) ->
+                  if Hashtbl.mem strukt name then (
+                    let ty = Hashtbl.find strukt name in
+                    let t = infer infer_ctx expr in
+                    ignore (unify infer_ctx t ty))
+                  else ignore (infer infer_ctx expr))
+                fields;
+              ty
+          | _ -> assert false)
+        | None, name ->
+            ignore (List.map (fun (_, expr) -> infer infer_ctx expr) fields);
+            infer_err_emit infer_ctx.emitter (StructNotFound name)
+              expr.expr_span;
+            Unit)
+    | Field (expr, name) ->
+        let ty = infer infer_ctx expr in
+        let ty =
+          match ty with
+          | Struct (_, tys) ->
+              let ty = ref Unit in
+              List.iter (fun (field, t) -> if name = field then ty := t) tys;
+              !ty
+          | Unit -> Unit
+          | _ -> assert false
+        in
+        ty
     | Ref expr -> RefTy (infer infer_ctx expr)
   in
   (match ty with
@@ -397,6 +431,14 @@ and unify (infer_ctx : infer_ctx) (ty : ty) (expected : ty) :
   match ty with
   | Infer (IntVar _) -> f ty_is_int ty
   | Infer (FloatVar _) -> f ty_is_float ty
+  | RefTy t -> (
+    match expected with
+    | RefTy expected -> unify infer_ctx t expected
+    | _ -> Some (MismatchTy (expected, ty)))
+  | Ptr t -> (
+    match expected with
+    | Ptr expected -> unify infer_ctx t expected
+    | _ -> Some (MismatchTy (expected, ty)))
   | ty -> if ty <> expected then Some (MismatchTy (expected, ty)) else None
 
 and infer_block (infer_ctx : infer_ctx) (block : block) : ty =
@@ -462,6 +504,14 @@ let infer_begin infer_ctx (modd : modd) =
   let f (item : item) =
     match item with
     | Fn (func, _) -> infer_func infer_ctx func
+    | Type typ -> (
+      match typ with
+      | Struct s ->
+          let path = Option.get s.struct_path in
+          let name = render_path path in
+          Hashtbl.add infer_ctx.struct_map path
+            (Struct
+               (name, List.map (fun (ty, field) -> (field, ty)) s.members)))
     | Import _ -> ()
     | Foreign funcs -> List.iter (fun f -> infer_func infer_ctx f) funcs
     | _ -> assert false
