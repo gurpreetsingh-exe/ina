@@ -30,6 +30,28 @@ let advance pctx =
       pctx.curr_tok <- t
   | None -> assert false
 
+let peek pctx =
+  let loc, c = (pctx.tokenizer.pos, pctx.tokenizer.c) in
+  let t =
+    match next pctx.tokenizer with
+    | Some { kind = Eof; _ } | None -> None
+    | Some t -> Some t
+  in
+  pctx.tokenizer.pos <- loc;
+  pctx.tokenizer.c <- c;
+  t
+
+let rec npeek pctx n =
+  let loc, c = (pctx.tokenizer.pos, pctx.tokenizer.c) in
+  let t =
+    match next pctx.tokenizer with
+    | Some { kind = Eof; _ } | None -> []
+    | Some t -> if n = 1 then [t.kind] else [t.kind] @ npeek pctx (n - 1)
+  in
+  pctx.tokenizer.pos <- loc;
+  pctx.tokenizer.c <- c;
+  t
+
 let unexpected_token pctx expected t =
   let msg =
     Printf.sprintf "expected `%s`, found `%s`"
@@ -285,7 +307,7 @@ and parse_call_args pctx : expr list =
   ignore (eat pctx RParen);
   !args
 
-and should_continue_as_binary_expr pctx expr =
+and should_continue_as_prec_expr pctx expr =
   let is_block =
     match expr.expr_kind with If _ | Block _ -> true | _ -> false
   in
@@ -312,6 +334,7 @@ and should_continue_as_binary_expr pctx expr =
   | _ -> true
 
 and prec = function
+  | Dot -> 80
   | Star | Slash -> 70
   | Plus | Minus -> 60
   | EqEq | BangEq -> 30
@@ -340,18 +363,27 @@ and parse_precedence pctx min_prec : expr =
   let s = pctx.curr_tok.span.start in
   let left = ref (parse_prefix pctx) in
   let p = ref (prec pctx.curr_tok.kind) in
-  if should_continue_as_binary_expr pctx !left then (
+  if should_continue_as_prec_expr pctx !left then (
     while
       (p := prec pctx.curr_tok.kind;
        !p)
       > min_prec
     do
-      let kind = binary_kind_from_token pctx.curr_tok.kind in
-      advance pctx;
-      let right = parse_precedence pctx (!p + 1) in
+      let kind =
+        match pctx.curr_tok.kind with
+        | Dot ->
+            advance pctx;
+            let field = parse_ident pctx in
+            Field (!left, field)
+        | _ ->
+            let kind = binary_kind_from_token pctx.curr_tok.kind in
+            advance pctx;
+            let right = parse_precedence pctx (!p + 1) in
+            Binary (kind, !left, right)
+      in
       left :=
         {
-          expr_kind = Binary (kind, !left, right);
+          expr_kind = kind;
           expr_ty = None;
           expr_id = gen_id pctx;
           expr_span = span s pctx;
@@ -394,24 +426,31 @@ and parse_primary pctx : expr =
     expr_span = span s pctx;
   }
 
+and parse_struct_expr pctx =
+  ignore (eat pctx LBrace);
+  let parse_field () : string * expr =
+    let name = parse_ident pctx in
+    ignore (eat pctx Colon);
+    let expr = parse_expr pctx in
+    (name, expr)
+  in
+  let rec parse_fields () : (string * expr) list =
+    match pctx.curr_tok.kind with
+    | RBrace -> []
+    | Comma -> advance pctx; parse_fields ()
+    | _ ->
+        let field = [parse_field ()] in
+        field @ parse_fields ()
+  in
+  let fields = parse_fields () in
+  ignore (eat pctx RBrace);
+  fields
+
 (* parses else expr when `else` token is already eaten *)
 and parse_else pctx : expr option =
-  let s = pctx.curr_tok.span.start in
-  let kind =
-    match pctx.curr_tok.kind with
-    | If -> Some (Ast.If (parse_if pctx))
-    | LBrace -> Some (Block (parse_block pctx))
-    | _ -> None
-  in
-  if Option.is_none kind then None
-  else
-    Some
-      {
-        expr_kind = Option.get kind;
-        expr_ty = None;
-        expr_id = gen_id pctx;
-        expr_span = span s pctx;
-      }
+  match pctx.curr_tok.kind with
+  | If | LBrace -> Some (parse_expr pctx)
+  | _ -> None
 
 and parse_if pctx =
   advance pctx;
@@ -424,15 +463,12 @@ and parse_if pctx =
   { cond; then_block; else_block }
 
 and parse_path_or_call pctx =
+  let path = parse_path pctx in
   match pctx.curr_tok.kind with
-  | Ident -> (
-      let path = parse_path pctx in
-      match pctx.curr_tok.kind with
-      | LParen -> Call (path, parse_call_args pctx)
-      | _ -> Path path)
-  | kind ->
-      ignore (Printf.printf "%s\n" (display_token_kind kind));
-      assert false
+  | LParen -> Call (path, parse_call_args pctx)
+  | LBrace ->
+      StructExpr { struct_name = path; fields = parse_struct_expr pctx }
+  | _ -> Path path
 
 and parse_let pctx : binding =
   ignore (eat pctx Let);
@@ -539,7 +575,7 @@ let parse_type pctx : typ =
         | _ -> assert false)
   done;
   ignore (eat pctx RBrace);
-  Struct { ident = name; members = !members }
+  Struct { ident = name; members = !members; struct_path = None }
 
 let parse_extern pctx attrs : item =
   advance pctx;

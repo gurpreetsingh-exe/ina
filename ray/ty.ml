@@ -1,5 +1,9 @@
 open Printf
 
+type path_segment = string
+
+type path = { mutable segments : path_segment list }
+
 type int_ty =
   | I8
   | I16
@@ -94,6 +98,7 @@ type ty =
   | Str
   | Ptr of ty
   | RefTy of ty
-  | FnTy of (ty list * ty * bool)
+  | FnTy of ty list * ty * bool
+  | Struct of string * (string * ty) list
   | Infer of infer_ty
   | Unit

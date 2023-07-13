@@ -28,6 +28,7 @@ let rec render_ty ?(dbg = true) (ty : ty) : string =
         (render ty_list (fun ty -> render_ty ty) ", ")
         (if is_variadic then ", ..." else "")
         (render_ty ret_ty)
+  | Struct (s, _) -> s
   | Infer ty -> render_infer_ty ty dbg
 
 let render_fn_sig (fn_sig : fn_sig) : string =
@@ -70,6 +71,13 @@ let rec render_expr (expr : expr) (indent : int) : string =
           | Some expr -> " else " ^ render_expr expr indent
           | None -> "")
     | Block block -> render_block block (indent + 1)
+    | StructExpr { struct_name; fields } ->
+        sprintf "%s { %s }" (render_path struct_name)
+          (render fields
+             (fun (name, expr) ->
+               sprintf "%s: %s" name (render_expr expr indent))
+             ", ")
+    | Field (expr, name) -> sprintf "%s.%s" (render_expr expr indent) name
     | Deref expr -> sprintf "*%s" (render_expr expr indent)
     | Ref expr -> sprintf "&%s" (render_expr expr indent))
     (match expr.expr_ty with Some ty -> render_ty ty | None -> "none")
@@ -129,7 +137,7 @@ let render_struct s =
           (fun (ty, name) -> sprintf "    %s%s" (name ^ ": ") (render_ty ty))
           s.members))
 
-let render_type ty =
+let render_type (ty : typ) =
   sprintf "\ntype %s\n" (match ty with Struct s -> render_struct s)
 
 let render_item (item : item) : string =
