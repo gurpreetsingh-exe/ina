@@ -1,3 +1,4 @@
+open Ty
 open Ir
 open Ast
 

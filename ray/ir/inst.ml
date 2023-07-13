@@ -28,10 +28,11 @@ and inst_kind =
   | Binary of binary_kind * value * value
   | Br of value * value * value
   | Jmp of value
-  (* bb * inst *)
+  (* (bb * inst) *)
   | Phi of ty * (value * value) list
   | Store of value * value
   | Load of value
+  | Gep of ty * value * int
   | Call of ty * value * value list
   | Intrinsic of string * value list
   | Ret of value
@@ -50,6 +51,7 @@ and const =
   | Float of float
   | Str of string
   | Bool of bool
+  | Struct of value list
 
 and basic_block = {
   mutable pred : basic_block list;
@@ -88,13 +90,15 @@ let has_value = function
   | Br _ | Jmp _ | Store _ | Ret _ | RetUnit | Nop -> false
   | _ -> true
 
-let render_const = function
+let rec render_const = function
   | Int value -> sprintf "%d" value
   | Float value -> sprintf "%f" value
   | Str value -> sprintf "\"%s\"" (String.escaped value)
   | Bool value -> sprintf "%b" value
+  | Struct values ->
+      sprintf "{ %s }" (String.concat ", " (List.map render_value values))
 
-let render_value = function
+and render_value = function
   | Const (const, ty) ->
       sprintf "%s %s" (Fmt.render_ty ty) (render_const const)
   | VReg (_, i, ty) -> sprintf "%s%%%i" (Fmt.render_ty ty ^ " ") i
@@ -134,6 +138,8 @@ let render_inst inst : string =
         | RefTy ty -> Fmt.render_ty ty
         | _ -> assert false)
         (render_value ptr)
+  | Gep (_, value, index) ->
+      sprintf "gep %s, %d" (render_value value) index
   | Call (ty, fn, args) ->
       let ty =
         match ty with FnTy (_, ret_ty, _) -> ret_ty | _ -> assert false

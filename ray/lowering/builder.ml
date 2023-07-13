@@ -49,6 +49,16 @@ let load (ptr : value) (builder : t) : value =
   let ty = match ty with Ptr ty | RefTy ty -> ty | _ -> assert false in
   add_inst_with_ty ty (Load ptr) builder
 
+let gep (ty : ty) (ptr : value) (index : int) (builder : t) : value =
+  let fty =
+    match ty with
+    | Struct (_, tys) ->
+        let _, ty = List.nth tys index in
+        ty
+    | _ -> assert false
+  in
+  add_inst_with_ty (Ptr fty) (Gep (ty, ptr, index)) builder
+
 let call (ty : ty) (fn : value) (args : value list) (builder : t) : value =
   let ret_ty =
     match ty with FnTy (_, ret_ty, _) -> ret_ty | _ -> assert false
@@ -74,3 +84,6 @@ let const_float (ty : ty) (value : float) : value = Const (Float value, ty)
 let const_string (ty : ty) (value : string) : value = Const (Str value, ty)
 
 let const_bool (ty : ty) (value : bool) : value = Const (Bool value, ty)
+
+let const_struct (ty : ty) (values : value list) : value =
+  Const (Struct values, ty)
