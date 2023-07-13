@@ -25,6 +25,7 @@ type ty_err =
   | MismatchTy of ty * ty
   | UninitializedFields of ident
   | UnknownField of ident * ident
+  | NoFieldInPrimitiveType of ty
   | InvalidBinaryExpression of binary_kind * ty * ty
 
 exception TypeError of ty_err
@@ -105,6 +106,21 @@ let unknown_field strukt name span =
       loc = Diagnostic.dg_loc_from_span span;
     }
 
+let no_field_in_prim_ty ty span =
+  let msg =
+    sprintf "primitive type `%s` has no fields"
+      (render_ty ?dbg:(Some false) ty)
+  in
+  Diagnostic.
+    {
+      level = Err;
+      message = msg;
+      span = { primary_spans = [span]; labels = [] };
+      children = [];
+      sugg = [];
+      loc = Diagnostic.dg_loc_from_span span;
+    }
+
 let ty_err_emit emitter ty_err span =
   incr error;
   match ty_err with
@@ -114,6 +130,8 @@ let ty_err_emit emitter ty_err span =
       Emitter.emit emitter (uninitialized_fields name span)
   | UnknownField (strukt, name) ->
       Emitter.emit emitter (unknown_field strukt name span)
+  | NoFieldInPrimitiveType ty ->
+      Emitter.emit emitter (no_field_in_prim_ty ty span)
   | InvalidBinaryExpression (kind, left, right) ->
       Emitter.emit emitter (invalid_binary_expr kind left right span)
 
@@ -194,7 +212,19 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
               fields
         | Unit -> () (* error was handled by infer *)
         | _ -> assert false)
-    | Field (expr, _) -> ignore (fexpr expr)
+    | Field (expr, name) ->
+        let ty = Option.get expr.expr_ty in
+        (match ty with
+        | Struct (struct_name, tys) ->
+            let strukt = Hashtbl.of_seq (List.to_seq tys) in
+            if not (Hashtbl.mem strukt name) then
+              ty_err_emit ty_ctx.emitter
+                (UnknownField (struct_name, name))
+                expr.expr_span
+        | ty ->
+            ty_err_emit ty_ctx.emitter (NoFieldInPrimitiveType ty)
+              expr.expr_span);
+        ignore (fexpr expr)
     | Lit _ | Path _ -> ());
     Option.get expr.expr_ty
   and fblock body =

@@ -231,7 +231,8 @@ let rec resolve_block (infer_ctx : infer_ctx) body =
         resolve_block infer_ctx then_block;
         match else_block with Some e -> g e | None -> ())
     | StructExpr { fields; _ } -> List.iter (fun (_, expr) -> g expr) fields
-    | _ -> ()
+    | Field (expr, _) -> g expr
+    | Lit _ | Path _ -> ()
   in
   List.iter f body.block_stmts;
   match body.last_expr with Some e -> g e | None -> ()
@@ -375,8 +376,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
               let ty = ref Unit in
               List.iter (fun (field, t) -> if name = field then ty := t) tys;
               !ty
-          | Unit -> Unit
-          | _ -> assert false
+          | _ -> Unit
         in
         ty
     | Ref expr -> RefTy (infer infer_ctx expr)

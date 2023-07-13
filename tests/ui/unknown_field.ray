@@ -8,5 +8,6 @@ type Foo = {
 fn main() {
     let a = 34;
     let a = Foo { a: &a, c: 20 };
+    let b = a.c;
 }
 

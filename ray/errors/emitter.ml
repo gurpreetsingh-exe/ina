@@ -44,7 +44,7 @@ let add_annotation (buf : Styled_buffer.t) (buf_line : int ref)
     (* Styled_buffer.append buf ~line:!buf_line (str ^ underline ^ " ") level) *)
   else (
     let underline = String.make len '^' in
-    Styled_buffer.append buf ~line:!buf_line (str ^ underline ^ " ") level)
+    Styled_buffer.append buf ~line:!buf_line (str ^ underline) level)
 
 let render_col_sep (buf : Styled_buffer.t) (buf_line : int ref)
     max_line_num_len =
@@ -130,6 +130,6 @@ let emit emitter diagnostic =
       let line_off = get_span_line span.start in
       let span_lines = get_span_end span - line_off in
       if span_lines = 0 && is_prim then
-        Styled_buffer.append buf ~line:!curr_line msg (Level Err))
+        Styled_buffer.append buf ~line:!curr_line (" " ^ msg) (Level Err))
     diagnostic.span.labels;
   eprintf "%s\n\n" (Styled_buffer.render buf colors)
