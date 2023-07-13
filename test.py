@@ -3,6 +3,7 @@
 from __future__ import annotations
 import pathlib
 import sys
+import os
 from typing import List
 import subprocess
 import argparse
@@ -25,26 +26,40 @@ def plural(n):
 
 class Tests:
     def __init__(self):
-        self.passed = 0
-        self.failed = 0
-        self.skipped = 0
+        self.passed = []
+        self.failed = []
+        self.skipped = []
         self.fmt = 0
-        self.n = 0
+        self.n = []
+        self.collected_tests = 0
+        self.term_cols = os.get_terminal_size().columns - 1
+
+    def progressbar(self, prefix="", out=sys.stdout):
+        j = len(self.n)
+        count = self.collected_tests
+        size = self.term_cols - (len(prefix) +
+                                 2 + 1 + len(str(j) + str(count)))
+        x = int(size * j / count)
+
+        print("{}[{}{}] {}/{}".format(prefix, "█" * x, " " * (size - x), j, count),
+              end='\r', file=out, flush=True)
 
     def print_results(self):
-        if self.passed + self.failed + self.skipped != self.n:
+        n = len(self.n)
+        if len(self.passed + self.failed + self.skipped) != n:
             print("BUG: this is a bug in the test runner")
 
-        if self.passed == self.n:
+        if len(self.passed) == n:
             print("  {}{}[OK]{} All {} test{} passed".format(
-                Color.OKGREEN, Color.BOLD, Color.ENDC, self.n, plural(self.n)))
+                Color.OKGREEN, Color.BOLD, Color.ENDC, n, plural(n)))
         else:
             print("  {} test{} passed out of {}{}{}".format(
-                  self.passed,
-                  plural(self.passed),
-                  self.n,
-                  ", {} failed".format(self.failed) if self.failed else "",
-                  ", {} skipped".format(self.skipped) if self.skipped else ""))
+                  len(self.passed),
+                  plural(len(self.passed)),
+                  n,
+                  ", {} failed".format(len(self.failed)) if len(
+                      self.failed) else "",
+                  ", {} skipped".format(len(self.skipped)) if len(self.skipped) else ""))
 
 
 tests = Tests()
@@ -112,6 +127,8 @@ def fmt_test(tests: Tests, case: pathlib.Path, src: str):
 
 
 def run_test(case: pathlib.Path, options: argparse.Namespace):
+    tests.progressbar(prefix="  ")
+
     if case.is_dir():
         test_dir(case, options)
         return
@@ -123,14 +140,12 @@ def run_test(case: pathlib.Path, options: argparse.Namespace):
     if case.suffix in {'.stderr'}:
         return
 
-    tests.n += 1
+    tests.n.append(case)
     with open(case, 'r') as f:
         src = f.readlines()
         if skip(src):
-            print(f"skipping {case}")
-            tests.skipped += 1
+            tests.skipped.append(case)
             return
-        print(f"compiling {case}")
         fmt_test(tests, case, "".join(src))
         expected = parse_expected_result(src)
         command = "./bin/ray build {} --ui-testing".format(case).split(" ")
@@ -142,34 +157,30 @@ def run_test(case: pathlib.Path, options: argparse.Namespace):
         proc.communicate()
         if expected.compile_fail:
             if proc.returncode == 0:
-                tests.failed += 1
-                print("compile pass: {}".format(case))
+                tests.failed.append(case)
             else:
                 if not stderr:
-                    tests.failed += 1
+                    tests.failed.append(case)
                     return
                 stderr_file = case.with_suffix(".stderr")
                 if options.bless:
-                    tests.passed += 1
+                    tests.failed.append(case)
                     with open(stderr_file, 'w') as f:
                         f.write(stderr)
                         return
                 with open(stderr_file, 'r') as f:
                     if stderr != f.read():
-                        print("failed {}".format(case))
-                        tests.failed += 1
+                        tests.failed.append(case)
                     else:
-                        tests.passed += 1
+                        tests.passed.append(case)
                 return
         else:
             if proc.returncode != 0:
-                print("compile fail: {}".format(case))
-                tests.failed += 1
+                tests.failed.append(case)
                 return
         exe = case.with_suffix("")
         proc = subprocess.Popen(
             exe, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        print(f"executing {exe}")
         output = TestResult()
         if proc.stdout:
             if stdout := proc.stdout.read().decode():
@@ -183,14 +194,31 @@ def run_test(case: pathlib.Path, options: argparse.Namespace):
         if output != expected:
             print(output)
             print(expected)
-            tests.failed += 1
+            tests.failed.append(case)
         else:
-            tests.passed += 1
+            tests.passed.append(case)
 
 
 def test_dir(dirname, options):
     for test in dirname.iterdir():
         run_test(test, options)
+
+
+def collect_tests(case: pathlib.Path):
+    if case.is_dir():
+        n = 0
+        for test in case.iterdir():
+            n += collect_tests(test)
+        return n
+
+    if case.suffix in {'.o'}:
+        subprocess.call("rm -f {}".format(case).split(" "))
+        return 0
+
+    if case.suffix in {'.stderr'}:
+        return 0
+
+    return 1
 
 
 if __name__ == "__main__":
@@ -205,5 +233,7 @@ if __name__ == "__main__":
         sys.stderr.write("error: {} doesn't exist\n".format(test))
         exit(1)
 
+    tests.collected_tests = collect_tests(test)
     run_test(test, args)
+    print("\n", flush=True)
     tests.print_results()
