@@ -6,6 +6,24 @@ open Errors
 open Diagnostic
 open Session
 
+let builtin_types =
+  let tbl = Hashtbl.create 0 in
+  Hashtbl.add tbl "i8" Ty.(Int I8);
+  Hashtbl.add tbl "i16" (Int I16);
+  Hashtbl.add tbl "i32" (Int I32);
+  Hashtbl.add tbl "i64" (Int I64);
+  Hashtbl.add tbl "isize" (Int Isize);
+  Hashtbl.add tbl "u8" (Int U8);
+  Hashtbl.add tbl "u16" (Int U16);
+  Hashtbl.add tbl "u32" (Int U32);
+  Hashtbl.add tbl "u64" (Int U64);
+  Hashtbl.add tbl "usize" (Int Usize);
+  Hashtbl.add tbl "f32" (Float F32);
+  Hashtbl.add tbl "f64" (Float F64);
+  Hashtbl.add tbl "bool" Bool;
+  Hashtbl.add tbl "str" Str;
+  tbl
+
 type parse_ctx = {
   ctx : Context.t;
   tokenizer : tokenizer;
@@ -29,6 +47,28 @@ let advance pctx =
       pctx.prev_tok <- Some pctx.curr_tok;
       pctx.curr_tok <- t
   | None -> assert false
+
+let peek pctx =
+  let loc, c = (pctx.tokenizer.pos, pctx.tokenizer.c) in
+  let t =
+    match next pctx.tokenizer with
+    | Some { kind = Eof; _ } | None -> None
+    | Some t -> Some t
+  in
+  pctx.tokenizer.pos <- loc;
+  pctx.tokenizer.c <- c;
+  t
+
+let rec npeek pctx n =
+  let loc, c = (pctx.tokenizer.pos, pctx.tokenizer.c) in
+  let t =
+    match next pctx.tokenizer with
+    | Some { kind = Eof; _ } | None -> []
+    | Some t -> if n = 1 then [t.kind] else [t.kind] @ npeek pctx (n - 1)
+  in
+  pctx.tokenizer.pos <- loc;
+  pctx.tokenizer.c <- c;
+  t
 
 let unexpected_token pctx expected t =
   let msg =
@@ -156,6 +196,22 @@ let parse_inner_attrs pctx : attr list =
   in
   parse_inner_attrs_impl ()
 
+let parse_path pctx : path =
+  let rec parse_path_impl () =
+    match pctx.curr_tok.kind with
+    | Ident -> (
+        let segment = [parse_ident pctx] in
+        match pctx.curr_tok.kind with
+        | Colon2 ->
+            advance pctx;
+            segment @ parse_path_impl ()
+        | _ -> segment)
+    | _ ->
+        Emitter.emit pctx.emitter (unexpected_token pctx Ident pctx.curr_tok);
+        exit 1
+  in
+  { segments = parse_path_impl () }
+
 let rec parse_ty pctx : ty =
   let t = pctx.curr_tok in
   match t.kind with
@@ -186,23 +242,12 @@ let rec parse_ty pctx : ty =
   | Ampersand ->
       advance pctx;
       RefTy (parse_ty pctx)
-  | Ident -> (
-    match get_token_str (eat pctx Ident) pctx.src with
-    | "i8" -> Int I8
-    | "i16" -> Int I16
-    | "i32" -> Int I32
-    | "i64" -> Int I64
-    | "isize" -> Int Isize
-    | "u8" -> Int U8
-    | "u16" -> Int U16
-    | "u32" -> Int U32
-    | "u64" -> Int U64
-    | "usize" -> Int Usize
-    | "f32" -> Float F32
-    | "f64" -> Float F64
-    | "bool" -> Bool
-    | "str" -> Str
-    | _ -> unexpected_type pctx t.span)
+  | Ident ->
+      let name = get_token_str pctx.curr_tok pctx.src in
+      if Hashtbl.mem builtin_types name then (
+        advance pctx;
+        Hashtbl.find builtin_types name)
+      else Ident (parse_path pctx)
   | _ -> unexpected_type pctx t.span
 
 and parse_ret_ty pctx : ty option =
@@ -246,22 +291,6 @@ let parse_fn_sig pctx : fn_sig =
   let ret_ty = parse_ret_ty pctx in
   { name = ident; args; ret_ty; fn_span = span s pctx; is_variadic }
 
-let parse_path pctx : path =
-  let rec parse_path_impl () =
-    match pctx.curr_tok.kind with
-    | Ident -> (
-        let segment = [parse_ident pctx] in
-        match pctx.curr_tok.kind with
-        | Colon2 ->
-            advance pctx;
-            segment @ parse_path_impl ()
-        | _ -> segment)
-    | _ ->
-        Emitter.emit pctx.emitter (unexpected_token pctx Ident pctx.curr_tok);
-        exit 1
-  in
-  { segments = parse_path_impl () }
-
 let parse_pat pctx : pat =
   let kind = pctx.curr_tok.kind in
   match kind with
@@ -285,7 +314,7 @@ and parse_call_args pctx : expr list =
   ignore (eat pctx RParen);
   !args
 
-and should_continue_as_binary_expr pctx expr =
+and should_continue_as_prec_expr pctx expr =
   let is_block =
     match expr.expr_kind with If _ | Block _ -> true | _ -> false
   in
@@ -312,6 +341,7 @@ and should_continue_as_binary_expr pctx expr =
   | _ -> true
 
 and prec = function
+  | Dot -> 80
   | Star | Slash -> 70
   | Plus | Minus -> 60
   | EqEq | BangEq -> 30
@@ -340,18 +370,27 @@ and parse_precedence pctx min_prec : expr =
   let s = pctx.curr_tok.span.start in
   let left = ref (parse_prefix pctx) in
   let p = ref (prec pctx.curr_tok.kind) in
-  if should_continue_as_binary_expr pctx !left then (
+  if should_continue_as_prec_expr pctx !left then (
     while
       (p := prec pctx.curr_tok.kind;
        !p)
       > min_prec
     do
-      let kind = binary_kind_from_token pctx.curr_tok.kind in
-      advance pctx;
-      let right = parse_precedence pctx (!p + 1) in
+      let kind =
+        match pctx.curr_tok.kind with
+        | Dot ->
+            advance pctx;
+            let field = parse_ident pctx in
+            Field (!left, field)
+        | _ ->
+            let kind = binary_kind_from_token pctx.curr_tok.kind in
+            advance pctx;
+            let right = parse_precedence pctx (!p + 1) in
+            Binary (kind, !left, right)
+      in
       left :=
         {
-          expr_kind = Binary (kind, !left, right);
+          expr_kind = kind;
           expr_ty = None;
           expr_id = gen_id pctx;
           expr_span = span s pctx;
@@ -394,24 +433,31 @@ and parse_primary pctx : expr =
     expr_span = span s pctx;
   }
 
+and parse_struct_expr pctx =
+  ignore (eat pctx LBrace);
+  let parse_field () : string * expr =
+    let name = parse_ident pctx in
+    ignore (eat pctx Colon);
+    let expr = parse_expr pctx in
+    (name, expr)
+  in
+  let rec parse_fields () : (string * expr) list =
+    match pctx.curr_tok.kind with
+    | RBrace -> []
+    | Comma -> advance pctx; parse_fields ()
+    | _ ->
+        let field = [parse_field ()] in
+        field @ parse_fields ()
+  in
+  let fields = parse_fields () in
+  ignore (eat pctx RBrace);
+  fields
+
 (* parses else expr when `else` token is already eaten *)
 and parse_else pctx : expr option =
-  let s = pctx.curr_tok.span.start in
-  let kind =
-    match pctx.curr_tok.kind with
-    | If -> Some (Ast.If (parse_if pctx))
-    | LBrace -> Some (Block (parse_block pctx))
-    | _ -> None
-  in
-  if Option.is_none kind then None
-  else
-    Some
-      {
-        expr_kind = Option.get kind;
-        expr_ty = None;
-        expr_id = gen_id pctx;
-        expr_span = span s pctx;
-      }
+  match pctx.curr_tok.kind with
+  | If | LBrace -> Some (parse_expr pctx)
+  | _ -> None
 
 and parse_if pctx =
   advance pctx;
@@ -424,15 +470,12 @@ and parse_if pctx =
   { cond; then_block; else_block }
 
 and parse_path_or_call pctx =
+  let path = parse_path pctx in
   match pctx.curr_tok.kind with
-  | Ident -> (
-      let path = parse_path pctx in
-      match pctx.curr_tok.kind with
-      | LParen -> Call (path, parse_call_args pctx)
-      | _ -> Path path)
-  | kind ->
-      ignore (Printf.printf "%s\n" (display_token_kind kind));
-      assert false
+  | LParen -> Call (path, parse_call_args pctx)
+  | LBrace ->
+      StructExpr { struct_name = path; fields = parse_struct_expr pctx }
+  | _ -> Path path
 
 and parse_let pctx : binding =
   ignore (eat pctx Let);
@@ -516,6 +559,31 @@ let parse_fn pctx abi is_extern : func =
       func_path = None;
     })
 
+let parse_type pctx : typ =
+  advance pctx;
+  let name = parse_ident pctx in
+  let members = ref [] in
+  ignore (eat pctx Eq);
+  ignore (eat pctx LBrace);
+  while (not pctx.stop) && pctx.curr_tok.kind <> RBrace do
+    match pctx.curr_tok.kind with
+    | RBrace -> ()
+    | _ -> (
+        let arg =
+          let ident = parse_ident pctx in
+          ignore (eat pctx Colon);
+          let ty = parse_ty pctx in
+          (ty, ident)
+        in
+        members := !members @ [arg];
+        match pctx.curr_tok.kind with
+        | Comma -> advance pctx
+        | RBrace -> ()
+        | _ -> assert false)
+  done;
+  ignore (eat pctx RBrace);
+  Struct { ident = name; members = !members; struct_path = None }
+
 let parse_extern pctx attrs : item =
   advance pctx;
   let abi =
@@ -546,6 +614,7 @@ let parse_item pctx : item =
   let attrs = parse_outer_attrs pctx in
   match pctx.curr_tok.kind with
   | Fn -> Fn (parse_fn pctx "C" false, attrs)
+  | Type -> Type (parse_type pctx)
   | Extern -> parse_extern pctx attrs
   | Import ->
       advance pctx;

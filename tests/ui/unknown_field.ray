@@ -1,0 +1,13 @@
+// COMPILE_FAIL
+
+type Foo = {
+    a: &i32,
+    b: i32
+}
+
+fn main() {
+    let a = 34;
+    let a = Foo { a: &a, c: 20 };
+    let b = a.c;
+}
+

@@ -1,5 +1,6 @@
 open Front
 open Ast
+open Ty
 open Printf
 open Sema
 open Session
@@ -7,7 +8,11 @@ open Session
 type sess = { env : (path, lang_item) Hashtbl.t }
 
 let print_env env =
-  let ritem = function Mod _ -> "module" | Fn _ -> "fn" in
+  let ritem = function
+    | Mod _ -> "module"
+    | Fn _ -> "fn"
+    | Struct _ -> "struct"
+  in
   Hashtbl.iter
     (fun path item ->
       printf "%s = %s\n" (String.concat "::" path.segments) (ritem item))
@@ -29,6 +34,7 @@ type resolver = {
   globl_ctx : Context.t;
   modd : modd;
   func_map : (ident, func) Hashtbl.t;
+  struct_map : (ident, strukt) Hashtbl.t;
   mutable env : env;
 }
 
@@ -37,6 +43,7 @@ let resolver_create globl_ctx modd =
     globl_ctx;
     modd;
     func_map = Hashtbl.create 0;
+    struct_map = Hashtbl.create 0;
     env = { parent = None; bindings = [||] };
   }
 
@@ -97,6 +104,44 @@ let rec get_abs_ray_path mod_path =
         get_abs_ray_path parent @ [mod_name]
       else [mod_name]
 
+let handle_path resolver path =
+  let st = List.hd path.segments in
+  if Hashtbl.mem resolver.func_map st then (
+    let abs_path = get_abs_ray_path resolver.modd.mod_path in
+    let segs = abs_path @ path.segments in
+    path.segments <- segs)
+  else if Hashtbl.mem resolver.struct_map st then (
+    let abs_path = get_abs_ray_path resolver.modd.mod_path in
+    let segs = abs_path @ path.segments in
+    path.segments <- segs)
+  else if Hashtbl.mem resolver.modd.imported_mods st then (
+    let modd = Hashtbl.find resolver.modd.imported_mods st in
+    let abs_path = get_abs_ray_path modd.mod_path in
+    path.segments <- List.tl path.segments;
+    let segs = abs_path @ path.segments in
+    path.segments <- segs)
+
+let resolve_type resolver (env : (path, lang_item) Hashtbl.t) fields =
+  List.map
+    (fun (ty, name) ->
+      match ty with
+      | Ident path ->
+          handle_path resolver path;
+          let strukt =
+            if Hashtbl.mem env path then (
+              let item = Hashtbl.find env path in
+              match item with Struct strukt -> strukt | _ -> assert false)
+            else assert false
+          in
+          let ty =
+            Struct
+              ( Fmt.render_path (Option.get strukt.struct_path),
+                List.map (fun (ty, field) -> (field, ty)) strukt.members )
+          in
+          (ty, name)
+      | _ -> (ty, name))
+    fields
+
 let rec import (resolver : resolver) (path : path) =
   let s = List.hd path.segments in
   let lib_path =
@@ -120,6 +165,7 @@ let rec import (resolver : resolver) (path : path) =
             globl_ctx = resolver.globl_ctx;
             modd;
             func_map = Hashtbl.create 0;
+            struct_map = Hashtbl.create 0;
             env = { parent = None; bindings = [||] };
           },
         modd )
@@ -169,7 +215,8 @@ and resolve resolver : (path, lang_item) Hashtbl.t =
         let path = { segments = abs_path @ [fn.fn_sig.name] } in
         resolve_body fn.body resolver;
         fn.func_path <- Some path;
-        Hashtbl.add env path (Fn fn)
+        Hashtbl.add env path (Fn fn);
+        fn.fn_sig.args <- resolve_type resolver env fn.fn_sig.args
     | Foreign funcs ->
         List.iter
           (fun fn ->
@@ -178,41 +225,38 @@ and resolve resolver : (path, lang_item) Hashtbl.t =
             fn.func_path <- Some path;
             Hashtbl.add env path (Fn fn))
           funcs
-    | _ -> ()
+    | Type (Struct s) ->
+        Hashtbl.add resolver.struct_map s.ident s;
+        let path = { segments = abs_path @ [s.ident] } in
+        s.struct_path <- Some path;
+        Hashtbl.add env path (Struct s);
+        s.members <- resolve_type resolver env s.members
+    | Const _ -> ()
   in
   List.iter f resolver.modd.items;
   env
 
 and resolve_body body resolver =
-  let handle_path path =
-    let st = List.hd path.segments in
-    if Hashtbl.mem resolver.func_map st then (
-      let abs_path = get_abs_ray_path resolver.modd.mod_path in
-      let segs = abs_path @ path.segments in
-      path.segments <- segs)
-    else if Hashtbl.mem resolver.modd.imported_mods st then (
-      let modd = Hashtbl.find resolver.modd.imported_mods st in
-      let abs_path = get_abs_ray_path modd.mod_path in
-      path.segments <- List.tl path.segments;
-      let segs = abs_path @ path.segments in
-      path.segments <- segs)
-  in
   let rec handle_expr expr =
     match expr.expr_kind with
     | Call (path, exprs) ->
-        handle_path path;
+        handle_path resolver path;
         List.iter handle_expr exprs
     | Binary (_, left, right) -> handle_expr left; handle_expr right
     | Deref expr | Ref expr -> handle_expr expr
     | Block body -> resolve_body (Some body) resolver
     | Path path ->
         let name = Fmt.render_path path in
-        if not (find_ty resolver.env name) then handle_path path
+        if not (find_ty resolver.env name) then handle_path resolver path
     | If { cond; then_block; else_block } -> (
         handle_expr cond;
         resolve_body (Some then_block) resolver;
         match else_block with Some expr -> handle_expr expr | None -> ())
     | Lit _ -> ()
+    | StructExpr { fields; struct_name } ->
+        handle_path resolver struct_name;
+        List.iter (fun (_, expr) -> handle_expr expr) fields
+    | Field (expr, _) -> handle_expr expr
   in
   let f stmt =
     match stmt with

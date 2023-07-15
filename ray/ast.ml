@@ -31,15 +31,24 @@ type modd = {
   mod_id : node_id;
 }
 
+and strukt = {
+  ident : string;
+  mutable members : (ty * string) list;
+  mutable struct_path : path option;
+}
+
+and typ = Struct of strukt
+
 and item =
   | Fn of func * attr_list
+  | Type of typ
   | Foreign of func list
   | Const of constant
   | Import of path
 
 and fn_sig = {
   name : ident;
-  args : (ty * ident) list;
+  mutable args : (ty * ident) list;
   ret_ty : ty option;
   fn_span : span;
   is_variadic : bool;
@@ -82,10 +91,6 @@ and constant = {
   const_id : node_id;
 }
 
-and path_segment = ident
-
-and path = { mutable segments : path_segment list }
-
 and expr = {
   expr_kind : expr_kind;
   mutable expr_ty : ty option;
@@ -114,6 +119,13 @@ and expr_kind =
   | Block of block
   | Deref of expr
   | Ref of expr
+  | StructExpr of struct_expr
+  | Field of expr * ident
+
+and struct_expr = {
+  struct_name : path;
+  fields : (string * expr) list;
+}
 
 and iff = {
   cond : expr;
@@ -139,3 +151,4 @@ let binary_kind_from_token = function
 type lang_item =
   | Mod of modd
   | Fn of func
+  | Struct of strukt

@@ -1,0 +1,12 @@
+// EXIT_CODE: 1
+
+type Foo = {
+    a: i32,
+    b: i32
+}
+
+fn main() -> bool {
+    let a = Foo { a: 34, b: 35 };
+    a.a + a.b == 69
+}
+

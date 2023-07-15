@@ -1,12 +1,12 @@
 open Ast
+open Ty
 open Ir
-open Printf
 
 let mangle path =
   "_Z"
   ^ String.concat ""
       (List.map
-         (fun seg -> sprintf "%d%s" (String.length seg) seg)
+         (fun seg -> string_of_int (String.length seg) ^ seg)
          path.segments)
 
 let rec lower_fn (fn : func) (ctx : Context.t) : Func.t =
@@ -80,6 +80,7 @@ let rec lower_ast (ctx : Context.t) : Module.t =
   let f (item : item) =
     match item with
     | Fn (func, _) -> items := !items @ [lower_fn func ctx]
+    | Type _ -> ()
     | Foreign funcs ->
         items := !items @ List.map (fun f -> lower_fn f ctx) funcs
     | Import path -> (

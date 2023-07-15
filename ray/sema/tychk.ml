@@ -17,11 +17,15 @@ let env_create parent : env = { parent; bindings = Hashtbl.create 0 }
 type ty_ctx = {
   ty_env : env;
   func_map : (ident, ty) Hashtbl.t;
+  struct_map : (path, ty) Hashtbl.t;
   emitter : Emitter.t;
 }
 
 type ty_err =
   | MismatchTy of ty * ty
+  | UninitializedFields of ident
+  | UnknownField of ident * ident
+  | NoFieldInPrimitiveType of ty
   | InvalidBinaryExpression of binary_kind * ty * ty
 
 exception TypeError of ty_err
@@ -78,11 +82,56 @@ let unused_value span =
       loc = Diagnostic.dg_loc_from_span span;
     }
 
+let uninitialized_fields name span =
+  let msg = sprintf "`%s` has uninitialized fields" name in
+  Diagnostic.
+    {
+      level = Err;
+      message = "uninitialized fields";
+      span = { primary_spans = [span]; labels = [(span, msg, true)] };
+      children = [];
+      sugg = [];
+      loc = Diagnostic.dg_loc_from_span span;
+    }
+
+let unknown_field strukt name span =
+  let msg = sprintf "`%s` has no field `%s`" strukt name in
+  Diagnostic.
+    {
+      level = Err;
+      message = msg;
+      span = { primary_spans = [span]; labels = [] };
+      children = [];
+      sugg = [];
+      loc = Diagnostic.dg_loc_from_span span;
+    }
+
+let no_field_in_prim_ty ty span =
+  let msg =
+    sprintf "primitive type `%s` has no fields"
+      (render_ty ?dbg:(Some false) ty)
+  in
+  Diagnostic.
+    {
+      level = Err;
+      message = msg;
+      span = { primary_spans = [span]; labels = [] };
+      children = [];
+      sugg = [];
+      loc = Diagnostic.dg_loc_from_span span;
+    }
+
 let ty_err_emit emitter ty_err span =
   incr error;
   match ty_err with
   | MismatchTy (expected, ty) ->
       Emitter.emit emitter (mismatch_ty expected ty span)
+  | UninitializedFields name ->
+      Emitter.emit emitter (uninitialized_fields name span)
+  | UnknownField (strukt, name) ->
+      Emitter.emit emitter (unknown_field strukt name span)
+  | NoFieldInPrimitiveType ty ->
+      Emitter.emit emitter (no_field_in_prim_ty ty span)
   | InvalidBinaryExpression (kind, left, right) ->
       Emitter.emit emitter (invalid_binary_expr kind left right span)
 
@@ -90,6 +139,7 @@ let ty_ctx_create (infer_ctx : infer_ctx) =
   {
     ty_env = env_create None;
     func_map = infer_ctx.func_map;
+    struct_map = infer_ctx.struct_map;
     emitter = infer_ctx.emitter;
   }
 
@@ -97,14 +147,12 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
   let { fn_sig = { ret_ty; fn_span; _ }; body; _ } = func in
   let rec fexpr expr : ty =
     (match expr.expr_kind with
-    | Binary (kind, left, right) -> (
+    | Binary (kind, left, right) ->
         let left, right = (fexpr left, fexpr right) in
-        match (left, right) with
-        | Int _, Int _ | Float _, Float _ -> ()
-        | _ ->
-            ty_err_emit ty_ctx.emitter
-              (InvalidBinaryExpression (kind, left, right))
-              expr.expr_span)
+        if left <> right then
+          ty_err_emit ty_ctx.emitter
+            (InvalidBinaryExpression (kind, left, right))
+            expr.expr_span
     | Call (_, args) -> ignore (List.map fexpr args)
     | If { cond; then_block; else_block } -> (
         if fexpr cond <> Bool then ();
@@ -139,6 +187,43 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
     | Deref expr -> ignore (fexpr expr)
     | Ref expr -> ignore (fexpr expr)
     | Block body -> ignore (fblock body)
+    | StructExpr { fields; _ } -> (
+        let ty = Option.get expr.expr_ty in
+        match ty with
+        | Struct (struct_name, tys) ->
+            let strukt = Hashtbl.of_seq (List.to_seq tys) in
+            if Hashtbl.length strukt <> List.length fields then
+              ty_err_emit ty_ctx.emitter (UninitializedFields struct_name)
+                expr.expr_span;
+            List.iter
+              (fun (name, expr) ->
+                if Hashtbl.mem strukt name then (
+                  let ty = Hashtbl.find strukt name in
+                  let t = fexpr expr in
+                  if t <> ty then
+                    ty_err_emit ty_ctx.emitter
+                      (MismatchTy (ty, t))
+                      expr.expr_span)
+                else
+                  ty_err_emit ty_ctx.emitter
+                    (UnknownField (struct_name, name))
+                    expr.expr_span)
+              fields
+        | Unit -> () (* error was handled by infer *)
+        | _ -> assert false)
+    | Field (expr, name) ->
+        let ty = Option.get expr.expr_ty in
+        (match ty with
+        | Struct (struct_name, tys) ->
+            let strukt = Hashtbl.of_seq (List.to_seq tys) in
+            if not (Hashtbl.mem strukt name) then
+              ty_err_emit ty_ctx.emitter
+                (UnknownField (struct_name, name))
+                expr.expr_span
+        | ty ->
+            ty_err_emit ty_ctx.emitter (NoFieldInPrimitiveType ty)
+              expr.expr_span);
+        ignore (fexpr expr)
     | Lit _ | Path _ -> ());
     Option.get expr.expr_ty
   and fblock body =
@@ -205,7 +290,7 @@ let tychk ty_ctx (modd : modd) =
     match item with
     | Fn (func, _) -> tychk_func ty_ctx func
     | Foreign funcs -> List.iter (fun f -> tychk_func ty_ctx f) funcs
-    | Import _ -> ()
+    | Import _ | Type _ -> ()
     | _ -> assert false
   in
   List.iter f modd.items

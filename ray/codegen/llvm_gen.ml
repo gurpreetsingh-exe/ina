@@ -25,6 +25,7 @@ type codegen_ctx = {
   mutable curr_mod : llmodule option;
   mutable curr_fn : llvalue option;
   func_map : (path, lltype) Hashtbl.t;
+  struct_map : (string, lltype) Hashtbl.t;
   mutable main : llvalue option;
   intrinsics : (path, Func.fn_type) Hashtbl.t;
 }
@@ -64,6 +65,7 @@ let codegen_ctx =
     curr_mod = None;
     curr_fn = None;
     func_map = Hashtbl.create 0;
+    struct_map = Hashtbl.create 0;
     main = None;
     intrinsics = Hashtbl.create 0;
   }
@@ -77,7 +79,7 @@ let rec find_val scope ident =
     | Some s -> find_val s ident
     | None -> assert false)
 
-let get_llvm_ty (ty : ty) : lltype =
+let rec get_llvm_ty (ty : ty) : lltype =
   let { llctx = ctx; size_type; _ } = codegen_ctx in
   match ty with
   | Float ty -> (
@@ -92,8 +94,18 @@ let get_llvm_ty (ty : ty) : lltype =
     | I16 | U16 -> i16_type ctx
     | I8 | U8 -> i8_type ctx)
   | Ptr _ | RefTy _ | FnTy _ -> pointer_type ctx
+  | Struct (name, tys) ->
+      if Hashtbl.mem codegen_ctx.struct_map name then
+        Hashtbl.find codegen_ctx.struct_map name
+      else (
+        let ty = named_struct_type ctx name in
+        struct_set_body ty
+          (Array.of_list (List.map (fun (_, ty) -> get_llvm_ty ty) tys))
+          false;
+        Hashtbl.add codegen_ctx.struct_map name ty;
+        ty)
   | Unit -> void_type ctx
-  | Infer _ -> assert false
+  | Ident _ | Infer _ -> assert false
 
 let gen_function_type (fn_ty : Func.fn_type) : lltype =
   let args = List.map (fun (ty, _) -> get_llvm_ty ty) fn_ty.args in
@@ -119,11 +131,14 @@ let gen_blocks (blocks : Func.blocks) =
         (if bb.is_entry then entry_block fn
         else append_block codegen_ctx.llctx (sprintf "bb%d" bb.bid) fn))
     blocks.bbs;
-  let get_value (value : Inst.value) : llvalue =
+  let rec get_value (value : Inst.value) : llvalue =
     match value with
     | Const (const, ty) -> (
         let ty = get_llvm_ty ty in
         match const with
+        | Struct values ->
+            const_struct codegen_ctx.llctx
+              (Array.of_list (List.map get_value values))
         | Int value -> const_int ty value
         | Float value -> const_float ty value
         | Str value ->
@@ -216,6 +231,15 @@ let gen_blocks (blocks : Func.blocks) =
             (build_load
                (get_llvm_ty (get_load_ty ptr))
                (get_value ptr) "" builder)
+      | Gep (ty, value, index) ->
+          let ty = get_llvm_ty ty in
+          Some
+            (build_gep ty (get_value value)
+               [|
+                 const_int (get_llvm_ty (Int I32)) 0;
+                 const_int (get_llvm_ty (Int I32)) index;
+               |]
+               "" builder)
       | Call (ty, fn, args) ->
           let fn_ty =
             match ty with
