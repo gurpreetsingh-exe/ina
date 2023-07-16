@@ -500,6 +500,17 @@ and parse_let pctx : binding =
 
 and parse_stmt pctx : stmt =
   if pctx.curr_tok.kind = Let then Binding (parse_let pctx)
+  else if pctx.curr_tok.kind = Assert then (
+    advance pctx;
+    let expr = parse_expr pctx in
+    let message =
+      if pctx.curr_tok.kind = Comma then (
+        advance pctx;
+        Some (parse_expr pctx))
+      else None
+    in
+    ignore (eat pctx Semi);
+    Assert (expr, message))
   else (
     let expr = parse_expr pctx in
     match pctx.curr_tok.kind with

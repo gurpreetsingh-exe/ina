@@ -267,7 +267,7 @@ and resolve_body body resolver =
               Array.append resolver.env.bindings [|ident|]);
         handle_expr binding_expr
     | Assign (expr1, expr2) -> handle_expr expr1; handle_expr expr2
-    | Stmt expr | Expr expr -> handle_expr expr
+    | Stmt expr | Expr expr | Assert (expr, _) -> handle_expr expr
   in
   match body with
   | Some body ->

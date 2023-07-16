@@ -187,6 +187,31 @@ and lower_block (block : block) (ctx : Context.t) : Inst.value =
               Context.add_local ctx ident dst;
               let src = lower binding_expr builder ctx in
               Builder.store src dst builder))
+    | Assert (expr, string) ->
+        let cond = lower expr builder ctx in
+        let true_bb = Basicblock.create () in
+        let false_bb = Basicblock.create () in
+        let join_bb = Basicblock.create () in
+        Builder.br cond (Label true_bb) (Label false_bb) builder;
+        Context.block_append ctx true_bb;
+        let true_builder = Builder.create true_bb in
+        Builder.jmp (Label join_bb) true_builder;
+        Context.block_append ctx false_bb;
+        let false_builder = Builder.create false_bb in
+        let loc = Token.display_span expr.expr_span in
+        let msg =
+          match string with
+          | Some msg -> (
+            match msg.expr_kind with
+            | Lit (LitStr msg) ->
+                "  panic at 'assertion failed: `" ^ msg ^ "`', "
+            | _ -> assert false)
+          | None -> "  panic at 'assertion failed', "
+        in
+        let msg = msg ^ loc ^ "\n" in
+        Builder.trap (Builder.const_string Str msg) false_builder;
+        Context.block_append ctx join_bb;
+        builder.block <- Option.get ctx.block
   in
   List.iter f block.block_stmts;
   let ret =

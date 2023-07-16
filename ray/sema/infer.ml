@@ -218,6 +218,9 @@ let rec resolve_block (infer_ctx : infer_ctx) body =
     | Stmt expr | Expr expr -> g expr
     | Binding { binding_expr; _ } -> g binding_expr
     | Assign (l, init) -> g l; g init
+    | Assert (expr, string) -> (
+        g expr;
+        match string with Some expr -> g expr | None -> ())
   and g expr =
     let ty = Option.get expr.expr_ty in
     expr.expr_ty <- Some (sub ty);
@@ -467,6 +470,19 @@ and infer_block (infer_ctx : infer_ctx) (block : block) : ty =
              (fun t0 t1 ->
                Infer (FloatVar { index = min t0.index t1.index }))
              init.expr_span);
+        Unit
+    | Assert (expr, string) ->
+        let ty = infer infer_ctx expr in
+        (match unify infer_ctx ty Bool with
+        | Some e -> infer_err_emit infer_ctx.emitter e expr.expr_span
+        | None -> ());
+        (match string with
+        | Some expr -> (
+            let ty = infer infer_ctx expr in
+            match unify infer_ctx ty Str with
+            | Some e -> infer_err_emit infer_ctx.emitter e expr.expr_span
+            | None -> ())
+        | None -> ());
         Unit
   in
   let tmp_env = infer_ctx.ty_env in

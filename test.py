@@ -89,7 +89,7 @@ class TestResult:
 
 def extract_value(lines: List[str], value: str):
     value = "// {}: ".format(value)
-    return [l.strip(value) for l in lines if l.startswith(value)]
+    return [l.replace(value, "") for l in lines if l.startswith(value)]
 
 
 def extract_flag(lines: List[str], value: str):
@@ -182,14 +182,10 @@ def run_test(case: pathlib.Path, options: argparse.Namespace):
         proc = subprocess.Popen(
             exe, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         output = TestResult()
-        if proc.stdout:
-            if stdout := proc.stdout.read().decode():
-                output.stdout = stdout
-        if proc.stderr:
-            if stderr := proc.stderr.read().decode():
-                output.stderr = stderr
-        proc.communicate()
+        (stdout, stderr) = proc.communicate()
         output.exit_code = proc.returncode
+        output.stdout = stdout.decode() if stdout.decode() else None
+        output.stderr = stderr.decode() if stderr.decode() else None
         subprocess.call("rm -f {}".format(exe).split(" "))
         if output != expected:
             print(output)

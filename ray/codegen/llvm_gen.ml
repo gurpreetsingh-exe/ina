@@ -3,6 +3,7 @@ open Ty
 open Ir
 open Llvm
 open Llvm_target
+open Llvm_debuginfo
 open Llvm_X86
 open Llvm_analysis
 open Resolve.Imports
@@ -14,6 +15,19 @@ type env = {
   parent : env option;
 }
 
+type tcx = {
+  i8 : lltype;
+  i16 : lltype;
+  i32 : lltype;
+  i64 : lltype;
+  f32 : lltype;
+  f64 : lltype;
+  bool : lltype;
+  ptr : lltype;
+  size_type : lltype;
+  void : lltype;
+}
+
 type codegen_ctx = {
   llctx : llcontext;
   target : Target.t;
@@ -21,13 +35,14 @@ type codegen_ctx = {
   data_layout : DataLayout.t;
   mutable env : env;
   global_strings : (string, llvalue) Hashtbl.t;
-  size_type : lltype;
   mutable curr_mod : llmodule option;
   mutable curr_fn : llvalue option;
   func_map : (path, lltype) Hashtbl.t;
   struct_map : (string, lltype) Hashtbl.t;
   mutable main : llvalue option;
   intrinsics : (path, Func.fn_type) Hashtbl.t;
+  dibuilder : lldibuilder;
+  tcx : tcx;
 }
 
 (* we define our own *)
@@ -54,6 +69,20 @@ let codegen_ctx =
       ?code_model:(Some CodeModel.Default) target
   in
   let data_layout = TargetMachine.data_layout machine in
+  let tcx =
+    {
+      i8 = i8_type ctx;
+      i16 = i16_type ctx;
+      i32 = i32_type ctx;
+      i64 = i64_type ctx;
+      f32 = float_type ctx;
+      f64 = double_type ctx;
+      bool = i1_type ctx;
+      ptr = pointer_type ctx;
+      size_type = DataLayout.intptr_type ctx data_layout;
+      void = void_type ctx;
+    }
+  in
   {
     llctx = ctx;
     target;
@@ -61,16 +90,49 @@ let codegen_ctx =
     data_layout = TargetMachine.data_layout machine;
     env = { bindings = Hashtbl.create 0; parent = None };
     global_strings = Hashtbl.create 0;
-    size_type = DataLayout.intptr_type ctx data_layout;
     curr_mod = None;
     curr_fn = None;
     func_map = Hashtbl.create 0;
     struct_map = Hashtbl.create 0;
     main = None;
     intrinsics = Hashtbl.create 0;
+    dibuilder = dibuilder (create_module ctx "");
+    tcx;
   }
 
-let i32_c value = const_int (i32_type codegen_ctx.llctx) value
+let builtins =
+  let ty = codegen_ctx.tcx in
+  let tbl =
+    let seq : (string * (lltype * string list)) array =
+      [|
+        ("write", (function_type ty.i32 [|ty.i32; ty.ptr; ty.size_type|], []));
+        ("abort", (function_type ty.void [||], ["noreturn"]));
+      |]
+    in
+    Hashtbl.of_seq (Array.to_seq seq)
+  in
+  tbl
+
+let find_func name =
+  let llmod = Option.get codegen_ctx.curr_mod in
+  if Hashtbl.mem builtins name then (
+    let ty, attrs = Hashtbl.find builtins name in
+    let func =
+      match lookup_function name llmod with
+      | Some func -> func
+      | None ->
+          let func = declare_function name ty llmod in
+          List.iter
+            (fun attr ->
+              let attr = create_enum_attr codegen_ctx.llctx attr 0L in
+              add_function_attr func attr AttrIndex.Function)
+            attrs;
+          func
+    in
+    (func, ty))
+  else assert false
+
+let i32_c value = const_int codegen_ctx.tcx.i32 value
 
 let rec find_val scope ident =
   if Hashtbl.mem scope.bindings ident then Hashtbl.find scope.bindings ident
@@ -80,20 +142,19 @@ let rec find_val scope ident =
     | None -> assert false)
 
 let rec get_llvm_ty (ty : ty) : lltype =
-  let { llctx = ctx; size_type; _ } = codegen_ctx in
+  let { llctx = ctx; tcx; _ } = codegen_ctx in
   match ty with
-  | Float ty -> (
-    match ty with F32 -> float_type ctx | F64 -> double_type ctx)
-  | Bool -> i1_type ctx
-  | Str -> struct_type ctx [|pointer_type ctx; size_type|]
+  | Float ty -> ( match ty with F32 -> tcx.f32 | F64 -> tcx.f64)
+  | Bool -> tcx.bool
+  | Str -> struct_type ctx [|pointer_type ctx; tcx.size_type|]
   | Int ty -> (
     match ty with
-    | Isize | Usize -> size_type
-    | I64 | U64 -> i64_type ctx
-    | I32 | U32 -> i32_type ctx
-    | I16 | U16 -> i16_type ctx
-    | I8 | U8 -> i8_type ctx)
-  | Ptr _ | RefTy _ | FnTy _ -> pointer_type ctx
+    | Isize | Usize -> tcx.size_type
+    | I64 | U64 -> tcx.i64
+    | I32 | U32 -> tcx.i32
+    | I16 | U16 -> tcx.i16
+    | I8 | U8 -> tcx.i8)
+  | Ptr _ | RefTy _ | FnTy _ -> tcx.ptr
   | Struct (name, tys) ->
       if Hashtbl.mem codegen_ctx.struct_map name then
         Hashtbl.find codegen_ctx.struct_map name
@@ -104,7 +165,7 @@ let rec get_llvm_ty (ty : ty) : lltype =
           false;
         Hashtbl.add codegen_ctx.struct_map name ty;
         ty)
-  | Unit -> void_type ctx
+  | Unit -> tcx.void
   | Ident _ | Infer _ -> assert false
 
 let gen_function_type (fn_ty : Func.fn_type) : lltype =
@@ -115,7 +176,7 @@ let gen_function_type (fn_ty : Func.fn_type) : lltype =
 
 let gen_main ll_mod name =
   let main = Option.get codegen_ctx.main in
-  let main_ty = function_type (get_llvm_ty (Int I32)) [||] in
+  let main_ty = function_type codegen_ctx.tcx.i32 [||] in
   let fn = define_function "main" main_ty ll_mod in
   let builder = builder_at_end codegen_ctx.llctx (entry_block fn) in
   let ret = build_call main_ty main [||] "" builder in
@@ -159,7 +220,7 @@ let gen_blocks (blocks : Func.blocks) =
             const_struct codegen_ctx.llctx
               [|
                 global_ptr;
-                const_int codegen_ctx.size_type (String.length value);
+                const_int codegen_ctx.tcx.size_type (String.length value);
               |]
         | Bool value -> const_int ty (if value then 1 else 0))
     | VReg (inst, id, _) -> Hashtbl.find insts id
@@ -236,8 +297,8 @@ let gen_blocks (blocks : Func.blocks) =
           Some
             (build_gep ty (get_value value)
                [|
-                 const_int (get_llvm_ty (Int I32)) 0;
-                 const_int (get_llvm_ty (Int I32)) index;
+                 const_int codegen_ctx.tcx.i32 0;
+                 const_int codegen_ctx.tcx.i32 index;
                |]
                "" builder)
       | Call (ty, fn, args) ->
@@ -258,6 +319,17 @@ let gen_blocks (blocks : Func.blocks) =
           let args = Array.map get_value (Array.of_list args) in
           Some (Intrinsics.gen_intrinsic name args builder codegen_ctx.llctx)
       | Nop -> None
+      | Trap msg ->
+          let c = codegen_ctx.llctx in
+          let msg = get_value msg in
+          let ptr = Intrinsics.gen_intrinsic "as_ptr" [|msg|] builder c in
+          let len = Intrinsics.gen_intrinsic "len" [|msg|] builder c in
+          let func, write_ty = find_func "write" in
+          ignore (build_call write_ty func [|i32_c 2; ptr; len|] "" builder);
+          let func, abort_ty = find_func "abort" in
+          ignore (build_call abort_ty func [||] "" builder);
+          ignore (build_unreachable builder);
+          None
       (* | _ -> *)
       (*     print_endline (Inst.render_inst inst); *)
       (*     assert false *)

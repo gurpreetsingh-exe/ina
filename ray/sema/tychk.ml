@@ -266,6 +266,7 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
                   check_overflow value (Option.get binding_expr.expr_ty)
               | _ -> ())
             | _ -> ()))
+    | Assert _ -> ()
   in
   let ret_ty = Option.value ret_ty ~default:Unit in
   match body with

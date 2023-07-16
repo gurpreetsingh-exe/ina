@@ -36,6 +36,7 @@ and inst_kind =
   | Call of ty * value * value list
   | Intrinsic of string * value list
   | Ret of value
+  | Trap of value
   | RetUnit
   | Nop
 
@@ -138,8 +139,7 @@ let render_inst inst : string =
         | RefTy ty -> Fmt.render_ty ty
         | _ -> assert false)
         (render_value ptr)
-  | Gep (_, value, index) ->
-      sprintf "gep %s, %d" (render_value value) index
+  | Gep (_, value, index) -> sprintf "gep %s, %d" (render_value value) index
   | Call (ty, fn, args) ->
       let ty =
         match ty with FnTy (_, ret_ty, _) -> ret_ty | _ -> assert false
@@ -150,5 +150,6 @@ let render_inst inst : string =
       sprintf "intrinsic %s(%s)" name
         (String.concat ", " (List.map render_value args))
   | Ret ret -> sprintf "ret %s" (render_value ret)
+  | Trap _ -> "trap"
   | RetUnit -> "ret"
   | Nop -> "nop"

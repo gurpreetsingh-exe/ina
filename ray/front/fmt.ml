@@ -97,6 +97,11 @@ and render_stmt stmt indent =
       sprintf "%s = %s;" (render_expr left indent) (render_expr right indent)
   | Stmt expr -> render_expr expr indent ^ ";"
   | Expr expr -> render_expr expr indent
+  | Assert (expr, string) ->
+      sprintf "assert %s%s;" (render_expr expr indent)
+        (match string with
+        | Some expr -> ", " ^ render_expr expr indent
+        | None -> "")
 
 and render_block (block : block) indent : string =
   let has_last_expr = Option.is_some block.last_expr in

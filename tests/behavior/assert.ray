@@ -1,0 +1,9 @@
+// python return -N when process is terminated by a signal
+// which in this case is 6 (SIGABRT)
+// EXIT_CODE: -6
+// STDERR:   panic at 'assertion failed', tests/behavior/assert.ray:7:12
+
+fn main() {
+    assert false;
+}
+

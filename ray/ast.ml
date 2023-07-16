@@ -74,6 +74,7 @@ and stmt =
   | Expr of expr
   | Assign of expr * expr
   | Binding of binding
+  | Assert of expr * expr option
 
 and binding = {
   binding_pat : pat;

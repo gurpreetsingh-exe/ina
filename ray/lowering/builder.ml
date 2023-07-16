@@ -73,6 +73,8 @@ let ret (ret : value) (builder : t) : unit = add_inst (Ret ret) builder
 
 let ret_unit (builder : t) : unit = add_inst RetUnit builder
 
+let trap msg builder = add_inst (Trap msg) builder
+
 let nop _ =
   let inst = { kind = Nop; id = -1 } in
   VReg (inst, -1, Unit)

@@ -15,7 +15,8 @@ Hashtbl.add keywords "extern" Extern;
 Hashtbl.add keywords "let" Let;
 Hashtbl.add keywords "import" Import;
 Hashtbl.add keywords "if" If;
-Hashtbl.add keywords "else" Else
+Hashtbl.add keywords "else" Else;
+Hashtbl.add keywords "assert" Assert
 
 let mk_tok (tokenizer : tokenizer) (kind : token_kind)
     (tok : token option ref) (start : pos) =

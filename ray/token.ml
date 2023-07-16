@@ -26,6 +26,7 @@ type token_kind =
   | Import
   | If
   | Else
+  | Assert
   | Ident
   | Lit of literal
   | Comment of comment_style option
@@ -65,6 +66,7 @@ let display_token_kind = function
   | Import -> "import"
   | If -> "if"
   | Else -> "else"
+  | Assert -> "assert"
   | Ident -> "identifier"
   | Lit lit -> display_literal lit
   | Comment (Some kind) -> "comment " ^ display_comment_style kind
