@@ -166,7 +166,9 @@ let rec get_llvm_ty (ty : ty) : lltype =
         Hashtbl.add codegen_ctx.struct_map name ty;
         ty)
   | Unit -> tcx.void
-  | Ident _ | Infer _ -> assert false
+  | Ident path ->
+      Hashtbl.find codegen_ctx.struct_map (Front.Fmt.render_path path)
+  | Infer _ -> assert false
 
 let gen_function_type (fn_ty : Func.fn_type) : lltype =
   let args = List.map (fun (ty, _) -> get_llvm_ty ty) fn_ty.args in

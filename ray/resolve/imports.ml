@@ -122,25 +122,35 @@ let handle_path resolver path =
     path.segments <- segs)
 
 let resolve_type resolver (env : (path, lang_item) Hashtbl.t) fields =
-  List.map
-    (fun (ty, name) ->
-      match ty with
-      | Ident path ->
-          handle_path resolver path;
-          let strukt =
-            if Hashtbl.mem env path then (
-              let item = Hashtbl.find env path in
-              match item with Struct strukt -> strukt | _ -> assert false)
-            else assert false
-          in
-          let ty =
-            Struct
-              ( Fmt.render_path (Option.get strukt.struct_path),
-                List.map (fun (ty, field) -> (field, ty)) strukt.members )
-          in
-          (ty, name)
-      | _ -> (ty, name))
-    fields
+  let rec resolve_type' ty name =
+    match ty with
+    | Ident path ->
+        handle_path resolver path;
+        let strukt =
+          if Hashtbl.mem env path then (
+            let item = Hashtbl.find env path in
+            match item with Struct strukt -> strukt | _ -> assert false)
+          else (
+            eprintf "error: `%s` not found\n" (Fmt.render_path path);
+            flush stderr;
+            exit 1)
+        in
+        let ty =
+          Struct
+            ( Fmt.render_path (Option.get strukt.struct_path),
+              List.map (fun (ty, field) -> (field, ty)) strukt.members )
+        in
+        ty
+    | Ptr ty -> Ptr (resolve_type' ty name)
+    | RefTy ty -> RefTy (resolve_type' ty name)
+    | FnTy (tys, ret_ty, is_variadic) ->
+        FnTy
+          ( List.map (fun ty -> resolve_type' ty name) tys,
+            resolve_type' ret_ty name,
+            is_variadic )
+    | _ -> ty
+  in
+  List.map (fun (ty, name) -> (resolve_type' ty name, name)) fields
 
 let rec import (resolver : resolver) (path : path) =
   let s = List.hd path.segments in
@@ -150,6 +160,7 @@ let rec import (resolver : resolver) (path : path) =
       find_std (String.concat Filename.dir_sep ["library"; s])
     else (
       eprintf "error: module `%s` not found\n" s;
+      flush stderr;
       exit 1)
   in
   let f lib_path =
@@ -182,6 +193,7 @@ let rec import (resolver : resolver) (path : path) =
       (fun h next ->
         if not (Hashtbl.mem h.imported_mods next) then (
           eprintf "error: `%s` not found in `%s`\n" next h.mod_name;
+          flush stderr;
           exit 1)
         else (
           let path =
@@ -199,6 +211,14 @@ and resolve resolver : (path, lang_item) Hashtbl.t =
   let env = Hashtbl.create 0 in
   let abs_path = get_abs_path resolver.modd.mod_path in
   Hashtbl.add env { segments = abs_path } (Mod resolver.modd);
+  let resolve_func fn =
+    Hashtbl.add resolver.func_map fn.fn_sig.name fn;
+    let path = { segments = abs_path @ [fn.fn_sig.name] } in
+    resolve_body fn.body resolver;
+    fn.func_path <- Some path;
+    Hashtbl.add env path (Fn fn);
+    fn.fn_sig.args <- resolve_type resolver env fn.fn_sig.args
+  in
   let f item =
     match item with
     | Import path ->
@@ -210,21 +230,8 @@ and resolve resolver : (path, lang_item) Hashtbl.t =
           (fun path item ->
             if not (Hashtbl.mem env path) then Hashtbl.add env path item)
           env2
-    | Fn (fn, _) ->
-        Hashtbl.add resolver.func_map fn.fn_sig.name fn;
-        let path = { segments = abs_path @ [fn.fn_sig.name] } in
-        resolve_body fn.body resolver;
-        fn.func_path <- Some path;
-        Hashtbl.add env path (Fn fn);
-        fn.fn_sig.args <- resolve_type resolver env fn.fn_sig.args
-    | Foreign funcs ->
-        List.iter
-          (fun fn ->
-            Hashtbl.add resolver.func_map fn.fn_sig.name fn;
-            let path = { segments = abs_path @ [fn.fn_sig.name] } in
-            fn.func_path <- Some path;
-            Hashtbl.add env path (Fn fn))
-          funcs
+    | Fn (fn, _) -> resolve_func fn
+    | Foreign funcs -> List.iter resolve_func funcs
     | Type (Struct s) ->
         Hashtbl.add resolver.struct_map s.ident s;
         let path = { segments = abs_path @ [s.ident] } in

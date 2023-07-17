@@ -60,6 +60,8 @@ class Tests:
                   ", {} failed".format(len(self.failed)) if len(
                       self.failed) else "",
                   ", {} skipped".format(len(self.skipped)) if len(self.skipped) else ""))
+            for f in self.failed:
+                print(f)
 
 
 tests = Tests()

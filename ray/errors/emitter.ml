@@ -132,4 +132,5 @@ let emit emitter diagnostic =
       if span_lines = 0 && is_prim then
         Styled_buffer.append buf ~line:!curr_line (" " ^ msg) (Level Err))
     diagnostic.span.labels;
-  eprintf "%s\n\n" (Styled_buffer.render buf colors)
+  eprintf "%s\n\n" (Styled_buffer.render buf colors);
+  flush stderr

@@ -103,3 +103,16 @@ type ty =
   | Infer of infer_ty
   | Ident of path
   | Unit
+
+let ( != ) (ty1 : ty) (ty2 : ty) : bool =
+  match (ty1, ty2) with
+  | Ident path, Struct (name, _) | Struct (name, _), Ident path ->
+      String.concat "::" path.segments <> name
+  | FnTy (tys1, ret_ty1, is_var1), FnTy (tys2, ret_ty2, is_var2) ->
+      (try
+         List.map2 ( != ) tys1 tys2
+         |> List.filter (fun f -> not f)
+         |> List.length = 0
+       with Invalid_argument _ -> true)
+      || ret_ty1 != ret_ty2 || is_var1 <> is_var2
+  | _, _ -> ty1 <> ty2

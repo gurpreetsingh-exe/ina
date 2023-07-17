@@ -240,7 +240,7 @@ let rec resolve_block (infer_ctx : infer_ctx) body =
   List.iter f body.block_stmts;
   match body.last_expr with Some e -> g e | None -> ()
 
-let find_value infer_ctx path : ty option * string =
+let rec find_value infer_ctx path : ty option * string =
   let n = render_path path in
   let name = List.hd (List.rev path.segments) in
   match find_ty infer_ctx.ty_env n with
@@ -258,7 +258,10 @@ let find_value infer_ctx path : ty option * string =
               s.ident )
         | _ -> (None, name))
       else (None, name)
-  | ty -> (ty, name)
+  | ty -> (
+    match ty with
+    | Some (Ident path) -> find_value infer_ctx path
+    | _ -> (ty, name))
 
 let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
   Hashtbl.add infer_ctx.env expr.expr_id expr;
@@ -384,6 +387,13 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
         ty
     | Ref expr -> RefTy (infer infer_ctx expr)
   in
+  let ty =
+    match ty with
+    | Ident path ->
+        let maybe_ty, _ = find_value infer_ctx path in
+        Option.get maybe_ty
+    | _ -> ty
+  in
   (match ty with
   | Infer (IntVar _ | FloatVar _) -> expr.expr_ty <- Some ty
   | ty -> expr.expr_ty <- Some ty);
@@ -442,7 +452,7 @@ and unify (infer_ctx : infer_ctx) (ty : ty) (expected : ty) :
     match expected with
     | Ptr expected -> unify infer_ctx t expected
     | _ -> Some (MismatchTy (expected, ty)))
-  | ty -> if ty <> expected then Some (MismatchTy (expected, ty)) else None
+  | ty -> if ty != expected then Some (MismatchTy (expected, ty)) else None
 
 and infer_block (infer_ctx : infer_ctx) (block : block) : ty =
   let f stmt : ty =
