@@ -37,6 +37,12 @@ and inst_kind =
   | Intrinsic of string * value list
   | Ret of value
   | Trap of value
+  (* Bitcast of ty * value *)
+  (* Zext of ty * value *)
+  (* Sext of ty * value *)
+  (* Trunc of ty * value *)
+  (* Fpext of ty * value *)
+  (* Fptrunc of ty * value *)
   | RetUnit
   | Nop
 

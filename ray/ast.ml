@@ -93,7 +93,7 @@ and constant = {
 }
 
 and expr = {
-  expr_kind : expr_kind;
+  mutable expr_kind : expr_kind;
   mutable expr_ty : ty option;
   expr_id : node_id;
   expr_span : span;
@@ -122,6 +122,7 @@ and expr_kind =
   | Ref of expr
   | StructExpr of struct_expr
   | Field of expr * ident
+  | Cast of expr * ty
 
 and struct_expr = {
   struct_name : path;

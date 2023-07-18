@@ -121,36 +121,38 @@ let handle_path resolver path =
     let segs = abs_path @ path.segments in
     path.segments <- segs)
 
-let resolve_type resolver (env : (path, lang_item) Hashtbl.t) fields =
-  let rec resolve_type' ty name =
-    match ty with
-    | Ident path ->
-        handle_path resolver path;
-        let strukt =
-          if Hashtbl.mem env path then (
-            let item = Hashtbl.find env path in
-            match item with Struct strukt -> strukt | _ -> assert false)
-          else (
-            eprintf "error: `%s` not found\n" (Fmt.render_path path);
-            flush stderr;
-            exit 1)
-        in
-        let ty =
-          Struct
-            ( Fmt.render_path (Option.get strukt.struct_path),
-              List.map (fun (ty, field) -> (field, ty)) strukt.members )
-        in
-        ty
-    | Ptr ty -> Ptr (resolve_type' ty name)
-    | RefTy ty -> RefTy (resolve_type' ty name)
-    | FnTy (tys, ret_ty, is_variadic) ->
-        FnTy
-          ( List.map (fun ty -> resolve_type' ty name) tys,
-            resolve_type' ret_ty name,
-            is_variadic )
-    | _ -> ty
-  in
-  List.map (fun (ty, name) -> (resolve_type' ty name, name)) fields
+let rec resolve_type resolver (env : (path, lang_item) Hashtbl.t) ty name =
+  match ty with
+  | Ident path ->
+      handle_path resolver path;
+      let strukt =
+        if Hashtbl.mem env path then (
+          let item = Hashtbl.find env path in
+          match item with Struct strukt -> strukt | _ -> assert false)
+        else (
+          eprintf "error: `%s` not found\n" (Fmt.render_path path);
+          flush stderr;
+          exit 1)
+      in
+      let ty =
+        Struct
+          ( Fmt.render_path (Option.get strukt.struct_path),
+            List.map (fun (ty, field) -> (field, ty)) strukt.members )
+      in
+      ty
+  | Ptr ty -> Ptr (resolve_type resolver env ty name)
+  | RefTy ty -> RefTy (resolve_type resolver env ty name)
+  | FnTy (tys, ret_ty, is_variadic) ->
+      FnTy
+        ( List.map (fun ty -> resolve_type resolver env ty name) tys,
+          resolve_type resolver env ret_ty name,
+          is_variadic )
+  | _ -> ty
+
+let resolve_types resolver (env : (path, lang_item) Hashtbl.t) fields =
+  List.map
+    (fun (ty, name) -> (resolve_type resolver env ty name, name))
+    fields
 
 let rec import (resolver : resolver) (path : path) =
   let s = List.hd path.segments in
@@ -214,10 +216,10 @@ and resolve resolver : (path, lang_item) Hashtbl.t =
   let resolve_func fn =
     Hashtbl.add resolver.func_map fn.fn_sig.name fn;
     let path = { segments = abs_path @ [fn.fn_sig.name] } in
-    resolve_body fn.body resolver;
+    resolve_body fn.body resolver env;
     fn.func_path <- Some path;
     Hashtbl.add env path (Fn fn);
-    fn.fn_sig.args <- resolve_type resolver env fn.fn_sig.args
+    fn.fn_sig.args <- resolve_types resolver env fn.fn_sig.args
   in
   let f item =
     match item with
@@ -237,13 +239,13 @@ and resolve resolver : (path, lang_item) Hashtbl.t =
         let path = { segments = abs_path @ [s.ident] } in
         s.struct_path <- Some path;
         Hashtbl.add env path (Struct s);
-        s.members <- resolve_type resolver env s.members
+        s.members <- resolve_types resolver env s.members
     | Const _ -> ()
   in
   List.iter f resolver.modd.items;
   env
 
-and resolve_body body resolver =
+and resolve_body body resolver env =
   let rec handle_expr expr =
     match expr.expr_kind with
     | Call (path, exprs) ->
@@ -251,18 +253,22 @@ and resolve_body body resolver =
         List.iter handle_expr exprs
     | Binary (_, left, right) -> handle_expr left; handle_expr right
     | Deref expr | Ref expr -> handle_expr expr
-    | Block body -> resolve_body (Some body) resolver
+    | Block body -> resolve_body (Some body) resolver env
     | Path path ->
         let name = Fmt.render_path path in
         if not (find_ty resolver.env name) then handle_path resolver path
     | If { cond; then_block; else_block } -> (
         handle_expr cond;
-        resolve_body (Some then_block) resolver;
+        resolve_body (Some then_block) resolver env;
         match else_block with Some expr -> handle_expr expr | None -> ())
     | Lit _ -> ()
     | StructExpr { fields; struct_name } ->
         handle_path resolver struct_name;
         List.iter (fun (_, expr) -> handle_expr expr) fields
+    | Cast (expr_, ty) ->
+        handle_expr expr_;
+        let ty = resolve_type resolver env ty "" in
+        expr.expr_kind <- Cast (expr_, ty)
     | Field (expr, _) -> handle_expr expr
   in
   let f stmt =

@@ -297,7 +297,19 @@ let parse_pat pctx : pat =
   | Ident -> PatIdent (get_token_str (eat pctx kind) pctx.src)
   | _ -> assert false
 
-let rec parse_expr pctx : expr = strip_comments pctx; parse_precedence pctx 0
+let rec parse_expr pctx : expr =
+  strip_comments pctx;
+  let expr = parse_precedence pctx 0 in
+  if pctx.curr_tok.kind = As then (
+    let s = pctx.curr_tok.span.start in
+    advance pctx;
+    {
+      expr_kind = Cast (expr, parse_ty pctx);
+      expr_ty = None;
+      expr_id = gen_id pctx;
+      expr_span = span s pctx;
+    })
+  else expr
 
 and parse_call_args pctx : expr list =
   let args = ref [] in

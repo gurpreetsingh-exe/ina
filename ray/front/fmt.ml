@@ -80,6 +80,8 @@ let rec render_expr (expr : expr) (indent : int) : string =
              ", ")
     | Field (expr, name) -> sprintf "%s.%s" (render_expr expr indent) name
     | Deref expr -> sprintf "*%s" (render_expr expr indent)
+    | Cast (expr, ty) ->
+        sprintf "%s as %s" (render_expr expr indent) (render_ty ty)
     | Ref expr -> sprintf "&%s" (render_expr expr indent))
     (match expr.expr_ty with Some ty -> render_ty ty | None -> "none")
 

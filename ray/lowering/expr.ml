@@ -122,6 +122,12 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
       in
       let ptr = Builder.gep ty ptr index builder in
       Builder.load ptr builder
+  | Cast (expr, dst_ty) -> (
+      let value = lower expr builder ctx in
+      let src_ty = Option.get expr.expr_ty in
+      match (src_ty, dst_ty) with
+      | RefTy _, Ptr _ -> value
+      | _ -> assert false)
 
 and lower_lvalue (expr : expr) (builder : Builder.t) (ctx : Context.t) :
     Inst.value =
