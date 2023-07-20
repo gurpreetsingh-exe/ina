@@ -127,6 +127,8 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
       let src_ty = Option.get expr.expr_ty in
       match (src_ty, dst_ty) with
       | RefTy _, Ptr _ -> value
+      | Ptr _, FnTy _ -> value
+      | FnTy _, Ptr _ -> value
       | _ -> assert false)
 
 and lower_lvalue (expr : expr) (builder : Builder.t) (ctx : Context.t) :

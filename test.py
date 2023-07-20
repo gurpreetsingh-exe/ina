@@ -160,6 +160,7 @@ def run_test(case: pathlib.Path, options: argparse.Namespace):
         if expected.compile_fail:
             if proc.returncode == 0:
                 tests.failed.append(case)
+                return
             else:
                 if not stderr:
                     tests.failed.append(case)

@@ -104,15 +104,32 @@ type ty =
   | Ident of path
   | Unit
 
-let ( != ) (ty1 : ty) (ty2 : ty) : bool =
+let rec ( != ) (ty1 : ty) (ty2 : ty) : bool =
   match (ty1, ty2) with
   | Ident path, Struct (name, _) | Struct (name, _), Ident path ->
       String.concat "::" path.segments <> name
+  | Ident path1, Ident path2 ->
+      String.concat "::" path1.segments <> String.concat "::" path2.segments
+  | Struct (name1, fields1), Struct (name2, fields2) ->
+      let tys1 = List.map (fun (_, ty) -> ty) fields1 in
+      let tys2 = List.map (fun (_, ty) -> ty) fields2 in
+      (if List.length tys1 = 0 && List.length tys2 = 0 then false
+      else (
+        try
+          List.map2 ( != ) tys1 tys2
+          |> List.filter (fun f -> not f)
+          |> List.length = 0
+        with Invalid_argument _ -> true))
+      || name1 <> name2
+  | Ptr ty1, Ptr ty2 -> ty1 != ty2
+  | RefTy ty1, RefTy ty2 -> ty1 != ty2
   | FnTy (tys1, ret_ty1, is_var1), FnTy (tys2, ret_ty2, is_var2) ->
-      (try
-         List.map2 ( != ) tys1 tys2
-         |> List.filter (fun f -> not f)
-         |> List.length = 0
-       with Invalid_argument _ -> true)
+      (if List.length tys1 = 0 && List.length tys2 = 0 then false
+      else (
+        try
+          List.map2 ( != ) tys1 tys2
+          |> List.filter (fun f -> not f)
+          |> List.length = 0
+        with Invalid_argument _ -> true))
       || ret_ty1 != ret_ty2 || is_var1 <> is_var2
   | _, _ -> ty1 <> ty2

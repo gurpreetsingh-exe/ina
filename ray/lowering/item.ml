@@ -9,7 +9,8 @@ let mangle path =
          (fun seg -> string_of_int (String.length seg) ^ seg)
          path.segments)
 
-let rec lower_fn (fn : func) (ctx : Context.t) : Func.t =
+let rec lower_fn (fn : func) (ctx : Context.t) (mangle_name : bool) : Func.t
+    =
   Builder.reset ();
   let {
     fn_sig = { name; args; ret_ty; is_variadic; _ };
@@ -23,7 +24,7 @@ let rec lower_fn (fn : func) (ctx : Context.t) : Func.t =
   in
   let ret_ty = match ret_ty with Some ty -> ty | None -> Unit in
   let fn_path = Option.get func_path in
-  let linkage_name = mangle fn_path in
+  let linkage_name = if mangle_name then mangle fn_path else name in
   let fn_ty =
     Func.
       {
@@ -79,10 +80,18 @@ let rec lower_ast (ctx : Context.t) : Module.t =
   let items = ref [] in
   let f (item : item) =
     match item with
-    | Fn (func, _) -> items := !items @ [lower_fn func ctx]
+    | Fn (func, attrs) ->
+        let mangle = ref true in
+        List.iter
+          (fun attr ->
+            match attr.kind with
+            | NormalAttr { name = "nomangle" } -> mangle := false
+            | _ -> ())
+          attrs;
+        items := !items @ [lower_fn func ctx !mangle]
     | Type _ -> ()
     | Foreign funcs ->
-        items := !items @ List.map (fun f -> lower_fn f ctx) funcs
+        items := !items @ List.map (fun f -> lower_fn f ctx false) funcs
     | Import path -> (
       match Hashtbl.find ctx.globl_env path with
       | Mod modd ->

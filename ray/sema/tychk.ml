@@ -224,7 +224,7 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
             ty_err_emit ty_ctx.emitter (NoFieldInPrimitiveType ty)
               expr.expr_span);
         ignore (fexpr expr)
-    | Cast (expr, ty) -> ignore (fexpr expr)
+    | Cast (expr, _) -> ignore (fexpr expr)
     | Lit _ | Path _ -> ());
     Option.get expr.expr_ty
   and fblock body =

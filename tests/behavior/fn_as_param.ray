@@ -1,0 +1,19 @@
+// EXIT_CODE: 69
+
+type T = {}
+
+fn g(_: *T, _: *i8) -> i32 {
+    69
+}
+
+fn f(a: fn(*T, *i8) -> i32, b: *i8) -> i32 {
+    let t = T {};
+    a(&t as *T, b)
+}
+
+fn h() {}
+
+fn main() -> i32 {
+    f(g, h as *i8)
+}
+
