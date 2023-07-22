@@ -223,8 +223,8 @@ and lower_block (block : block) (ctx : Context.t) : Inst.value =
               Context.add_local ctx ident ptr
           | _ ->
               let dst = Builder.alloca ty builder in
-              Context.add_local ctx ident dst;
               let src = lower binding_expr builder ctx in
+              Context.add_local ctx ident dst;
               Builder.store src dst builder))
     | Assert (expr, string) ->
         let cond = lower expr builder ctx in

@@ -11,6 +11,9 @@ let usage arg0 =
   printf "                         output type to emit\n";
   printf "        --opt=0|3        optimization level\n";
   printf "        --print-ir       print IR of the file\n";
+  printf "        --dot-cfg        emit cfg of function(s) to \".dot\" file(s)\n";
+  printf "        --time           print time info of all compiler passes\n";
+  printf "        --ui-testing     enable ui testing\n";
   printf "    -h, --help           print help information\n\n";
   exit 1
 
@@ -45,6 +48,7 @@ let parse_args () =
         | "--time" -> config.display_time <- true
         | "--type-vars" -> config.display_type_vars <- true
         | "--ui-testing" -> config.ui_testing <- true
+        | "--dot-cfg" -> config.dot_cfg <- true
         | _ ->
             if String.contains arg '=' then (
               let pair = String.split_on_char '=' arg in

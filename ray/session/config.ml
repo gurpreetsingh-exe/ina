@@ -14,6 +14,7 @@ type t = {
   mutable display_time : bool;
   mutable display_type_vars : bool;
   mutable ui_testing : bool;
+  mutable dot_cfg : bool;
 }
 
 and opt_level =
@@ -51,4 +52,5 @@ let config () : t =
     display_time = false;
     display_type_vars = false;
     ui_testing = false;
+    dot_cfg = false;
   }

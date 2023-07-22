@@ -108,7 +108,7 @@ let has_value = function
 let rec render_const = function
   | Int value -> sprintf "%d" value
   | Float value -> sprintf "%f" value
-  | Str value -> sprintf "\"%s\"" (String.escaped value)
+  | Str value -> sprintf "%s" (String.escaped value)
   | Bool value -> sprintf "%b" value
   | Struct values ->
       sprintf "{ %s }" (String.concat ", " (List.map render_value values))
@@ -124,6 +124,8 @@ and render_value = function
 let get_ty = function
   | Param (ty, _, _) | Const (_, ty) | VReg (_, _, ty) -> ty
   | _ -> assert false
+
+let extract_block = function Label bb -> bb | _ -> assert false
 
 let render_inst inst : string =
   (if has_value inst.kind then sprintf "    %%%d = " inst.id else "    ")

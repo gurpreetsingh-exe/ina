@@ -34,9 +34,15 @@ let alloca (ty : ty) (builder : t) : value =
   add_inst_with_ty (Ptr ty) (Alloca ty) builder
 
 let br (cond : value) (true_bb : value) (false_bb : value) (builder : t) =
-  add_inst (Br (cond, true_bb, false_bb)) builder
+  add_inst (Br (cond, true_bb, false_bb)) builder;
+  let true_bb = Inst.extract_block true_bb
+  and false_bb = Inst.extract_block false_bb in
+  Basicblock.append_succ builder.block [true_bb; false_bb]
 
-let jmp (bb : value) (builder : t) = add_inst (Jmp bb) builder
+let jmp (bb : value) (builder : t) =
+  add_inst (Jmp bb) builder;
+  let bb = Inst.extract_block bb in
+  Basicblock.append_succ builder.block [bb]
 
 let phi (ty : ty) (args : (value * value) list) (builder : t) : value =
   add_inst_with_ty ty (Phi (ty, args)) builder

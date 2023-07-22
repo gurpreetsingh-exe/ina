@@ -60,6 +60,7 @@ let () =
       in
       context.timings.lowering <- time;
       if context.options.print_ir then Ir.Module.render modulee;
+      if context.options.dot_cfg then Ir.Module.dot_graph modulee;
       let time, modd =
         Timer.time (fun () -> Llvm_gen.gen_module context modulee)
       in
