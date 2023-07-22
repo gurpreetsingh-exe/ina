@@ -1,0 +1,8 @@
+// EXIT_CODE: 1
+
+fn main() -> bool {
+    let a: u8 = 20;
+    let b = &a;
+    a | 5 == 21 && *b | 4 == 20
+}
+

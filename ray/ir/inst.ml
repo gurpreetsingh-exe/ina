@@ -22,6 +22,10 @@ and binary_kind =
   | NotEq
   | GtEq
   | LtEq
+  | BitAnd
+  | BitOr
+  | And
+  | Or
 
 and inst_kind =
   | Alloca of ty
@@ -80,6 +84,8 @@ let binary_kind_to_inst = function
   | NotEq -> NotEq
   | GtEq -> GtEq
   | LtEq -> LtEq
+  | BitAnd | And -> And
+  | BitOr | Or -> Or
 
 let render_binary = function
   | Add -> "add"
@@ -92,6 +98,8 @@ let render_binary = function
   | NotEq -> "neq"
   | GtEq -> "gte"
   | LtEq -> "lte"
+  | BitAnd | And -> "and"
+  | BitOr | Or -> "or"
 
 let has_value = function
   | Br _ | Jmp _ | Store _ | Ret _ | RetUnit | Nop -> false

@@ -63,7 +63,11 @@ let rec render_expr (expr : expr) (indent : int) : string =
           | Gt -> ">"
           | GtEq -> ">="
           | Lt -> "<"
-          | LtEq -> "<=")
+          | LtEq -> "<="
+          | BitAnd -> "&"
+          | BitOr -> "|"
+          | And -> "&&"
+          | Or -> "||")
           (render_expr right indent)
     | If { cond; then_block; else_block } ->
         sprintf "if %s %s%s" (render_expr cond indent)

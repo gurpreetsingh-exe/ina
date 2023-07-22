@@ -56,7 +56,9 @@ let invalid_binary_expr kind left right span =
       | Sub -> "subtract"
       | Mul -> "multiply"
       | Div -> "divide"
-      | Eq | NotEq | Gt | GtEq | Lt | LtEq -> "compare")
+      | Eq | NotEq | Gt | GtEq | Lt | LtEq -> "compare"
+      | BitAnd | And -> "and"
+      | BitOr | Or -> "or")
       (render_ty ?dbg:(Some false) left)
       (render_ty ?dbg:(Some false) right)
   in

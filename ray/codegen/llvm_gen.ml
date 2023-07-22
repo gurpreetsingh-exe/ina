@@ -258,6 +258,8 @@ let gen_blocks (blocks : Func.blocks) =
                   else if is_signed t then build_sdiv
                   else assert false
               | _ -> assert false)
+            | And -> build_and
+            | Or -> build_or
             | _ ->
                 if is_float then assert false
                 else

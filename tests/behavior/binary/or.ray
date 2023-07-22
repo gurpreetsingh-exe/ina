@@ -1,0 +1,9 @@
+// EXIT_CODE: 1
+
+fn main() -> bool {
+    let a = true;
+    let b = false;
+    (true || b || true == true)
+    && (b || false || false == false)
+}
+

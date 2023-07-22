@@ -110,6 +110,10 @@ and binary_kind =
   | NotEq
   | GtEq
   | LtEq
+  | BitAnd
+  | BitOr
+  | And
+  | Or
 
 and expr_kind =
   | Lit of lit
@@ -148,6 +152,10 @@ let binary_kind_from_token = function
   | Slash -> Div
   | EqEq -> Eq
   | BangEq -> NotEq
+  | Ampersand -> BitAnd
+  | Pipe -> BitOr
+  | Ampersand2 -> And
+  | Pipe2 -> Or
   | _ -> assert false
 
 type lang_item =

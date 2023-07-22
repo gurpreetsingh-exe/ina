@@ -14,11 +14,42 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
     Inst.value =
   let ty = Option.get expr.expr_ty in
   match expr.expr_kind with
-  | Binary (kind, left, right) ->
-      let left = lower left builder ctx in
-      let right = lower right builder ctx in
-      let inst_kind = Inst.binary_kind_to_inst kind in
-      Builder.add_inst_with_ty ty (Binary (inst_kind, left, right)) builder
+  | Binary (kind, left, right) -> (
+      let lazy_eval value =
+        let right_bb = Basicblock.create () in
+        let join_bb = Basicblock.create () in
+        let left = lower left builder ctx in
+        let bb = Option.get ctx.block in
+        if value then
+          Builder.br left (Label join_bb) (Label right_bb) builder
+        else Builder.br left (Label right_bb) (Label join_bb) builder;
+        Context.block_append ctx right_bb;
+        let right_builder = Builder.create right_bb in
+        let right = lower right right_builder ctx in
+        let right_bb = Option.get ctx.block in
+        Builder.jmp (Label join_bb) right_builder;
+        Context.block_append ctx join_bb;
+        builder.block <- Option.get ctx.block;
+        let phi =
+          Builder.phi ty
+            [
+              (Label bb, Builder.const_bool Bool value);
+              (Label right_bb, right);
+            ]
+            builder
+        in
+        phi
+      in
+      match (ty, kind) with
+      | Bool, And -> lazy_eval false
+      | Bool, Or -> lazy_eval true
+      | _ ->
+          let left = lower left builder ctx in
+          let right = lower right builder ctx in
+          let inst_kind = Inst.binary_kind_to_inst kind in
+          Builder.add_inst_with_ty ty
+            (Binary (inst_kind, left, right))
+            builder)
   | Lit lit -> (
     match lit with
     | LitInt value -> Builder.const_int ty value

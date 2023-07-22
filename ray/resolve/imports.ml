@@ -214,6 +214,10 @@ and resolve resolver : (path, lang_item) Hashtbl.t =
   let abs_path = get_abs_path resolver.modd.mod_path in
   Hashtbl.add env { segments = abs_path } (Mod resolver.modd);
   let resolve_func fn =
+    List.iter
+      (fun (_, ident) ->
+        resolver.env.bindings <- Array.append resolver.env.bindings [|ident|])
+      fn.fn_sig.args;
     Hashtbl.add resolver.func_map fn.fn_sig.name fn;
     let path = { segments = abs_path @ [fn.fn_sig.name] } in
     resolve_body fn.body resolver env;
