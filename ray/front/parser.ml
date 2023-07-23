@@ -476,9 +476,20 @@ and parse_else pctx : expr option =
   | _ -> None
 
 and parse_if pctx =
+  (* if T {} *)
+  (* this syntax will parse the `T {}` as a struct expr because the parser
+     needs to prioritize the empty struct expression `T {}` *)
   advance pctx;
   let cond = parse_expr pctx in
-  let then_block = parse_block pctx in
+  (* here we check if the condition is an empty struct expr and convert it to
+     a path and empty block*)
+  let cond, then_block =
+    match cond.expr_kind with
+    | StructExpr { struct_name; fields } when List.length fields = 0 ->
+        cond.expr_kind <- Path struct_name;
+        (cond, { block_stmts = []; last_expr = None; block_id = gen_id pctx })
+    | _ -> (cond, parse_block pctx)
+  in
   let else_block =
     if pctx.curr_tok.kind = Else then (advance pctx; parse_else pctx)
     else None
@@ -489,8 +500,11 @@ and parse_path_or_call pctx =
   let path = parse_path pctx in
   match pctx.curr_tok.kind with
   | LParen -> Call (path, parse_call_args pctx)
-  | LBrace ->
-      StructExpr { struct_name = path; fields = parse_struct_expr pctx }
+  | LBrace -> (
+      match npeek pctx 2 with
+      | Ident :: [Colon] | RBrace :: _ ->
+          StructExpr { struct_name = path; fields = parse_struct_expr pctx }
+      | _ -> Path path)
   | _ -> Path path
 
 and parse_let pctx : binding =
