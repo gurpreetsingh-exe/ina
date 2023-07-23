@@ -36,6 +36,7 @@ type resolver = {
   func_map : (ident, func) Hashtbl.t;
   struct_map : (ident, strukt) Hashtbl.t;
   mutable env : env;
+  mutable imported_names : string array;
 }
 
 let resolver_create globl_ctx modd =
@@ -45,6 +46,7 @@ let resolver_create globl_ctx modd =
     func_map = Hashtbl.create 0;
     struct_map = Hashtbl.create 0;
     env = { parent = None; bindings = [||] };
+    imported_names = [||];
   }
 
 let rec mod_exists resolver name =
@@ -172,6 +174,8 @@ let rec import (resolver : resolver) (path : path) =
     let tokenizer = Tokenizer.tokenize lib_path src in
     let pctx = Parser.parse_ctx_create resolver.globl_ctx tokenizer src in
     let modd = Parser.parse_mod pctx in
+    resolver.imported_names <-
+      Array.append resolver.imported_names [|modd.mod_name|];
     let env, modd =
       ( resolve
           {
@@ -180,6 +184,7 @@ let rec import (resolver : resolver) (path : path) =
             func_map = Hashtbl.create 0;
             struct_map = Hashtbl.create 0;
             env = { parent = None; bindings = [||] };
+            imported_names = resolver.imported_names;
           },
         modd )
     in
@@ -187,6 +192,8 @@ let rec import (resolver : resolver) (path : path) =
       Infer.infer_ctx_create pctx.emitter resolver.globl_ctx env
     in
     ignore (Infer.infer_begin infer_ctx modd);
+    let ty_ctx = Tychk.ty_ctx_create infer_ctx in
+    ignore (Tychk.tychk ty_ctx modd);
     (env, modd)
   in
   let env, modd = f lib_path in
@@ -228,14 +235,17 @@ and resolve resolver : (path, lang_item) Hashtbl.t =
   let f item =
     match item with
     | Import path ->
-        let env2, modd = import resolver path in
-        Hashtbl.add resolver.modd.imported_mods modd.mod_name modd;
-        (* sus *)
-        if not (Hashtbl.mem env path) then Hashtbl.add env path (Mod modd);
-        Hashtbl.iter
-          (fun path item ->
-            if not (Hashtbl.mem env path) then Hashtbl.add env path item)
-          env2
+        let name = List.nth path.segments (List.length path.segments - 1) in
+        if not (Array.mem name resolver.imported_names) then (
+          let env2, modd = import resolver path in
+          Hashtbl.add resolver.modd.imported_mods modd.mod_name modd;
+          Hashtbl.add env { segments = [name] } (Mod modd);
+          (* sus *)
+          if not (Hashtbl.mem env path) then Hashtbl.add env path (Mod modd);
+          Hashtbl.iter
+            (fun path item ->
+              if not (Hashtbl.mem env path) then Hashtbl.add env path item)
+            env2)
     | Fn (fn, _) -> resolve_func fn
     | Foreign funcs -> List.iter resolve_func funcs
     | Type (Struct s) ->
