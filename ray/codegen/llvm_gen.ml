@@ -334,6 +334,12 @@ let gen_blocks (blocks : Func.blocks) =
           ignore (build_call abort_ty func [||] "" builder);
           ignore (build_unreachable builder);
           None
+      | PtrToInt (value, ty) ->
+          let value = get_value value in
+          Some (build_ptrtoint value (get_llvm_ty ty) "" builder)
+      | IntToPtr (value, ty) ->
+          let value = get_value value in
+          Some (build_inttoptr value (get_llvm_ty ty) "" builder)
       (* | _ -> *)
       (*     print_endline (Inst.render_inst inst); *)
       (*     assert false *)

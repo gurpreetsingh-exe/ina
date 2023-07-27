@@ -75,6 +75,12 @@ let intrinsic (ty : ty) (name : string) (args : value list) (builder : t) :
     value =
   add_inst_with_ty ty (Intrinsic (name, args)) builder
 
+let ptrtoint (value : value) (ty : ty) (builder : t) : value =
+  add_inst_with_ty ty (PtrToInt (value, ty)) builder
+
+let inttoptr (value : value) (ty : ty) (builder : t) : value =
+  add_inst_with_ty ty (IntToPtr (value, ty)) builder
+
 let ret (ret : value) (builder : t) : unit = add_inst (Ret ret) builder
 
 let ret_unit (builder : t) : unit = add_inst RetUnit builder

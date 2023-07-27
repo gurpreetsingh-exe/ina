@@ -104,6 +104,19 @@ type ty =
   | Ident of path
   | Unit
 
+let size_of_int = function
+  | I8 | U8 -> 1
+  | I16 | U16 -> 2
+  | I32 | U32 -> 4
+  | I64 | U64 | Isize | Usize -> 8
+
+let size_of_float = function F32 -> 4 | F64 -> 8
+
+let size_of = function
+  | Int i -> size_of_int i
+  | Float f -> size_of_float f
+  | _ -> assert false
+
 let rec ( != ) (ty1 : ty) (ty2 : ty) : bool =
   match (ty1, ty2) with
   | Ident path, Struct (name, _) | Struct (name, _), Ident path ->

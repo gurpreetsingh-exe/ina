@@ -47,6 +47,8 @@ and inst_kind =
   (* Trunc of ty * value *)
   (* Fpext of ty * value *)
   (* Fptrunc of ty * value *)
+  | PtrToInt of value * ty
+  | IntToPtr of value * ty
   | RetUnit
   | Nop
 
@@ -165,6 +167,10 @@ let render_inst inst : string =
   | Intrinsic (name, args) ->
       sprintf "intrinsic %s(%s)" name
         (String.concat ", " (List.map render_value args))
+  | PtrToInt (value, ty) ->
+      sprintf "ptrtoint %s to %s" (render_value value) (Fmt.render_ty ty)
+  | IntToPtr (value, ty) ->
+      sprintf "inttoptr %s to %s" (render_value value) (Fmt.render_ty ty)
   | Ret ret -> sprintf "ret %s" (render_value ret)
   | Trap _ -> "trap"
   | RetUnit -> "ret"
