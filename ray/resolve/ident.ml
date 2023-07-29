@@ -15,7 +15,7 @@ let resolve_path (resolutions : resolutions) (path : path) : unit =
         | Res res -> res
         | Module modul -> resolve_path' (List.tl segs) modul.resolutions)
       | None -> Err)
-    | None -> Err
+    | None -> Local
   in
   path.res <- resolve_path' path.segments resolutions
 

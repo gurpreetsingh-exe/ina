@@ -9,6 +9,8 @@ let mangle path =
          (fun seg -> string_of_int (String.length seg) ^ seg)
          path.segments)
 
+let mangle path = render_path path
+
 let rec lower_fn (fn : func) (ctx : Context.t) (mangle_name : bool) : Func.t
     =
   Builder.reset ();
@@ -100,7 +102,12 @@ let rec lower_ast (ctx : Context.t) : Module.t =
           items := (lower_ast ctx).items @ !items;
           ctx.modd <- tmp
       | _ -> ())
-    | Mod _ -> ()
+    | Mod m ->
+        let modd = Option.get m.resolved_mod in
+        let tmp = ctx.modd in
+        ctx.modd <- modd;
+        items := (lower_ast ctx).items @ !items;
+        ctx.modd <- tmp
     | _ -> assert false
   in
   List.iter f ctx.modd.items;

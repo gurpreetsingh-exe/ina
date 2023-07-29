@@ -14,6 +14,7 @@ and binding_key = {
 }
 
 and modul = {
+  name : string;
   parent : modul option;
   resolutions : resolutions;
 }
@@ -27,6 +28,11 @@ and name_resolution = { binding : name_binding option }
 and name_binding = { kind : name_binding_kind }
 
 and resolutions = (binding_key, name_resolution) Hashtbl.t
+
+let rec get_root_path modul =
+  match modul.parent with
+  | Some parent -> get_root_path parent @ [modul.name]
+  | None -> [modul.name]
 
 let add_name_res resolutions key res = Hashtbl.replace resolutions key res
 
@@ -42,6 +48,7 @@ let print_res = function
   | Def (id, kind) ->
       sprintf "(%s~%s)" (print_def_kind kind) (print_def_id id)
   | PrimTy ty -> print_prim_ty ty
+  | Local -> "local"
   | Err -> "err"
 
 let rec print_nameres (res : name_resolution) (depth : int) =
@@ -64,11 +71,13 @@ and print_resolutions (res : resolutions) (depth : int) =
 type t = {
   tcx : tcx;
   mutable modd : modd;
+  mutable modul : modul option;
   root : modd;
   mutable is_root : bool;
 }
 
-let create tcx modd = { tcx; modd; root = modd; is_root = true }
+let create tcx modd =
+  { tcx; modd; modul = None; root = modd; is_root = true }
 
 let rec mod_exists resolver name =
   let f path =
@@ -128,7 +137,9 @@ let struct_ty (strukt : strukt) =
 
 let rec resolve resolver : resolutions =
   let resolutions = Hashtbl.create 0 in
-  let modul = { parent = None; resolutions } in
+  let modul =
+    { name = resolver.modd.mod_name; parent = resolver.modul; resolutions }
+  in
   let visit_item (item : item) =
     match item with
     | Mod m ->
@@ -145,30 +156,34 @@ let rec resolve resolver : resolutions =
           let tokenizer = Tokenizer.tokenize path src in
           let pctx = Parser.parse_ctx_create resolver.tcx tokenizer src in
           let modd = Parser.parse_mod pctx in
-          let tmp_mod = resolver.modd in
-          let tmp_root = resolver.is_root in
-          resolver.modd <- modd;
-          resolver.is_root <- false;
+          let resolver =
+            { resolver with modd; modul = Some modul; is_root = false }
+          in
           let res = resolve resolver in
-          resolver.modd <- tmp_mod;
-          resolver.is_root <- tmp_root;
           let key = { ident = modd.mod_name; ns = Type } in
-          let modul = { parent = Some modul; resolutions = res } in
+          let modul = { name; parent = Some modul; resolutions = res } in
           let binding = { binding = Some { kind = Module modul } } in
           add_name_res resolutions key binding;
           m.resolved_mod <- Some modd)
     | Fn (func, _) ->
+        let name = func.fn_sig.name in
+        let segments = get_root_path modul @ [name] in
         let id = { inner = func.func_id } in
         let res = Def (id, Fn) in
-        create_def resolver.tcx id (Ty (fn_ty func));
-        let key = { ident = func.fn_sig.name; ns = Value } in
+        let path = { segments; res } in
+        func.func_path <- Some path;
+        create_def resolver.tcx id (Ty (fn_ty func)) path;
+        let key = { ident = name; ns = Value } in
         let binding = { binding = Some { kind = Res res } } in
         add_name_res resolutions key binding
     | Type (Struct s) ->
+        let name = s.ident in
         let id = { inner = s.struct_id } in
+        let segments = get_root_path modul @ [name] in
         let res = Def (id, Struct) in
-        create_def resolver.tcx id (Ty (struct_ty s));
-        let key = { ident = s.ident; ns = Type } in
+        let path = { segments; res } in
+        create_def resolver.tcx id (Ty (struct_ty s)) path;
+        let key = { ident = name; ns = Type } in
         let binding = { binding = Some { kind = Res res } } in
         add_name_res resolutions key binding
     | Foreign _ -> ()

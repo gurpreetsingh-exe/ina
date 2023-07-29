@@ -38,15 +38,15 @@ let () =
   sess.timings.parse <- time;
   (match sess.options.command with
   | Build ->
-      let time, resolutions =
+      let time, _ =
         Timer.time (fun () ->
             let resolver = Resolver.create tcx modd in
             let res = Resolver.resolve resolver in
             Ident.resolve_paths resolver res modd;
             res)
       in
-      printf "%s\n" (Resolver.print_resolutions resolutions 0);
-      print_endline (print_def_table tcx.def_table);
+      (* printf "%s\n" (Resolver.print_resolutions resolutions 0); *)
+      (* print_endline (print_def_table tcx.def_table); *)
       sess.timings.resolve <- time;
       let env = Hashtbl.create 0 in
       let time, _ =
@@ -60,7 +60,7 @@ let () =
       if !Infer.error <> 0 || !Tychk.error <> 0 then exit 1;
       let time, modulee =
         Timer.time (fun () ->
-            let lowering_ctx = Lowering.Context.create modd env in
+            let lowering_ctx = Lowering.Context.create tcx modd env in
             Lowering.Item.lower_ast lowering_ctx)
       in
       sess.timings.lowering <- time;

@@ -112,6 +112,7 @@ and def_kind =
 and res =
   | Def of (def_id * def_kind)
   | PrimTy of prim_ty
+  | Local
   | Err
 
 type path = {
@@ -265,10 +266,19 @@ let print_def_table def_table =
   Hashtbl.to_seq def_table.table
   |> List.of_seq |> List.map f |> String.concat "\n"
 
+type sym_table = (def_id, path) Hashtbl.t
+
+let create_sym sym_table id path = Hashtbl.replace sym_table id path
+
+let lookup_sym sym_table id =
+  if Hashtbl.mem sym_table id then Hashtbl.find sym_table id
+  else assert false
+
 type tcx = {
   sess : Sess.t;
   tys : common_types;
   def_table : def_table;
+  sym_table : sym_table;
   mutable uuid : int;
 }
 
@@ -277,6 +287,7 @@ let tcx_create sess =
     sess;
     tys = common_types ();
     def_table = { table = Hashtbl.create 0 };
+    sym_table = Hashtbl.create 0;
     uuid = 0;
   }
 
@@ -284,7 +295,9 @@ let tcx_gen_id tcx =
   tcx.uuid <- tcx.uuid + 1;
   tcx.uuid
 
-let create_def tcx id def_data = create_def tcx.def_table id def_data
+let create_def tcx id def_data path =
+  create_def tcx.def_table id def_data;
+  create_sym tcx.sym_table id path
 
 let lookup_def tcx id = lookup_def tcx.def_table id
 
@@ -294,3 +307,8 @@ let expect_def tcx res expected : ty option =
       let def = lookup_def tcx id in
       match def with Ty ty -> Some ty)
   | _ -> None
+
+let lookup_sym tcx res : path =
+  match res with
+  | Def (id, _) -> lookup_sym tcx.sym_table id
+  | _ -> assert false
