@@ -30,6 +30,10 @@ and resolutions = (binding_key, name_resolution) Hashtbl.t
 
 let add_name_res resolutions key res = Hashtbl.replace resolutions key res
 
+let get_name_res (resolutions : resolutions) (key : binding_key) =
+  if Hashtbl.mem resolutions key then Some (Hashtbl.find resolutions key)
+  else None
+
 let print_binding_key key =
   let ns = function Type -> "type" | Value -> "value" in
   sprintf "%s" key.ident
@@ -130,7 +134,8 @@ let rec resolve resolver : resolutions =
     | Mod m ->
         let name = m.name in
         if not (mod_exists resolver name) then (
-          eprintf "error: module `%s` not found\n" name;
+          eprintf "error(%s): module `%s` not found\n" resolver.modd.mod_path
+            name;
           flush stderr)
         else (
           let path = create_path resolver name in

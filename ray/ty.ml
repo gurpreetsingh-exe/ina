@@ -116,7 +116,7 @@ and res =
 
 type path = {
   mutable segments : path_segment list;
-  res : res;
+  mutable res : res;
 }
 
 type ty =
@@ -254,6 +254,10 @@ type def_table = { table : (def_id, def_data) Hashtbl.t }
 
 let create_def def_table id data = Hashtbl.replace def_table.table id data
 
+let lookup_def def_table id =
+  if Hashtbl.mem def_table.table id then Hashtbl.find def_table.table id
+  else assert false
+
 let print_def_table def_table =
   let f (def_id, def_data) =
     sprintf "%s -> %s" (print_def_id def_id) (print_def_data def_data)
@@ -281,3 +285,12 @@ let tcx_gen_id tcx =
   tcx.uuid
 
 let create_def tcx id def_data = create_def tcx.def_table id def_data
+
+let lookup_def tcx id = lookup_def tcx.def_table id
+
+let expect_def tcx res expected : ty option =
+  match res with
+  | Def (id, kind) when kind = expected -> (
+      let def = lookup_def tcx id in
+      match def with Ty ty -> Some ty)
+  | _ -> None

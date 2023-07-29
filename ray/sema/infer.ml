@@ -280,11 +280,12 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
       | None, name ->
           infer_err_emit infer_ctx.emitter (VarNotFound name) expr.expr_span;
           Unit)
-    | Call (path, exprs) -> (
+    | Call (path, exprs) ->
         let check_args _ =
           List.iter (fun expr -> ignore (infer infer_ctx expr)) exprs
         in
-        let f func ident =
+        let name = render_path path in
+        let f func =
           let check (expr : expr) (expected : ty) =
             let ty = infer infer_ctx expr in
             match unify infer_ctx ty expected with
@@ -304,7 +305,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
               else if expr_len <> ty_len then (
                 check_args ();
                 infer_err_emit infer_ctx.emitter
-                  (MismatchArgs (ident, ty_len, expr_len))
+                  (MismatchArgs (name, ty_len, expr_len))
                   expr.expr_span)
               else List.iter2 (fun expr ty -> check expr ty) exprs args_ty;
               ret_ty
@@ -314,13 +315,18 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
                 expr.expr_span;
               Unit
         in
-        match find_value infer_ctx path with
-        | Some ty, name -> f ty name
-        | None, name ->
-            infer_err_emit infer_ctx.emitter (FnNotFound name) expr.expr_span;
-            (* infer types for arguments even if function is not found *)
-            check_args ();
-            Unit)
+        let maybe_ty = expect_def infer_ctx.tcx path.res Fn in
+        let ty =
+          match maybe_ty with
+          | Some ty -> f ty
+          | None ->
+              infer_err_emit infer_ctx.emitter (FnNotFound name)
+                expr.expr_span;
+              (* infer types for arguments *)
+              check_args ();
+              Unit
+        in
+        ty
     | Binary (kind, left, right) ->
         let left, right = (infer infer_ctx left, infer infer_ctx right) in
         let cmp t1 : ty = match kind with Eq | NotEq -> Bool | _ -> t1 in

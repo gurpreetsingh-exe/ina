@@ -294,6 +294,7 @@ let tychk ty_ctx (modd : modd) =
     | Fn (func, _) -> tychk_func ty_ctx func
     | Foreign funcs -> List.iter (fun f -> tychk_func ty_ctx f) funcs
     | Import _ | Type _ -> ()
+    | Mod _ -> ()
     | _ -> assert false
   in
   List.iter f modd.items

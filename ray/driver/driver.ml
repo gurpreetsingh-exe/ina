@@ -41,7 +41,9 @@ let () =
       let time, resolutions =
         Timer.time (fun () ->
             let resolver = Resolver.create tcx modd in
-            Resolver.resolve resolver)
+            let res = Resolver.resolve resolver in
+            Ident.resolve_paths resolver res modd;
+            res)
       in
       printf "%s\n" (Resolver.print_resolutions resolutions 0);
       print_endline (print_def_table tcx.def_table);

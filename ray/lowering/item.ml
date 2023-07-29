@@ -100,6 +100,7 @@ let rec lower_ast (ctx : Context.t) : Module.t =
           items := (lower_ast ctx).items @ !items;
           ctx.modd <- tmp
       | _ -> ())
+    | Mod _ -> ()
     | _ -> assert false
   in
   List.iter f ctx.modd.items;
