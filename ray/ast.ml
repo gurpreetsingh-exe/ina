@@ -35,6 +35,7 @@ and strukt = {
   ident : string;
   mutable members : (ty * string) list;
   mutable struct_path : path option;
+  struct_id : node_id;
 }
 
 and typ = Struct of strukt
@@ -44,6 +45,10 @@ and item =
   | Type of typ
   | Foreign of func list
   | Const of constant
+  | Mod of {
+      name : string;
+      mutable resolved_mod : modd option;
+    }
   | Import of path
 
 and fn_sig = {

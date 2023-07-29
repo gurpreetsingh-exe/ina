@@ -4,7 +4,6 @@ open Token
 open Tokenizer
 open Errors
 open Diagnostic
-open Session
 
 let builtin_types =
   let tbl = Hashtbl.create 0 in
@@ -25,13 +24,12 @@ let builtin_types =
   tbl
 
 type parse_ctx = {
-  ctx : Context.t;
+  tcx : tcx;
   tokenizer : tokenizer;
   src : string;
   mutable curr_tok : token;
   mutable prev_tok : token option;
   mutable stop : bool;
-  mutable node_id : node_id;
   emitter : Emitter.t;
 }
 
@@ -106,23 +104,23 @@ let eat pctx kind =
     Emitter.emit pctx.emitter (unexpected_token pctx kind pctx.curr_tok);
     exit 1)
 
-let gen_id pctx : node_id =
-  pctx.node_id <- pctx.node_id + 1;
-  pctx.node_id
+let gen_id pctx : node_id = tcx_gen_id pctx.tcx
 
-let parse_ctx_create ctx tokenizer s =
+let parse_ctx_create tcx tokenizer s =
   match next tokenizer with
   | Some t ->
       {
-        ctx;
+        tcx;
         tokenizer;
         src = s;
         curr_tok = t;
         prev_tok = None;
         stop = false;
-        node_id = 0;
         emitter =
-          { ctx; source = Array.of_list (String.split_on_char '\n' s) };
+          {
+            ctx = tcx.sess;
+            source = Array.of_list (String.split_on_char '\n' s);
+          };
       }
   | None -> exit 0
 
@@ -210,7 +208,7 @@ let parse_path pctx : path =
         Emitter.emit pctx.emitter (unexpected_token pctx Ident pctx.curr_tok);
         exit 1
   in
-  { segments = parse_path_impl () }
+  { segments = parse_path_impl (); res = Err }
 
 let rec parse_ty pctx : ty =
   let t = pctx.curr_tok in
@@ -501,10 +499,10 @@ and parse_path_or_call pctx =
   match pctx.curr_tok.kind with
   | LParen -> Call (path, parse_call_args pctx)
   | LBrace -> (
-      match npeek pctx 2 with
-      | Ident :: [Colon] | RBrace :: _ ->
-          StructExpr { struct_name = path; fields = parse_struct_expr pctx }
-      | _ -> Path path)
+    match npeek pctx 2 with
+    | Ident :: [Colon] | RBrace :: _ ->
+        StructExpr { struct_name = path; fields = parse_struct_expr pctx }
+    | _ -> Path path)
   | _ -> Path path
 
 and parse_let pctx : binding =
@@ -623,7 +621,13 @@ let parse_type pctx : typ =
         | _ -> assert false)
   done;
   ignore (eat pctx RBrace);
-  Struct { ident = name; members = !members; struct_path = None }
+  Struct
+    {
+      ident = name;
+      members = !members;
+      struct_path = None;
+      struct_id = gen_id pctx;
+    }
 
 let parse_extern pctx attrs : item =
   advance pctx;
@@ -662,6 +666,13 @@ let parse_item pctx : item =
       let import = Ast.Import (parse_path pctx) in
       ignore (eat pctx Semi);
       import
+  | Mod ->
+      advance pctx;
+      let modd : item =
+        Mod { name = parse_ident pctx; resolved_mod = None }
+      in
+      ignore (eat pctx Semi);
+      modd
   | kind ->
       Printf.printf "%s\n" (display_token_kind kind);
       assert false

@@ -12,6 +12,7 @@ let keywords = Hashtbl.create 0;;
 Hashtbl.add keywords "fn" Fn;
 Hashtbl.add keywords "type" Type;
 Hashtbl.add keywords "extern" Extern;
+Hashtbl.add keywords "mod" Mod;
 Hashtbl.add keywords "let" Let;
 Hashtbl.add keywords "import" Import;
 Hashtbl.add keywords "if" If;

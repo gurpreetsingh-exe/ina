@@ -22,6 +22,7 @@ type token_kind =
   | Fn
   | Type
   | Extern
+  | Mod
   | Let
   | Import
   | If
@@ -63,6 +64,7 @@ let display_token_kind = function
   | Fn -> "fn"
   | Type -> "type"
   | Extern -> "extern"
+  | Mod -> "mod"
   | Let -> "let"
   | Import -> "import"
   | If -> "if"

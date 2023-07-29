@@ -57,7 +57,7 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
     | LitStr value -> Builder.const_string ty value
     | LitBool value -> Builder.const_bool ty value)
   | Path path -> (
-      let ident = Fmt.render_path path in
+      let ident = render_path path in
       try
         let ptr, _ = load (Context.find_local ctx.env ident) builder in
         ptr
@@ -105,7 +105,7 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
           in
           phi)
   | Call (path, args) -> (
-      let ident = Fmt.render_path path in
+      let ident = render_path path in
       try
         let ptr, ty = load (Context.find_local ctx.env ident) builder in
         let args = List.map (fun e -> lower e builder ctx) args in
@@ -168,7 +168,7 @@ and lower_lvalue (expr : expr) (builder : Builder.t) (ctx : Context.t) :
     Inst.value =
   match expr.expr_kind with
   | Path path ->
-      let ident = Fmt.render_path path in
+      let ident = render_path path in
       Context.find_local ctx.env ident
   | Field (expr, name) ->
       let ptr = lower_lvalue expr builder ctx in

@@ -5,8 +5,9 @@ open Codegen
 open Resolve
 open Session
 open Utils
+open Ty
 
-let open_file (ctx : Context.t) =
+let open_file (ctx : Sess.t) =
   let name = ctx.options.input in
   if Sys.file_exists name then (
     let ic = open_in name in
@@ -28,48 +29,50 @@ let open_file (ctx : Context.t) =
 
 let () =
   let start = Sys.time () in
-  let context = Context.create (Args.parse_args ()) in
-  let s = open_file context in
-  let tokenizer = Tokenizer.tokenize context.options.input s in
-  let pctx = Parser.parse_ctx_create context tokenizer s in
+  let sess = Sess.create (Args.parse_args ()) in
+  let tcx = tcx_create sess in
+  let s = open_file sess in
+  let tokenizer = Tokenizer.tokenize sess.options.input s in
+  let pctx = Parser.parse_ctx_create tcx tokenizer s in
   let time, modd = Timer.time (fun () -> Parser.parse_mod pctx) in
-  context.timings.parse <- time;
-  (match context.options.command with
+  sess.timings.parse <- time;
+  (match sess.options.command with
   | Build ->
-      let time, env =
+      let time, resolutions =
         Timer.time (fun () ->
-            let resolver = Imports.resolver_create context modd in
-            Imports.resolve resolver)
+            let resolver = Resolver.create tcx modd in
+            Resolver.resolve resolver)
       in
-      context.timings.resolve <- time;
+      printf "%s\n" (Resolver.print_resolutions resolutions 0);
+      print_endline (print_def_table tcx.def_table);
+      sess.timings.resolve <- time;
+      let env = Hashtbl.create 0 in
       let time, _ =
         Timer.time (fun () ->
-            let infer_ctx =
-              Infer.infer_ctx_create pctx.emitter context env
-            in
+            let infer_ctx = Infer.infer_ctx_create pctx.emitter tcx env in
             ignore (Infer.infer_begin infer_ctx modd);
             let ty_ctx = Tychk.ty_ctx_create infer_ctx in
             ignore (Tychk.tychk ty_ctx modd))
       in
-      context.timings.sema <- time;
+      sess.timings.sema <- time;
       if !Infer.error <> 0 || !Tychk.error <> 0 then exit 1;
       let time, modulee =
         Timer.time (fun () ->
             let lowering_ctx = Lowering.Context.create modd env in
             Lowering.Item.lower_ast lowering_ctx)
       in
-      context.timings.lowering <- time;
-      if context.options.print_ir then Ir.Module.render modulee;
-      if context.options.dot_cfg then Ir.Module.dot_graph modulee;
+      sess.timings.lowering <- time;
+      if sess.options.print_ir then Ir.Module.render modulee;
+      if sess.options.dot_cfg then Ir.Module.dot_graph modulee;
       let time, modd =
-        Timer.time (fun () -> Llvm_gen.gen_module context modulee)
+        Timer.time (fun () -> Llvm_gen.gen_module sess modulee)
       in
-      context.timings.llvm <- time;
-      let time, _ = Timer.time (fun () -> Llvm_gen.emit modd context) in
-      context.timings.gen_and_link <- time
+      sess.timings.llvm <- time;
+      let time, _ = Timer.time (fun () -> Llvm_gen.emit modd sess) in
+      sess.timings.gen_and_link <- time
   | Fmt -> printf "%s" (Fmt.render_mod modd)
   | _ -> ());
   let time = (Sys.time () -. start) *. 1000. in
-  if context.options.display_time then
-    printf "  total: %f ms\n%s" time (Context.display context.timings);
+  if sess.options.display_time then
+    printf "  total: %f ms\n%s" time (Sess.display sess.timings);
   exit 0

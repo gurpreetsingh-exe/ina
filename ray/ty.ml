@@ -1,8 +1,5 @@
 open Printf
-
-type path_segment = string
-
-type path = { mutable segments : path_segment list }
+open Session
 
 type int_ty =
   | I8
@@ -91,6 +88,37 @@ let render_infer_ty ty dbg =
     | FloatVar _ -> "float"
     | TyVar _ -> "T")
 
+type path_segment = string
+
+type def_id = { inner : int }
+
+let def_id inner = { inner }
+
+let print_def_id def_id = "def_id#" ^ string_of_int def_id.inner
+
+type prim_ty =
+  | Int of int_ty
+  | Float of float_ty
+  | Bool
+  | Str
+
+and def_kind =
+  (* Type namespace *)
+  | Mod
+  | Struct
+  (* Value namespace *)
+  | Fn
+
+and res =
+  | Def of (def_id * def_kind)
+  | PrimTy of prim_ty
+  | Err
+
+type path = {
+  mutable segments : path_segment list;
+  res : res;
+}
+
 type ty =
   | Int of int_ty
   | Float of float_ty
@@ -104,6 +132,33 @@ type ty =
   | Ident of path
   | Unit
 
+let render (items : 'a list) (func : 'a -> string) (sep : string) : string =
+  String.concat sep (List.map (fun item -> func item) items)
+
+let render_path (path : path) : string = String.concat "::" path.segments
+
+let rec render_ty ?(dbg = true) (ty : ty) : string =
+  match ty with
+  | Int ty -> display_int_ty ty
+  | Float ty -> display_float_ty ty
+  | Bool -> "bool"
+  | Str -> "str"
+  | Ptr ty -> sprintf "*%s" (render_ty ?dbg:(Some dbg) ty)
+  | RefTy ty -> sprintf "&%s" (render_ty ?dbg:(Some dbg) ty)
+  | Unit -> "()"
+  | FnTy (ty_list, ret_ty, is_variadic) ->
+      sprintf "fn(%s%s) -> %s"
+        (render ty_list (fun ty -> render_ty ty) ", ")
+        (if is_variadic then ", ..." else "")
+        (render_ty ret_ty)
+  | Struct (s, _) -> s
+  | Ident path -> render_path path
+  | Infer ty -> render_infer_ty ty dbg
+
+type def_data = Ty of ty
+
+let print_def_data = function Ty ty -> render_ty ty
+
 let size_of_int = function
   | I8 | U8 -> 1
   | I16 | U16 -> 2
@@ -116,6 +171,17 @@ let size_of = function
   | Int i -> size_of_int i
   | Float f -> size_of_float f
   | _ -> assert false
+
+let print_def_kind = function
+  | Mod -> "mod"
+  | Struct -> "struct"
+  | Fn -> "fn"
+
+let print_prim_ty : prim_ty -> string = function
+  | Int _ -> "int"
+  | Float _ -> "float"
+  | Bool -> "bool"
+  | Str -> "str"
 
 let rec ( != ) (ty1 : ty) (ty2 : ty) : bool =
   match (ty1, ty2) with
@@ -146,3 +212,72 @@ let rec ( != ) (ty1 : ty) (ty2 : ty) : bool =
         with Invalid_argument _ -> true))
       || ret_ty1 != ret_ty2 || is_var1 <> is_var2
   | _, _ -> ty1 <> ty2
+
+type common_types = {
+  i8 : ty;
+  i16 : ty;
+  i32 : ty;
+  i64 : ty;
+  isize : ty;
+  u8 : ty;
+  u16 : ty;
+  u32 : ty;
+  u64 : ty;
+  usize : ty;
+  f32 : ty;
+  f64 : ty;
+  bool : ty;
+  str : ty;
+  unit : ty;
+}
+
+let common_types () =
+  {
+    i8 = Int I8;
+    i16 = Int I16;
+    i32 = Int I32;
+    i64 = Int I64;
+    isize = Int Isize;
+    u8 = Int U8;
+    u16 = Int U16;
+    u32 = Int U32;
+    u64 = Int U64;
+    usize = Int Usize;
+    f32 = Float F32;
+    f64 = Float F64;
+    bool = Bool;
+    str = Str;
+    unit = Unit;
+  }
+
+type def_table = { table : (def_id, def_data) Hashtbl.t }
+
+let create_def def_table id data = Hashtbl.replace def_table.table id data
+
+let print_def_table def_table =
+  let f (def_id, def_data) =
+    sprintf "%s -> %s" (print_def_id def_id) (print_def_data def_data)
+  in
+  Hashtbl.to_seq def_table.table
+  |> List.of_seq |> List.map f |> String.concat "\n"
+
+type tcx = {
+  sess : Sess.t;
+  tys : common_types;
+  def_table : def_table;
+  mutable uuid : int;
+}
+
+let tcx_create sess =
+  {
+    sess;
+    tys = common_types ();
+    def_table = { table = Hashtbl.create 0 };
+    uuid = 0;
+  }
+
+let tcx_gen_id tcx =
+  tcx.uuid <- tcx.uuid + 1;
+  tcx.uuid
+
+let create_def tcx id def_data = create_def tcx.def_table id def_data

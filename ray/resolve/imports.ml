@@ -255,6 +255,7 @@ and resolve resolver : (path, lang_item) Hashtbl.t =
         Hashtbl.add env path (Struct s);
         s.members <- resolve_types resolver env s.members
     | Const _ -> ()
+    | Mod _ -> ()
   in
   List.iter f resolver.modd.items;
   env

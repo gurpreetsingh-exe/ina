@@ -3,7 +3,6 @@ open Ty
 open Token
 open Front.Fmt
 open Printf
-open Session
 open Errors
 
 type env = {
@@ -30,7 +29,7 @@ let fn_ty func =
   FnTy (List.map (fun (ty, _) -> ty) args, ret_ty, is_variadic)
 
 type infer_ctx = {
-  globl_ctx : Context.t;
+  tcx : tcx;
   mutable ty_env : env;
   env : (node_id, expr) Hashtbl.t;
   int_unifiction_table : (ty, ty) Hashtbl.t;
@@ -46,9 +45,9 @@ let add_binding (infer_ctx : infer_ctx) ident ty =
     Hashtbl.replace infer_ctx.ty_env.bindings ident ty
   else Hashtbl.add infer_ctx.ty_env.bindings ident ty
 
-let infer_ctx_create emitter globl_ctx globl_env =
+let infer_ctx_create emitter tcx globl_env =
   {
-    globl_ctx;
+    tcx;
     ty_env = env_create None;
     env = Hashtbl.create 0;
     int_unifiction_table = Hashtbl.create 0;
@@ -523,14 +522,14 @@ let infer_func (infer_ctx : infer_ctx) (func : func) =
         (fun (ty, ident) -> Hashtbl.add infer_ctx.ty_env.bindings ident ty)
         args;
       let ty = infer_block infer_ctx body in
-      if infer_ctx.globl_ctx.options.display_type_vars then
+      if infer_ctx.tcx.sess.options.display_type_vars then
         print_endline (render_fn func);
       ignore (unify infer_ctx ty ret_ty, body.last_expr);
       resolve_block infer_ctx body;
       infer_ctx.ty_env <- tmp_env
   | None -> ()
 
-let infer_begin infer_ctx (modd : modd) =
+let rec infer_begin infer_ctx (modd : modd) =
   let f (item : item) =
     match item with
     | Fn (func, _) -> infer_func infer_ctx func
@@ -543,6 +542,13 @@ let infer_begin infer_ctx (modd : modd) =
             (Struct
                (name, List.map (fun (ty, field) -> (field, ty)) s.members)))
     | Import _ -> ()
+    | Mod { resolved_mod; _ } ->
+        let modd = Option.get resolved_mod in
+        let infer_ctx2 =
+          infer_ctx_create infer_ctx.emitter infer_ctx.tcx
+            infer_ctx.globl_env
+        in
+        infer_begin infer_ctx2 modd
     | Foreign funcs -> List.iter (fun f -> infer_func infer_ctx f) funcs
     | _ -> assert false
   in

@@ -5,32 +5,12 @@ open Ty
 let render (items : 'a list) (func : 'a -> string) (sep : string) : string =
   String.concat sep (List.map (fun item -> func item) items)
 
-let render_path (path : path) : string = String.concat "::" path.segments
-
 let render_lit (lit : lit) : string =
   match lit with
   | LitInt value -> sprintf "%d" value
   | LitFloat value -> sprintf "%f" value
   | LitBool value -> sprintf "%b" value
   | LitStr value -> sprintf "\"%s\"" (String.escaped value)
-
-let rec render_ty ?(dbg = true) (ty : ty) : string =
-  match ty with
-  | Int ty -> display_int_ty ty
-  | Float ty -> display_float_ty ty
-  | Bool -> "bool"
-  | Str -> "str"
-  | Ptr ty -> sprintf "*%s" (render_ty ?dbg:(Some dbg) ty)
-  | RefTy ty -> sprintf "&%s" (render_ty ?dbg:(Some dbg) ty)
-  | Unit -> "()"
-  | FnTy (ty_list, ret_ty, is_variadic) ->
-      sprintf "fn(%s%s) -> %s"
-        (render ty_list (fun ty -> render_ty ty) ", ")
-        (if is_variadic then ", ..." else "")
-        (render_ty ret_ty)
-  | Struct (s, _) -> s
-  | Ident path -> render_path path
-  | Infer ty -> render_infer_ty ty dbg
 
 let render_fn_sig (fn_sig : fn_sig) : string =
   sprintf "fn %s(%s)%s" fn_sig.name
@@ -152,7 +132,7 @@ let render_struct s =
 let render_type (ty : typ) =
   sprintf "\ntype %s\n" (match ty with Struct s -> render_struct s)
 
-let render_item (item : item) : string =
+let rec render_item (item : item) : string =
   match item with
   | Fn (func, attrs) ->
       sprintf "\n%s%s\n"
@@ -163,9 +143,13 @@ let render_item (item : item) : string =
       sprintf "\nextern {\n%s\n}\n"
         (String.concat "\n" (List.map (fun f -> "    " ^ render_fn f) funcs))
   | Const constant -> render_const constant
+  | Mod { name; resolved_mod } -> (
+    match resolved_mod with
+    | Some modd -> sprintf "mod %s {%s}\n" name (render_mod modd)
+    | None -> "mod " ^ name ^ ";")
   | Import path -> sprintf "import %s;\n" (String.concat "::" path.segments)
 
-let render_mod modd : string =
+and render_mod modd : string =
   let rendered_items = render modd.items (fun item -> render_item item) "" in
   if List.length modd.attrs > 0 then
     sprintf "%s\n%s"

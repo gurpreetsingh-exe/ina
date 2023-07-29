@@ -6,7 +6,6 @@ open Llvm_target
 open Llvm_debuginfo
 open Llvm_X86
 open Llvm_analysis
-open Resolve.Imports
 open Printf
 open Session
 
@@ -166,8 +165,7 @@ let rec get_llvm_ty (ty : ty) : lltype =
         Hashtbl.add codegen_ctx.struct_map name ty;
         ty)
   | Unit -> tcx.void
-  | Ident path ->
-      Hashtbl.find codegen_ctx.struct_map (Front.Fmt.render_path path)
+  | Ident path -> Hashtbl.find codegen_ctx.struct_map (render_path path)
   | Infer _ -> assert false
 
 let gen_function_type (fn_ty : Func.fn_type) : lltype =
@@ -358,11 +356,15 @@ let gen_item (func : Func.t) (ll_mod : llmodule) =
   let intrinsic (fn : Func.fn_type) declare =
     let fn_ty = gen_function_type fn in
     if fn.abi = "intrinsic" then
-      Hashtbl.add codegen_ctx.intrinsics { segments = [fn.name] } fn
+      Hashtbl.add codegen_ctx.intrinsics
+        { segments = [fn.name]; res = Err }
+        fn
     else if declare then (
       let llfn = declare_function fn.name fn_ty ll_mod in
       codegen_ctx.curr_fn <- Some llfn;
-      Hashtbl.add codegen_ctx.func_map { segments = [fn.name] } fn_ty;
+      Hashtbl.add codegen_ctx.func_map
+        { segments = [fn.name]; res = Err }
+        fn_ty;
       if fn.name = "main" then codegen_ctx.main <- Some llfn;
       set_linkage Linkage.External llfn)
     else (
@@ -375,7 +377,7 @@ let gen_item (func : Func.t) (ll_mod : llmodule) =
   | Def { def_ty; basic_blocks } ->
       intrinsic def_ty false; gen_blocks basic_blocks
 
-let gen_module (ctx : Context.t) (modd : Module.t) : llmodule =
+let gen_module (ctx : Sess.t) (modd : Module.t) : llmodule =
   let ll_mod = create_module codegen_ctx.llctx ctx.options.input in
   codegen_ctx.curr_mod <- Some ll_mod;
   set_target_triple (Target.default_triple ()) ll_mod;
@@ -393,7 +395,7 @@ let gen_module (ctx : Context.t) (modd : Module.t) : llmodule =
   | Agressive -> run_passes modd "default<O3>" codegen_ctx.machine);
   modd
 
-let emit (modd : llmodule) (ctx : Context.t) =
+let emit (modd : llmodule) (ctx : Sess.t) =
   match ctx.options.output_type with
   | LlvmIr ->
       let ic = open_out (ctx.options.output ^ ".ll") in

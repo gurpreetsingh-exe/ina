@@ -1,7 +1,6 @@
 open Ast
 open Ty
 open Infer
-open Front.Fmt
 open Errors
 open Printf
 

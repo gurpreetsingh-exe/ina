@@ -1,4 +1,3 @@
-open Front
 open Ty
 open Printf
 
@@ -18,10 +17,10 @@ let render_fn_type fn_ty =
     (if fn_ty.is_extern then fn_ty.name else fn_ty.linkage_name)
     (String.concat ", "
        (List.map
-          (fun (ty, name) -> sprintf "%s %%%s" (Fmt.render_ty ty) name)
+          (fun (ty, name) -> sprintf "%s %%%s" (render_ty ty) name)
           fn_ty.args)
     ^ if fn_ty.is_variadic then ", ..." else "")
-    (Fmt.render_ty fn_ty.ret_ty)
+    (render_ty fn_ty.ret_ty)
 
 type blocks = { mutable bbs : Inst.basic_block list }
 
