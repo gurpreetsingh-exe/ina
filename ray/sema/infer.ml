@@ -275,11 +275,23 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
       | LitBool _ -> Bool
       | LitStr _ -> Str)
     | Path path -> (
-      match find_value infer_ctx path with
-      | Some ty, _ -> ty
-      | None, name ->
+        let name = render_path path in
+        let not_found _ =
           infer_err_emit infer_ctx.emitter (VarNotFound name) expr.expr_span;
-          Unit)
+          Unit
+        in
+        match path.res with
+        | Def (id, kind) -> (
+          match kind with
+          | Fn -> ( lookup_def infer_ctx.tcx id |> function Ty ty -> ty)
+          (* TODO: (error) mod and struct cannot be assigned to variables *)
+          | _ -> assert false)
+        | Local -> (
+          match find_ty infer_ctx.ty_env name with
+          | Some ty -> ty
+          | None -> not_found ())
+        | Err -> not_found ()
+        | PrimTy ty -> prim_ty_to_ty ty)
     | Call (path, exprs) ->
         let check_args _ =
           List.iter (fun expr -> ignore (infer infer_ctx expr)) exprs
@@ -319,12 +331,15 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
         let ty =
           match maybe_ty with
           | Some ty -> f ty
-          | None ->
-              infer_err_emit infer_ctx.emitter (FnNotFound name)
-                expr.expr_span;
-              (* infer types for arguments *)
-              check_args ();
-              Unit
+          | None -> (
+            match find_ty infer_ctx.ty_env name with
+            | Some ty -> f ty
+            | None ->
+                infer_err_emit infer_ctx.emitter (FnNotFound name)
+                  expr.expr_span;
+                (* infer types for arguments *)
+                check_args ();
+                Unit)
         in
         ty
     | Binary (kind, left, right) ->

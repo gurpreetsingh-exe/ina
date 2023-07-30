@@ -57,16 +57,19 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
     | LitStr value -> Builder.const_string ty value
     | LitBool value -> Builder.const_bool ty value)
   | Path path -> (
-      let ident = render_path path in
-      try
-        let ptr, _ = load (Context.find_local ctx.env ident) builder in
+      let name = render_path path in
+      let f _ =
+        let ptr, _ = load (Context.find_local ctx.env name) builder in
         ptr
-      with Not_found ->
-        let fn_ty = Hashtbl.find ctx.func_map path in
-        let name =
-          if fn_ty.is_extern then fn_ty.name else fn_ty.linkage_name
-        in
-        Global name)
+      in
+      match path.res with
+      | Def (_, kind) -> (
+        match kind with
+        | Fn -> Global (lookup_sym ctx.tcx path.res)
+        (* TODO: (error) mod and struct cannot be assigned to variables *)
+        | Mod | Struct -> assert false)
+      | Local | PrimTy _ -> f ()
+      | Err -> assert false)
   | If { cond; then_block; else_block } -> (
       let cond = lower cond builder ctx in
       let then_bb = Basicblock.create () in
@@ -104,32 +107,15 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
               builder
           in
           phi)
-  | Call (path, args) ->
-      let ty = Option.get (expect_def ctx.tcx path.res Fn) in
-      let name = render_path (lookup_sym ctx.tcx path.res) in
+  | Call (path, args) -> (
+      let name = render_path path in
       let args = List.map (fun e -> lower e builder ctx) args in
-      Builder.call ty (Global name) args builder
-      (* let ident = render_path path in *)
-      (* try *)
-      (*   let ptr, ty = load (Context.find_local ctx.env ident) builder in *)
-      (*   let args = List.map (fun e -> lower e builder ctx) args in *)
-      (*   Builder.call ty ptr args builder *)
-      (* with Not_found -> *)
-      (*   let fn_ty = Hashtbl.find ctx.func_map path in *)
-      (*   let args = List.map (fun e -> lower e builder ctx) args in *)
-      (*   if fn_ty.is_extern && fn_ty.abi = "intrinsic" then *)
-      (*     Builder.intrinsic ty fn_ty.name args builder *)
-      (*   else ( *)
-      (*     let ty = *)
-      (*       FnTy *)
-      (*         ( List.map (fun (t, _) -> t) fn_ty.args, *)
-      (*           fn_ty.ret_ty, *)
-      (*           fn_ty.is_variadic ) *)
-      (*     in *)
-      (*     let name = *)
-      (*       if fn_ty.is_extern then fn_ty.name else fn_ty.linkage_name *)
-      (*     in *)
-      (*     Builder.call ty (Global name) args builder)) *)
+      match expect_def ctx.tcx path.res Fn with
+      | Some ty ->
+          Builder.call ty (Global (lookup_sym ctx.tcx path.res)) args builder
+      | None ->
+          let ptr, ty = load (Context.find_local ctx.env name) builder in
+          Builder.call ty ptr args builder)
   | Block block -> lower_block block ctx
   | Deref expr -> Builder.load (lower expr builder ctx) builder
   | Ref expr -> lower_lvalue expr builder ctx

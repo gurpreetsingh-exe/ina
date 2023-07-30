@@ -133,6 +133,12 @@ type ty =
   | Ident of path
   | Unit
 
+let prim_ty_to_ty : prim_ty -> ty = function
+  | Int int_ty -> Int int_ty
+  | Float float_ty -> Float float_ty
+  | Bool -> Bool
+  | Str -> Str
+
 let render (items : 'a list) (func : 'a -> string) (sep : string) : string =
   String.concat sep (List.map (fun item -> func item) items)
 
@@ -266,9 +272,16 @@ let print_def_table def_table =
   Hashtbl.to_seq def_table.table
   |> List.of_seq |> List.map f |> String.concat "\n"
 
-type sym_table = (def_id, path) Hashtbl.t
+type sym_table = (def_id, string) Hashtbl.t
 
-let create_sym sym_table id path = Hashtbl.replace sym_table id path
+let mangle path =
+  "_Z"
+  ^ String.concat ""
+      (List.map
+         (fun seg -> string_of_int (String.length seg) ^ seg)
+         path.segments)
+
+let create_sym sym_table id path = Hashtbl.replace sym_table id (mangle path)
 
 let lookup_sym sym_table id =
   if Hashtbl.mem sym_table id then Hashtbl.find sym_table id
@@ -308,7 +321,7 @@ let expect_def tcx res expected : ty option =
       match def with Ty ty -> Some ty)
   | _ -> None
 
-let lookup_sym tcx res : path =
+let lookup_sym tcx res : string =
   match res with
   | Def (id, _) -> lookup_sym tcx.sym_table id
   | _ -> assert false

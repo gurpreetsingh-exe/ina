@@ -22,26 +22,27 @@ let resolve_path (resolutions : resolutions) (path : path) : unit =
 let rec resolve_paths (resolver : Resolver.t) (resolutions : resolutions)
     (modd : modd) : unit =
   let resolve_ty ty = () in
-  let rec resolve_expr expr =
+  let rec visit_expr expr =
     match expr.expr_kind with
     | Call (path, exprs) ->
-        List.iter resolve_expr exprs;
+        List.iter visit_expr exprs;
         resolve_path resolutions path
-    | Binary (_, left, right) -> resolve_expr left; resolve_expr right
+    | Binary (_, left, right) -> visit_expr left; visit_expr right
     | Path path -> resolve_path resolutions path
     | Lit _ -> ()
     | _ ->
         print_endline (Front.Fmt.render_expr expr 0);
         assert false
   in
-  let resolve_body body =
+  let visit_body body =
     List.iter
       (fun stmt ->
         match stmt with
-        | Stmt expr | Expr expr -> resolve_expr expr
+        | Stmt expr | Expr expr -> visit_expr expr
+        | Binding { binding_expr = expr; _ } -> visit_expr expr
         | _ -> assert false)
       body.block_stmts;
-    match body.last_expr with Some expr -> resolve_expr expr | None -> ()
+    match body.last_expr with Some expr -> visit_expr expr | None -> ()
   in
   let visit_item (item : item) =
     match item with
@@ -51,7 +52,7 @@ let rec resolve_paths (resolver : Resolver.t) (resolutions : resolutions)
       | None -> ())
     | Fn (func, _) -> (
         List.iter (fun (ty, name) -> resolve_ty ty) func.fn_sig.args;
-        match func.body with Some body -> resolve_body body | None -> ())
+        match func.body with Some body -> visit_body body | None -> ())
     | Type (Struct s) -> ()
     | Foreign _ -> ()
     | Const _ | Import _ -> ()

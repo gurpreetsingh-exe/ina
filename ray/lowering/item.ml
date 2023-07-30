@@ -9,7 +9,7 @@ let mangle path =
          (fun seg -> string_of_int (String.length seg) ^ seg)
          path.segments)
 
-let mangle path = render_path path
+(* let mangle path = render_path path *)
 
 let rec lower_fn (fn : func) (ctx : Context.t) (mangle_name : bool) : Func.t
     =
@@ -26,7 +26,9 @@ let rec lower_fn (fn : func) (ctx : Context.t) (mangle_name : bool) : Func.t
   in
   let ret_ty = match ret_ty with Some ty -> ty | None -> Unit in
   let fn_path = Option.get func_path in
-  let linkage_name = if mangle_name then mangle fn_path else name in
+  let linkage_name =
+    if mangle_name then lookup_sym ctx.tcx fn_path.res else name
+  in
   let fn_ty =
     Func.
       {
