@@ -1,30 +1,28 @@
+open Printf
 open Ast
 open Resolver
 open Ty
 
 let rec resolve_path (modul : modul) (path : path) : res =
-  let resolutions = modul.resolutions in
-  let rec resolve_path' segs resolutions : res =
+  let rec resolve_path' segs modul : res =
     let ident = List.hd segs
     and ns = if List.length segs = 1 then Value else Type in
     let key = { ident; ns } in
-    match get_name_res resolutions key with
+    match get_name_res modul.resolutions key with
     | Some res -> (
       match res.binding with
       | Some binding -> (
         match binding.kind with
         | Res res -> res
-        | Module modul -> resolve_path' (List.tl segs) modul.resolutions)
-      | None -> (
-        match modul.parent with
-        | Some modul -> resolve_path modul path
-        | None -> Err))
+        | Module modul -> resolve_path' (List.tl segs) modul)
+      | None -> Err)
     | None -> (
       match modul.parent with
-      | Some modul -> resolve_path modul path
-      | None -> Err)
+      | Some modul' -> (
+        match modul.mkind with Block -> resolve_path modul' path | _ -> Err)
+      | _ -> Err)
   in
-  let res = resolve_path' path.segments resolutions in
+  let res = resolve_path' path.segments modul in
   res
 
 let rec resolve_paths (resolver : Resolver.t) (modul : modul) (modd : modd) :
