@@ -15,7 +15,7 @@ let render_lit (lit : lit) : string =
 let render_fn_sig (fn_sig : fn_sig) : string =
   sprintf "fn %s(%s)%s" fn_sig.name
     (render fn_sig.args
-       (fun (ty, name) -> sprintf "%s%s" (name ^ ": ") (render_ty ty))
+       (fun (ty, name, _) -> sprintf "%s%s" (name ^ ": ") (render_ty ty))
        ", ")
     (match fn_sig.ret_ty with
     | Some ty -> " -> " ^ render_ty ty

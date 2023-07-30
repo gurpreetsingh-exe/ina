@@ -112,7 +112,7 @@ and def_kind =
 and res =
   | Def of (def_id * def_kind)
   | PrimTy of prim_ty
-  | Local
+  | Local of int
   | Err
 
 type path = {

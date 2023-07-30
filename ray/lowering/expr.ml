@@ -68,7 +68,7 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
         | Fn -> Global (lookup_sym ctx.tcx path.res)
         (* TODO: (error) mod and struct cannot be assigned to variables *)
         | Mod | Struct -> assert false)
-      | Local | PrimTy _ -> f ()
+      | Local _ | PrimTy _ -> f ()
       | Err -> assert false)
   | If { cond; then_block; else_block } -> (
       let cond = lower cond builder ctx in

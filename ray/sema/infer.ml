@@ -26,7 +26,7 @@ let ty_is_float (ty : ty) : bool =
 let fn_ty func =
   let { fn_sig = { args; ret_ty; is_variadic; _ }; _ } = func in
   let ret_ty = Option.value ret_ty ~default:Unit in
-  FnTy (List.map (fun (ty, _) -> ty) args, ret_ty, is_variadic)
+  FnTy (List.map (fun (ty, _, _) -> ty) args, ret_ty, is_variadic)
 
 type infer_ctx = {
   tcx : tcx;
@@ -286,7 +286,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
           | Fn -> ( lookup_def infer_ctx.tcx id |> function Ty ty -> ty)
           (* TODO: (error) mod and struct cannot be assigned to variables *)
           | _ -> assert false)
-        | Local -> (
+        | Local _ -> (
           match find_ty infer_ctx.ty_env name with
           | Some ty -> ty
           | None -> not_found ())
@@ -534,13 +534,14 @@ let infer_func (infer_ctx : infer_ctx) (func : func) =
   let { fn_sig = { name; args; ret_ty; is_variadic; _ }; body; _ } = func in
   let ret_ty = Option.value ret_ty ~default:Unit in
   Hashtbl.add infer_ctx.func_map name
-    (FnTy (List.map (fun (ty, _) -> ty) args, ret_ty, is_variadic));
+    (FnTy (List.map (fun (ty, _, _) -> ty) args, ret_ty, is_variadic));
   match body with
   | Some body ->
       let tmp_env = infer_ctx.ty_env in
       infer_ctx.ty_env <- env_create (Some tmp_env);
       List.iter
-        (fun (ty, ident) -> Hashtbl.add infer_ctx.ty_env.bindings ident ty)
+        (fun (ty, ident, _) ->
+          Hashtbl.add infer_ctx.ty_env.bindings ident ty)
         args;
       let ty = infer_block infer_ctx body in
       if infer_ctx.tcx.sess.options.display_type_vars then

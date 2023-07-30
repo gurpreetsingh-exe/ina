@@ -255,7 +255,7 @@ and parse_ret_ty pctx : ty option =
       Some (parse_ty pctx)
   | _ -> None
 
-let parse_fn_args pctx : (ty * ident) list * bool =
+let parse_fn_args pctx : (ty * ident * node_id) list * bool =
   assert (pctx.curr_tok.kind == LParen);
   ignore (eat pctx LParen);
   let arg_list = ref [] in
@@ -267,7 +267,7 @@ let parse_fn_args pctx : (ty * ident) list * bool =
           let ident = parse_ident pctx in
           ignore (eat pctx Colon);
           let ty = parse_ty pctx in
-          (ty, ident)
+          (ty, ident, gen_id pctx)
         in
         arg_list := !arg_list @ [arg];
         match pctx.curr_tok.kind with

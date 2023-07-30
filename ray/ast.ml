@@ -53,7 +53,7 @@ and item =
 
 and fn_sig = {
   name : ident;
-  mutable args : (ty * ident) list;
+  mutable args : (ty * ident * node_id) list;
   ret_ty : ty option;
   fn_span : span;
   is_variadic : bool;

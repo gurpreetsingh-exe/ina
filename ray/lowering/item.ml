@@ -33,9 +33,9 @@ let rec lower_fn (fn : func) (ctx : Context.t) (mangle_name : bool) : Func.t
     Func.
       {
         name;
-        args;
+        args = List.map (fun (ty, name, _) -> (ty, name)) args;
         params =
-          List.mapi (fun i (ty, name) -> Inst.Param (ty, name, i)) args;
+          List.mapi (fun i (ty, name, _) -> Inst.Param (ty, name, i)) args;
         ret_ty;
         is_variadic;
         abi;
@@ -108,7 +108,7 @@ let rec lower_ast (ctx : Context.t) : Module.t =
         let modd = Option.get m.resolved_mod in
         let tmp = ctx.modd in
         ctx.modd <- modd;
-        items := (lower_ast ctx).items @ !items;
+        items := !items @ (lower_ast ctx).items;
         ctx.modd <- tmp
     | _ -> assert false
   in

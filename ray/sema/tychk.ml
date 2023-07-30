@@ -288,13 +288,15 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
         ))
   | None -> ()
 
-let tychk ty_ctx (modd : modd) =
+let rec tychk ty_ctx (modd : modd) =
   let f (item : item) =
     match item with
     | Fn (func, _) -> tychk_func ty_ctx func
     | Foreign funcs -> List.iter (fun f -> tychk_func ty_ctx f) funcs
     | Import _ | Type _ -> ()
-    | Mod _ -> ()
+    | Mod m ->
+        let modd = Option.get m.resolved_mod in
+        tychk ty_ctx modd
     | _ -> assert false
   in
   List.iter f modd.items
