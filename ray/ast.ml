@@ -26,7 +26,7 @@ type modd = {
   mutable items : item list;
   mutable attrs : attr list;
   imported_mods : (string, modd) Hashtbl.t;
-  mod_name : string;
+  mutable mod_name : string;
   mod_path : string;
   mod_id : node_id;
 }
@@ -48,6 +48,7 @@ and item =
   | Mod of {
       name : string;
       mutable resolved_mod : modd option;
+      inline : bool;
     }
   | Import of path
 

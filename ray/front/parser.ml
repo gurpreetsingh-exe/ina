@@ -655,7 +655,7 @@ let parse_extern pctx attrs : item =
   | Fn -> Fn (parse_fn pctx abi true, attrs)
   | _ -> assert false
 
-let parse_item pctx : item =
+let rec parse_item pctx : item =
   let attrs = parse_outer_attrs pctx in
   match pctx.curr_tok.kind with
   | Fn -> Fn (parse_fn pctx "C" false, attrs)
@@ -668,16 +668,30 @@ let parse_item pctx : item =
       import
   | Mod ->
       advance pctx;
-      let modd : item =
-        Mod { name = parse_ident pctx; resolved_mod = None }
+      let name = parse_ident pctx in
+      let modd, inline =
+        pctx.curr_tok.kind
+        |> function
+        | Semi ->
+            ignore (eat pctx Semi);
+            (None, false)
+        | LBrace ->
+            ignore (eat pctx LBrace);
+            let modd = parse_mod pctx in
+            modd.mod_name <- name;
+            ignore (eat pctx RBrace);
+            (Some modd, true)
+        | _ ->
+            ignore (eat pctx LBrace);
+            exit 1
       in
-      ignore (eat pctx Semi);
+      let modd : item = Mod { name; resolved_mod = modd; inline } in
       modd
   | kind ->
       Printf.printf "%s\n" (display_token_kind kind);
       assert false
 
-let parse_mod pctx : modd =
+and parse_mod pctx : modd =
   let mod_attrs = parse_inner_attrs pctx in
   let mod_path = pctx.tokenizer.filename in
   let mod_name =
@@ -695,7 +709,7 @@ let parse_mod pctx : modd =
       imported_mods = Hashtbl.create 0;
     }
   in
-  while not pctx.stop do
+  while (not pctx.stop) && pctx.curr_tok.kind <> RBrace do
     strip_comments pctx;
     modd.items <- modd.items @ [parse_item pctx]
   done;

@@ -143,7 +143,7 @@ let rec render_item (item : item) : string =
       sprintf "\nextern {\n%s\n}\n"
         (String.concat "\n" (List.map (fun f -> "    " ^ render_fn f) funcs))
   | Const constant -> render_const constant
-  | Mod { name; resolved_mod } -> (
+  | Mod { name; resolved_mod; _ } -> (
     match resolved_mod with
     | Some modd -> sprintf "mod %s {%s}\n" name (render_mod modd)
     | None -> "mod " ^ name ^ ";")

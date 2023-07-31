@@ -192,30 +192,37 @@ let rec resolve resolver : resolutions =
   in
   let visit_item (item : item) =
     match item with
-    | Mod m ->
+    | Mod m -> (
         let name = m.name in
-        if not (mod_exists resolver name) then (
-          eprintf "error(%s): module `%s` not found\n" resolver.modd.mod_path
-            name;
-          flush stderr)
-        else (
-          let path = create_path resolver name in
-          let ic = open_in path in
-          let src = really_input_string ic (in_channel_length ic) in
-          close_in ic;
-          let tokenizer = Tokenizer.tokenize path src in
-          let pctx = Parser.parse_ctx_create resolver.tcx tokenizer src in
-          let modd = Parser.parse_mod pctx in
-          let resolver =
-            { resolver with modd; modul = Some modul; is_root = false }
-          in
-          let res = resolve resolver in
-          let key = { ident = modd.mod_name; ns = Type } in
-          let mkind = Def (Mod, { inner = modd.mod_id }, modd.mod_name) in
-          let modul = { mkind; parent = Some modul; resolutions = res } in
-          let binding = { binding = Some { kind = Module modul } } in
-          add_name_res resolutions key binding;
-          m.resolved_mod <- Some modd)
+        let modd =
+          if m.inline then m.resolved_mod
+          else if not (mod_exists resolver name) then (
+            eprintf "error(%s): module `%s` not found\n"
+              resolver.modd.mod_path name;
+            flush stderr;
+            None)
+          else (
+            let path = create_path resolver name in
+            let ic = open_in path in
+            let src = really_input_string ic (in_channel_length ic) in
+            close_in ic;
+            let tokenizer = Tokenizer.tokenize path src in
+            let pctx = Parser.parse_ctx_create resolver.tcx tokenizer src in
+            Some (Parser.parse_mod pctx))
+        in
+        match modd with
+        | Some modd ->
+            let resolver =
+              { resolver with modd; modul = Some modul; is_root = false }
+            in
+            let res = resolve resolver in
+            let key = { ident = modd.mod_name; ns = Type } in
+            let mkind = Def (Mod, { inner = modd.mod_id }, modd.mod_name) in
+            let modul = { mkind; parent = Some modul; resolutions = res } in
+            let binding = { binding = Some { kind = Module modul } } in
+            add_name_res resolutions key binding;
+            m.resolved_mod <- Some modd
+        | None -> ())
     | Fn (func, _) -> (
         let name = func.fn_sig.name in
         let segments = get_root_path modul @ [name] in
