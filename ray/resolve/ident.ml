@@ -36,18 +36,27 @@ let rec resolve_paths (resolver : Resolver.t) (modul : modul) (modd : modd) :
     | Binary (_, left, right) ->
         visit_expr modul left; visit_expr modul right
     | Path path -> path.res <- resolve_path modul path
+    | If { cond; then_block; else_block } -> (
+        visit_expr modul cond;
+        visit_body modul then_block;
+        match else_block with
+        | Some expr -> visit_expr modul expr
+        | None -> ())
+    | Ref expr | Deref expr -> visit_expr modul expr
+    | Block block -> visit_body modul block
     | Lit _ -> ()
     | _ ->
         print_endline (Front.Fmt.render_expr expr 0);
         assert false
-  in
-  let visit_body (modul : modul) body =
+  and visit_body (modul : modul) body =
     List.iter
       (fun stmt ->
         match stmt with
         | Stmt expr | Expr expr -> visit_expr modul expr
         | Binding { binding_expr = expr; _ } -> visit_expr modul expr
-        | _ -> assert false)
+        | Assert (expr, _) -> visit_expr modul expr
+        | Assign (expr1, expr2) ->
+            visit_expr modul expr1; visit_expr modul expr2)
       body.block_stmts;
     match body.last_expr with
     | Some expr -> visit_expr modul expr

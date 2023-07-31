@@ -52,14 +52,6 @@ let get_name_res (resolutions : resolutions) (key : binding_key) =
   if Hashtbl.mem resolutions key then Some (Hashtbl.find resolutions key)
   else None
 
-let find_scope_res resolutions key =
-  let name_binding_kind =
-    (Option.get (Option.get (get_name_res resolutions key)).binding).kind
-  in
-  match name_binding_kind with
-  | Res _ -> assert false
-  | Module modd -> modd.resolutions
-
 let print_binding_key key =
   (* let ns = function Type -> "type" | Value -> "value" in *)
   sprintf "%s" key.ident
@@ -73,11 +65,13 @@ let print_res : res -> string = function
 
 let rec print_nameres (res : name_resolution) (depth : int) =
   match res.binding with
-  | Some { kind } -> (
-    match kind with
-    | Res res -> print_res res
-    | Module modul -> "\n" ^ print_resolutions modul.resolutions (depth + 1))
+  | Some name_binding -> print_name_binding name_binding depth
   | None -> "NONE"
+
+and print_name_binding name_binding depth =
+  match name_binding.kind with
+  | Res res -> print_res res
+  | Module modul -> "\n" ^ print_resolutions modul.resolutions (depth + 1)
 
 and print_resolutions (res : resolutions) (depth : int) =
   let indent = String.make (depth * 2) ' ' in
@@ -86,6 +80,14 @@ and print_resolutions (res : resolutions) (depth : int) =
       (print_nameres res depth)
   in
   Hashtbl.to_seq res |> Array.of_seq |> Array.map print_pair |> Array.to_list
+  |> String.concat "\n"
+
+let print_scope scope_table =
+  let print_pair ((key, res) : res * name_binding) =
+    sprintf "%s: %s" (print_res key) (print_name_binding res 0)
+  in
+  Hashtbl.to_seq scope_table
+  |> Array.of_seq |> Array.map print_pair |> Array.to_list
   |> String.concat "\n"
 
 type t = {
@@ -109,6 +111,10 @@ let create tcx modd =
 
 let add_scope_res resolver res binding =
   Hashtbl.replace resolver.scope_table res binding
+
+let find_scope_res resolver key =
+  let binding = Hashtbl.find resolver.scope_table key in
+  Res.modul binding
 
 let rec mod_exists resolver name =
   let f path =
@@ -171,7 +177,25 @@ let rec resolve resolver : resolutions =
   let id = { inner = resolver.modd.mod_id } in
   let mkind = Def (Mod, id, resolver.modd.mod_name) in
   let modul = { mkind; parent = resolver.modul; resolutions } in
-  let visit_block block resolutions =
+  let rec visit_expr expr resolutions =
+    match expr.expr_kind with
+    | Binary (_, left, right) ->
+        visit_expr left resolutions;
+        visit_expr right resolutions
+    | Block block -> visit_block block resolutions
+    | If { cond; then_block; else_block } -> (
+        visit_expr cond resolutions;
+        visit_block then_block resolutions;
+        match else_block with
+        | Some expr -> visit_expr expr resolutions
+        | None -> ())
+    | Call (_, args) -> List.iter (fun e -> visit_expr e resolutions) args
+    | Field (expr, _) | Cast (expr, _) | Ref expr | Deref expr ->
+        visit_expr expr resolutions
+    | StructExpr { fields; _ } ->
+        List.iter (fun (_, e) -> visit_expr e resolutions) fields
+    | Lit _ | Path _ -> ()
+  and visit_block block resolutions =
     let visit_stmt stmt =
       match stmt with
       | Binding { binding_pat; binding_id; _ } -> (
@@ -183,12 +207,11 @@ let rec resolve resolver : resolutions =
                 { binding = Some { kind = Res (Local binding_id) } }
               in
               add_name_res resolutions key binding)
-      | Stmt _ | Expr _ -> ()
-      | Assign _ -> ()
-      | Assert _ -> ()
+      | Stmt e | Expr e | Assert (e, _) -> visit_expr e resolutions
+      | Assign (e1, e2) ->
+          visit_expr e1 resolutions; visit_expr e2 resolutions
     in
-    List.iter visit_stmt block.block_stmts;
-    resolutions
+    List.iter visit_stmt block.block_stmts
   in
   let visit_item (item : item) =
     match item with
@@ -243,7 +266,7 @@ let rec resolve resolver : resolutions =
           func.fn_sig.args;
         match func.body with
         | Some block ->
-            let resolutions = visit_block block resolutions in
+            visit_block block resolutions;
             let modul =
               { mkind = Block; parent = Some modul; resolutions }
             in
