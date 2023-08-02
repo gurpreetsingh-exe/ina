@@ -139,6 +139,24 @@ let prim_ty_to_ty : prim_ty -> ty = function
   | Bool -> Bool
   | Str -> Str
 
+let print_def_kind = function
+  | Mod -> "mod"
+  | Struct -> "struct"
+  | Fn -> "fn"
+
+let print_prim_ty : prim_ty -> string = function
+  | Int _ -> "int"
+  | Float _ -> "float"
+  | Bool -> "bool"
+  | Str -> "str"
+
+let print_res : res -> string = function
+  | Def (id, kind) ->
+      sprintf "(%s~%s)" (print_def_kind kind) (print_def_id id)
+  | PrimTy ty -> print_prim_ty ty
+  | Local id -> "local#" ^ string_of_int id
+  | Err -> "err"
+
 let render (items : 'a list) (func : 'a -> string) (sep : string) : string =
   String.concat sep (List.map (fun item -> func item) items)
 
@@ -178,17 +196,6 @@ let size_of = function
   | Int i -> size_of_int i
   | Float f -> size_of_float f
   | _ -> assert false
-
-let print_def_kind = function
-  | Mod -> "mod"
-  | Struct -> "struct"
-  | Fn -> "fn"
-
-let print_prim_ty : prim_ty -> string = function
-  | Int _ -> "int"
-  | Float _ -> "float"
-  | Bool -> "bool"
-  | Str -> "str"
 
 let rec ( != ) (ty1 : ty) (ty2 : ty) : bool =
   match (ty1, ty2) with

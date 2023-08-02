@@ -41,20 +41,11 @@ let () =
       let time, _ =
         Timer.time (fun () ->
             let resolver = Resolver.create tcx modd in
-            let res = Resolver.resolve resolver in
-            let modul =
-              Resolver.
-                {
-                  mkind = Def (Mod, { inner = modd.mod_id }, modd.mod_name);
-                  parent = None;
-                  resolutions = res;
-                }
-            in
-            (* printf "%s\n" (Resolver.print_resolutions res 0); *)
+            let modul = Resolver.resolve resolver in
+            resolver.disambiguator.stack <- [0];
             Ident.resolve_paths resolver modul modd;
-            res)
+            modul.resolutions)
       in
-      (* print_endline (print_def_table tcx.def_table); *)
       sess.timings.resolve <- time;
       let env = Hashtbl.create 0 in
       let time, _ =

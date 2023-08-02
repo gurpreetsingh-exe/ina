@@ -22,14 +22,17 @@ and name_binding_kind =
   | Res of res
   | Module of modul
 
+and disambiguator = { mutable stack : int list }
+
 and binding_key = {
   ident : string;
   ns : namespace;
+  disambiguator : int;
 }
 
 and name_binding = { kind : name_binding_kind (* vis : vis *) }
 
-and name_resolution = { binding : name_binding option }
+and name_resolution = { binding : name_binding }
 
 and resolutions = (binding_key, name_resolution) Hashtbl.t
 
@@ -38,6 +41,9 @@ module Res = struct
 
   let modul binding : modul =
     match binding.kind with Res _ -> assert false | Module m -> m
+
+  let res binding : res =
+    match binding.kind with Res res -> res | Module _ -> assert false
 end
 
 let rec get_root_path modul =
@@ -54,19 +60,10 @@ let get_name_res (resolutions : resolutions) (key : binding_key) =
 
 let print_binding_key key =
   (* let ns = function Type -> "type" | Value -> "value" in *)
-  sprintf "%s" key.ident
-
-let print_res : res -> string = function
-  | Def (id, kind) ->
-      sprintf "(%s~%s)" (print_def_kind kind) (print_def_id id)
-  | PrimTy ty -> print_prim_ty ty
-  | Local _ -> "local"
-  | Err -> "err"
+  sprintf "%s.%d" key.ident key.disambiguator
 
 let rec print_nameres (res : name_resolution) (depth : int) =
-  match res.binding with
-  | Some name_binding -> print_name_binding name_binding depth
-  | None -> "NONE"
+  print_name_binding res.binding depth
 
 and print_name_binding name_binding depth =
   match name_binding.kind with
@@ -82,21 +79,28 @@ and print_resolutions (res : resolutions) (depth : int) =
   Hashtbl.to_seq res |> Array.of_seq |> Array.map print_pair |> Array.to_list
   |> String.concat "\n"
 
+let print_resolutions res = print_endline (print_resolutions res 0)
+
 let print_scope scope_table =
-  let print_pair ((key, res) : res * name_binding) =
-    sprintf "%s: %s" (print_res key) (print_name_binding res 0)
+  let print_scope' _ =
+    let print_pair (key, res) =
+      sprintf "%s: %s" (print_binding_key key) (print_nameres res 0)
+    in
+    Hashtbl.to_seq scope_table
+    |> Array.of_seq |> Array.map print_pair |> Array.to_list
+    |> String.concat "\n"
   in
-  Hashtbl.to_seq scope_table
-  |> Array.of_seq |> Array.map print_pair |> Array.to_list
-  |> String.concat "\n"
+  print_endline (print_scope' ())
 
 type t = {
   tcx : tcx;
   mutable modd : modd;
   mutable modul : modul option;
   root : modd;
-  scope_table : (res, name_binding) Hashtbl.t;
+  scope_table : (binding_key, name_resolution) Hashtbl.t;
   mutable is_root : bool;
+  disambiguator : disambiguator;
+  mutable key : binding_key;
 }
 
 let create tcx modd =
@@ -107,14 +111,42 @@ let create tcx modd =
     root = modd;
     scope_table = Hashtbl.create 0;
     is_root = true;
+    disambiguator = { stack = [0] };
+    key = { ident = ""; ns = Value; disambiguator = 0 };
   }
+
+module Disambiguator = struct
+  let create disambiguator = List.hd disambiguator.stack
+
+  let inc disambiguator =
+    disambiguator.stack <-
+      (match disambiguator.stack with
+      | dg :: rest -> [dg + 1] @ rest
+      | [] -> [0])
+
+  let dec disambiguator =
+    disambiguator.stack <-
+      (match disambiguator.stack with
+      | dg :: rest -> [dg - 1] @ rest
+      | [] -> [0])
+
+  let push disambiguator = disambiguator.stack <- [0] @ disambiguator.stack
+
+  let pop disambiguator =
+    disambiguator.stack <-
+      (match disambiguator.stack with _ :: rest -> rest | [] -> [0])
+end
+
+let key resolver =
+  let key = resolver.key in
+  { key with disambiguator = Disambiguator.create resolver.disambiguator }
 
 let add_scope_res resolver res binding =
   Hashtbl.replace resolver.scope_table res binding
 
 let find_scope_res resolver key =
   let binding = Hashtbl.find resolver.scope_table key in
-  Res.modul binding
+  Res.modul binding.binding
 
 let rec mod_exists resolver name =
   let f path =
@@ -172,46 +204,64 @@ let struct_ty (strukt : strukt) =
   Struct
     (strukt.ident, List.map (fun (ty, field) -> (field, ty)) strukt.members)
 
-let rec resolve resolver : resolutions =
+let rec resolve resolver : modul =
   let resolutions = Hashtbl.create 0 in
   let id = { inner = resolver.modd.mod_id } in
   let mkind = Def (Mod, id, resolver.modd.mod_name) in
   let modul = { mkind; parent = resolver.modul; resolutions } in
-  let rec visit_expr expr resolutions =
+  let rec visit_expr (expr : expr) (key : binding_key) (modul : modul) =
     match expr.expr_kind with
     | Binary (_, left, right) ->
-        visit_expr left resolutions;
-        visit_expr right resolutions
-    | Block block -> visit_block block resolutions
+        visit_expr left key modul;
+        visit_expr right key modul
+    | Block block ->
+        let key =
+          {
+            key with
+            disambiguator = Disambiguator.create resolver.disambiguator;
+          }
+        in
+        Disambiguator.inc resolver.disambiguator;
+        let m = visit_block block key (Some modul) in
+        let binding = { binding = { kind = Module m } } in
+        add_name_res modul.resolutions key binding
     | If { cond; then_block; else_block } -> (
-        visit_expr cond resolutions;
-        visit_block then_block resolutions;
+        visit_expr cond key modul;
+        let key =
+          {
+            key with
+            disambiguator = Disambiguator.create resolver.disambiguator;
+          }
+        in
+        Disambiguator.inc resolver.disambiguator;
+        let m = visit_block then_block key (Some modul) in
+        let binding = { binding = { kind = Module m } } in
+        add_name_res modul.resolutions key binding;
         match else_block with
-        | Some expr -> visit_expr expr resolutions
+        | Some expr -> visit_expr expr key modul
         | None -> ())
-    | Call (_, args) -> List.iter (fun e -> visit_expr e resolutions) args
+    | Call (_, args) -> List.iter (fun e -> visit_expr e key modul) args
     | Field (expr, _) | Cast (expr, _) | Ref expr | Deref expr ->
-        visit_expr expr resolutions
+        visit_expr expr key modul
     | StructExpr { fields; _ } ->
-        List.iter (fun (_, e) -> visit_expr e resolutions) fields
+        List.iter (fun (_, e) -> visit_expr e key modul) fields
     | Lit _ | Path _ -> ()
-  and visit_block block resolutions =
+  and visit_block (block : block) (key : binding_key) (parent : modul option)
+      : modul =
+    Disambiguator.push resolver.disambiguator;
+    let modul = { mkind = Block; parent; resolutions = Hashtbl.create 0 } in
     let visit_stmt stmt =
       match stmt with
-      | Binding { binding_pat; binding_id; _ } -> (
-          binding_pat
-          |> function
-          | PatIdent ident ->
-              let key = { ident; ns = Value } in
-              let binding =
-                { binding = Some { kind = Res (Local binding_id) } }
-              in
-              add_name_res resolutions key binding)
-      | Stmt e | Expr e | Assert (e, _) -> visit_expr e resolutions
-      | Assign (e1, e2) ->
-          visit_expr e1 resolutions; visit_expr e2 resolutions
+      | Binding { binding_expr; _ } -> visit_expr binding_expr key modul
+      | Stmt e | Expr e | Assert (e, _) -> visit_expr e key modul
+      | Assign (e1, e2) -> visit_expr e1 key modul; visit_expr e2 key modul
     in
-    List.iter visit_stmt block.block_stmts
+    List.iter visit_stmt block.block_stmts;
+    (match block.last_expr with
+    | Some expr -> visit_expr expr key modul
+    | None -> ());
+    Disambiguator.pop resolver.disambiguator;
+    modul
   in
   let visit_item (item : item) =
     match item with
@@ -238,11 +288,19 @@ let rec resolve resolver : resolutions =
             let resolver =
               { resolver with modd; modul = Some modul; is_root = false }
             in
-            let res = resolve resolver in
-            let key = { ident = modd.mod_name; ns = Type } in
+            let modul' = resolve resolver in
+            let key =
+              { ident = modd.mod_name; ns = Type; disambiguator = 0 }
+            in
             let mkind = Def (Mod, { inner = modd.mod_id }, modd.mod_name) in
-            let modul = { mkind; parent = Some modul; resolutions = res } in
-            let binding = { binding = Some { kind = Module modul } } in
+            let modul =
+              {
+                mkind;
+                parent = Some modul;
+                resolutions = modul'.resolutions;
+              }
+            in
+            let binding = { binding = { kind = Module modul } } in
             add_name_res resolutions key binding;
             m.resolved_mod <- Some modd
         | None -> ())
@@ -254,24 +312,14 @@ let rec resolve resolver : resolutions =
         let path = { segments; res } in
         func.func_path <- Some path;
         create_def resolver.tcx id (Ty (fn_ty func)) path;
-        let key = { ident = name; ns = Value } in
-        let binding = { binding = Some { kind = Res res } } in
+        let key = { ident = name; ns = Value; disambiguator = 0 } in
+        let binding = { binding = { kind = Res res } } in
         add_name_res resolutions key binding;
-        let resolutions = Hashtbl.create 0 in
-        List.iter
-          (fun (_, name, id) ->
-            let key = { ident = name; ns = Value } in
-            let binding = { binding = Some { kind = Res (Local id) } } in
-            add_name_res resolutions key binding)
-          func.fn_sig.args;
         match func.body with
         | Some block ->
-            visit_block block resolutions;
-            let modul =
-              { mkind = Block; parent = Some modul; resolutions }
-            in
-            let binding = { kind = Module modul } in
-            add_scope_res resolver res binding
+            let m = visit_block block key (Some modul) in
+            let binding = { binding = { kind = Module m } } in
+            add_scope_res resolver key binding
         | None -> ())
     | Type (Struct s) ->
         let name = s.ident in
@@ -280,11 +328,11 @@ let rec resolve resolver : resolutions =
         let res : res = Def (id, Struct) in
         let path = { segments; res } in
         create_def resolver.tcx id (Ty (struct_ty s)) path;
-        let key = { ident = name; ns = Type } in
-        let binding = { binding = Some { kind = Res res } } in
+        let key = { ident = name; ns = Type; disambiguator = 0 } in
+        let binding = { binding = { kind = Res res } } in
         add_name_res resolutions key binding
     | Foreign _ -> ()
     | Const _ | Import _ -> ()
   in
   List.iter visit_item resolver.modd.items;
-  resolutions
+  modul
