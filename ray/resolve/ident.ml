@@ -3,19 +3,31 @@ open Ast
 open Resolver
 open Ty
 
+let rec get_root_mod modul =
+  match modul.mkind with
+  | Def (kind, id, _) -> Def (id, kind)
+  | Block -> (
+    match modul.parent with Some m -> get_root_mod m | _ -> assert false)
+
 let rec resolve_path resolver (modul : modul) (path : path) : res =
   let rec resolve_path' segs modul : res =
     let ident = List.hd segs
     and ns = if List.length segs = 1 then Value else Type in
     let key = { ident; ns; disambiguator = 0 } in
-    (* TODO: handle recursive paths *)
     match get_name_res modul.resolutions key with
     | Some res -> (
       match res.binding.kind with
       | Res res -> res
       | Module modul' -> (
         match segs with
-        | [_] -> Err
+        | [_] -> (
+            let res = get_root_mod modul in
+            match res with
+            | Def (id, kind) ->
+                assert (kind = Mod);
+                let modul = Hashtbl.find resolver.mod_table id in
+                resolve_path' segs modul
+            | _ -> assert false)
         | _ -> resolve_path' (List.tl segs) modul'))
     | None -> (
       match modul.parent with
@@ -70,8 +82,8 @@ let rec resolve_paths (resolver : Resolver.t) (modul : modul) (modd : modd) :
             binding_pat
             |> function
             | PatIdent ident ->
-                visit_expr expr modul;
                 let key = { ident; ns = Value; disambiguator = 0 } in
+                visit_expr expr modul;
                 let binding =
                   { binding = { kind = Res (Local binding_id) } }
                 in

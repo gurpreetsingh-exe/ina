@@ -96,8 +96,8 @@ type t = {
   tcx : tcx;
   mutable modd : modd;
   mutable modul : modul option;
-  root : modd;
   scope_table : (binding_key, name_resolution) Hashtbl.t;
+  mod_table : (def_id, modul) Hashtbl.t;
   mutable is_root : bool;
   disambiguator : disambiguator;
   mutable key : binding_key;
@@ -108,12 +108,14 @@ let create tcx modd =
     tcx;
     modd;
     modul = None;
-    root = modd;
     scope_table = Hashtbl.create 0;
+    mod_table = Hashtbl.create 0;
     is_root = true;
     disambiguator = { stack = [0] };
     key = { ident = ""; ns = Value; disambiguator = 0 };
   }
+
+let add_mod resolver id modul = Hashtbl.replace resolver.mod_table id modul
 
 module Disambiguator = struct
   let create disambiguator = List.hd disambiguator.stack
@@ -209,6 +211,7 @@ let rec resolve resolver : modul =
   let id = { inner = resolver.modd.mod_id } in
   let mkind = Def (Mod, id, resolver.modd.mod_name) in
   let modul = { mkind; parent = resolver.modul; resolutions } in
+  add_mod resolver id modul;
   let rec visit_expr (expr : expr) (key : binding_key) (modul : modul) =
     match expr.expr_kind with
     | Binary (_, left, right) ->
@@ -292,7 +295,8 @@ let rec resolve resolver : modul =
             let key =
               { ident = modd.mod_name; ns = Type; disambiguator = 0 }
             in
-            let mkind = Def (Mod, { inner = modd.mod_id }, modd.mod_name) in
+            let id = { inner = modd.mod_id } in
+            let mkind = Def (Mod, id, modd.mod_name) in
             let modul =
               {
                 mkind;
