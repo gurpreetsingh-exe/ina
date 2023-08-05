@@ -33,9 +33,13 @@ let rec lower_fn (fn : func) (ctx : Context.t) (mangle_name : bool) : Func.t
     Func.
       {
         name;
-        args = List.map (fun (ty, name, _) -> (ty, name)) args;
+        args =
+          List.map (fun (ty, name, _) -> (unwrap_ty ctx.tcx ty, name)) args;
         params =
-          List.mapi (fun i (ty, name, _) -> Inst.Param (ty, name, i)) args;
+          List.mapi
+            (fun i (ty, name, _) ->
+              Inst.Param (unwrap_ty ctx.tcx ty, name, i))
+            args;
         ret_ty;
         is_variadic;
         abi;
@@ -57,7 +61,7 @@ and lower_fn_body body ctx =
   entry.is_entry <- true;
   Context.block_append ctx entry;
   let ret = Expr.lower_block body ctx in
-  let builder = Builder.create (Option.get ctx.block) in
+  let builder = Builder.create ctx.tcx (Option.get ctx.block) in
   match ret with
   | VReg (inst, _, _) -> (
     match inst.kind with

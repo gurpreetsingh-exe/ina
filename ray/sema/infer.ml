@@ -227,8 +227,8 @@ let find_value infer_ctx path : ty option =
   match path.res with
   | Def (id, kind) -> (
     match kind with
-    | Fn -> Some (lookup_def infer_ctx.tcx id |> function Ty ty -> ty)
-    (* TODO: (error) mod and struct cannot be assigned to variables *)
+    | Fn | Struct ->
+        Some (lookup_def infer_ctx.tcx id |> function Ty ty -> ty)
     | _ -> assert false)
   | Local id -> (
     match find_ty infer_ctx.ty_env id with
@@ -263,6 +263,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
         let name = render_path path in
         let f func =
           let check (expr : expr) (expected : ty) =
+            let expected = unwrap_ty infer_ctx.tcx expected in
             let ty = infer infer_ctx expr in
             match unify infer_ctx ty expected with
             | Some err -> infer_err_emit infer_ctx.emitter err expr.expr_span
@@ -368,13 +369,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
         ty
     | Ref expr -> RefTy (infer infer_ctx expr)
   in
-  let ty =
-    match ty with
-    | Ident path ->
-        let maybe_ty = find_value infer_ctx path in
-        Option.get maybe_ty
-    | _ -> ty
-  in
+  let ty = unwrap_ty infer_ctx.tcx ty in
   (match ty with
   | Infer (IntVar _ | FloatVar _) -> expr.expr_ty <- Some ty
   | ty -> expr.expr_ty <- Some ty);

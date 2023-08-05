@@ -24,7 +24,7 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
           Builder.br left (Label join_bb) (Label right_bb) builder
         else Builder.br left (Label right_bb) (Label join_bb) builder;
         Context.block_append ctx right_bb;
-        let right_builder = Builder.create right_bb in
+        let right_builder = Builder.create ctx.tcx right_bb in
         let right = lower right right_builder ctx in
         let right_bb = Option.get ctx.block in
         Builder.jmp (Label join_bb) right_builder;
@@ -139,7 +139,9 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
               (fun i (field, _) -> if name = field then index := i)
               tys;
             (!index, ty)
-        | _ -> assert false
+        | _ ->
+            print_endline (render_ty ty);
+            assert false
       in
       let ptr = Builder.gep ty ptr index builder in
       Builder.load ptr builder
@@ -165,7 +167,7 @@ and lower_lvalue (expr : expr) (builder : Builder.t) (ctx : Context.t) :
       let sty = Inst.get_ty ptr in
       let index, ty =
         match sty with
-        | Ptr (Struct (_, tys) as ty) ->
+        | Ptr (Struct (_, tys) as ty) | RefTy (Struct (_, tys) as ty) ->
             let index = ref (-1) in
             List.iteri
               (fun i (field, _) -> if name = field then index := i)
@@ -183,7 +185,7 @@ and lower_block (block : block) (ctx : Context.t) : Inst.value =
   let tmp = ctx.env in
   ctx.env <- { parent = Some tmp; locals = Hashtbl.create 0 };
   let bb = Option.get ctx.block in
-  let builder = Builder.create bb in
+  let builder = Builder.create ctx.tcx bb in
   if bb.is_entry then (
     let fn = Option.get ctx.fn in
     match fn with
@@ -225,10 +227,10 @@ and lower_block (block : block) (ctx : Context.t) : Inst.value =
         let join_bb = Basicblock.create () in
         Builder.br cond (Label true_bb) (Label false_bb) builder;
         Context.block_append ctx true_bb;
-        let true_builder = Builder.create true_bb in
+        let true_builder = Builder.create ctx.tcx true_bb in
         Builder.jmp (Label join_bb) true_builder;
         Context.block_append ctx false_bb;
-        let false_builder = Builder.create false_bb in
+        let false_builder = Builder.create ctx.tcx false_bb in
         let loc = Token.display_span expr.expr_span in
         let msg =
           match string with

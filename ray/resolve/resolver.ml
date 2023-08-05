@@ -205,9 +205,9 @@ let fn_ty func =
   let ret_ty = Option.value ret_ty ~default:Unit in
   FnTy (List.map (fun (ty, _, _) -> ty) args, ret_ty, is_variadic)
 
-let struct_ty (strukt : strukt) =
-  Struct
-    (strukt.ident, List.map (fun (ty, field) -> (field, ty)) strukt.members)
+let struct_ty (strukt : strukt) path =
+  let name = render_path path in
+  Struct (name, List.map (fun (ty, field) -> (field, ty)) strukt.members)
 
 let rec resolve resolver : modul =
   let id = { inner = resolver.modd.mod_id } in
@@ -322,7 +322,7 @@ let rec resolve resolver : modul =
         let res : res = Def (id, Fn) in
         let path = { segments; res } in
         func.func_path <- Some path;
-        create_def resolver.tcx id (Ty (fn_ty func)) path;
+        create_def resolver.tcx id (Ty (fn_ty func)) (Some path);
         let key = { ident = name; ns = Value; disambiguator = 0 } in
         let binding = { binding = { kind = Res res } } in
         add_name_res modul.resolutions key binding;
@@ -338,7 +338,7 @@ let rec resolve resolver : modul =
         let segments = get_root_path modul @ [name] in
         let res : res = Def (id, Struct) in
         let path = { segments; res } in
-        create_def resolver.tcx id (Ty (struct_ty s)) path;
+        create_def resolver.tcx id (Ty (struct_ty s path)) (Some path);
         let key = { ident = name; ns = Type; disambiguator = 0 } in
         let binding = { binding = { kind = Res res } } in
         add_name_res modul.resolutions key binding

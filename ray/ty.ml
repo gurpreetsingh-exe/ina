@@ -177,7 +177,7 @@ let rec render_ty ?(dbg = true) (ty : ty) : string =
         (if is_variadic then ", ..." else "")
         (render_ty ret_ty)
   | Struct (s, _) -> s
-  | Ident path -> render_path path
+  | Ident path -> "IDENT:" ^ render_path path
   | Infer ty -> render_infer_ty ty dbg
 
 type def_data = Ty of ty
@@ -317,7 +317,9 @@ let tcx_gen_id tcx =
 
 let create_def tcx id def_data path =
   create_def tcx.def_table id def_data;
-  create_sym tcx.sym_table id path
+  match path with
+  | Some path -> create_sym tcx.sym_table id path
+  | None -> ()
 
 let lookup_def tcx id = lookup_def tcx.def_table id
 
@@ -332,3 +334,22 @@ let lookup_sym tcx res : string =
   match res with
   | Def (id, _) -> lookup_sym tcx.sym_table id
   | _ -> assert false
+
+let rec unwrap_ty tcx ty : ty =
+  match ty with
+  | Ident path -> (
+    match path.res with
+    | Def (id, _) -> ( lookup_def tcx id |> function Ty ty -> ty)
+    | PrimTy ty -> prim_ty_to_ty ty
+    | res ->
+        print_endline (print_res res);
+        assert false)
+  | RefTy ty -> RefTy (unwrap_ty tcx ty)
+  | Ptr ty -> Ptr (unwrap_ty tcx ty)
+  | Int _ | Float _ | Bool | Str | Unit -> ty
+  | Struct (name, fields) ->
+      Struct (name, List.map (fun (f, ty) -> (f, unwrap_ty tcx ty)) fields)
+  | FnTy (args, ty, is_var) ->
+      FnTy
+        (List.map (fun ty -> unwrap_ty tcx ty) args, unwrap_ty tcx ty, is_var)
+  | Infer _ -> ty

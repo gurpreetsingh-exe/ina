@@ -10,7 +10,10 @@ type env = { bindings : (node_id, ty) Hashtbl.t }
 
 let env_create _ : env = { bindings = Hashtbl.create 0 }
 
-type ty_ctx = { emitter : Emitter.t }
+type ty_ctx = {
+  tcx : tcx;
+  emitter : Emitter.t;
+}
 
 type ty_err =
   | MismatchTy of ty * ty
@@ -128,7 +131,8 @@ let ty_err_emit emitter ty_err span =
   | InvalidBinaryExpression (kind, left, right) ->
       Emitter.emit emitter (invalid_binary_expr kind left right span)
 
-let ty_ctx_create (infer_ctx : infer_ctx) = { emitter = infer_ctx.emitter }
+let ty_ctx_create (infer_ctx : infer_ctx) =
+  { tcx = infer_ctx.tcx; emitter = infer_ctx.emitter }
 
 let tychk_func (ty_ctx : ty_ctx) (func : func) =
   let { fn_sig = { ret_ty; fn_span; _ }; body; _ } = func in

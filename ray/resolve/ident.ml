@@ -57,7 +57,19 @@ let resolve_path resolver (modul : modul) (path : path) ns : res =
 
 let rec resolve_paths (resolver : Resolver.t) (modul : modul) (modd : modd) :
     unit =
-  let resolve_ty _ty = () in
+  let rec resolve_ty ty =
+    match ty with
+    | Struct (_, fields) -> List.iter (fun (_, ty) -> resolve_ty ty) fields
+    | FnTy (args, ty, _) ->
+        List.iter (fun ty -> resolve_ty ty) args;
+        resolve_ty ty
+    | Ident path -> path.res <- resolve_path resolver modul path (Some Type)
+    | RefTy ty | Ptr ty -> resolve_ty ty
+    | Int _ | Float _ | Bool | Str | Unit -> ()
+    | _ ->
+        print_endline (render_ty ty);
+        assert false
+  in
   let rec visit_expr expr (modul : modul) =
     match expr.expr_kind with
     | Call (path, exprs) ->
@@ -84,9 +96,11 @@ let rec resolve_paths (resolver : Resolver.t) (modul : modul) (modd : modd) :
         let modul = Res.modul nb.binding in
         visit_block block modul
     | Lit _ -> ()
-    | _ ->
-        print_endline (Front.Fmt.render_expr expr 0);
-        assert false
+    | StructExpr { struct_name; fields } ->
+        struct_name.res <- resolve_path resolver modul struct_name None;
+        List.iter (fun (_, expr) -> visit_expr expr modul) fields
+    | Field (expr, _) -> visit_expr expr modul
+    | Cast (expr, ty) -> visit_expr expr modul; resolve_ty ty
   and visit_block body (modul : modul) =
     Disambiguator.push resolver.disambiguator;
     List.iter
@@ -139,9 +153,13 @@ let rec resolve_paths (resolver : Resolver.t) (modul : modul) (modd : modd) :
             let binding = { binding = { kind = Res (Local id) } } in
             add_name_res m.resolutions key binding)
           func.fn_sig.args;
+        let id = { inner = func.func_id } in
+        (lookup_def resolver.tcx id |> function Ty ty -> resolve_ty ty);
         List.iter (fun (ty, _, _) -> resolve_ty ty) func.fn_sig.args;
         match func.body with Some body -> visit_block body m | None -> ())
-    | Type (Struct _) -> ()
+    | Type (Struct s) -> (
+        let id = { inner = s.struct_id } in
+        lookup_def resolver.tcx id |> function Ty ty -> resolve_ty ty)
     | Foreign _ -> ()
     | Const _ | Import _ -> ()
   in
