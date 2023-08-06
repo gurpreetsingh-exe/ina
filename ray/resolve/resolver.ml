@@ -282,6 +282,37 @@ let rec resolve resolver : modul =
     Disambiguator.pop resolver.disambiguator;
     modul
   in
+  let visit_fn func modul =
+    let name = func.fn_sig.name in
+    let segments =
+      if func.is_extern then [name] else get_root_path modul @ [name]
+    in
+    let mangled_name =
+      if func.is_extern then name
+      else
+        "_Z"
+        ^ String.concat ""
+            (List.map
+               (fun seg -> string_of_int (String.length seg) ^ seg)
+               segments)
+    in
+    let id = { inner = func.func_id } in
+    let res : res =
+      Def (id, if func.abi = "intrinsic" then Intrinsic else Fn)
+    in
+    let path = { segments; res } in
+    func.func_path <- Some path;
+    create_def resolver.tcx id (Ty (fn_ty func)) (Some mangled_name);
+    let key = { ident = name; ns = Value; disambiguator = 0 } in
+    let binding = { binding = { kind = Res res } } in
+    add_name_res modul.resolutions key binding;
+    match func.body with
+    | Some block ->
+        let m = visit_block block key (Some modul) in
+        let binding = { binding = { kind = Module m } } in
+        add_scope_res modul.scope_table key binding
+    | None -> ()
+  in
   let visit_item (item : item) =
     match item with
     | Mod m -> (
@@ -315,34 +346,18 @@ let rec resolve resolver : modul =
             add_name_res modul.resolutions key binding;
             m.resolved_mod <- Some modd
         | None -> ())
-    | Fn (func, _) -> (
-        let name = func.fn_sig.name in
-        let segments = get_root_path modul @ [name] in
-        let id = { inner = func.func_id } in
-        let res : res = Def (id, Fn) in
-        let path = { segments; res } in
-        func.func_path <- Some path;
-        create_def resolver.tcx id (Ty (fn_ty func)) (Some path);
-        let key = { ident = name; ns = Value; disambiguator = 0 } in
-        let binding = { binding = { kind = Res res } } in
-        add_name_res modul.resolutions key binding;
-        match func.body with
-        | Some block ->
-            let m = visit_block block key (Some modul) in
-            let binding = { binding = { kind = Module m } } in
-            add_scope_res modul.scope_table key binding
-        | None -> ())
+    | Fn (func, _) -> visit_fn func modul
     | Type (Struct s) ->
         let name = s.ident in
         let id = { inner = s.struct_id } in
         let segments = get_root_path modul @ [name] in
         let res : res = Def (id, Struct) in
         let path = { segments; res } in
-        create_def resolver.tcx id (Ty (struct_ty s path)) (Some path);
+        create_def resolver.tcx id (Ty (struct_ty s path)) None;
         let key = { ident = name; ns = Type; disambiguator = 0 } in
         let binding = { binding = { kind = Res res } } in
         add_name_res modul.resolutions key binding
-    | Foreign _ -> ()
+    | Foreign funcs -> List.iter (fun f -> visit_fn f modul) funcs
     | Const _ | Import _ -> ()
   in
   List.iter visit_item resolver.modd.items;

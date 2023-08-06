@@ -67,6 +67,9 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
         match kind with
         | Fn -> Global (lookup_sym ctx.tcx path.res)
         (* TODO: (error) mod and struct cannot be assigned to variables *)
+        | Intrinsic ->
+            print_endline "intrinsic can only be used in `Call`";
+            assert false
         | Mod | Struct -> assert false)
       | Local _ | PrimTy _ -> f ()
       | Err -> assert false)
@@ -110,12 +113,22 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
   | Call (path, args) -> (
       let name = render_path path in
       let args = List.map (fun e -> lower e builder ctx) args in
-      match expect_def ctx.tcx path.res Fn with
-      | Some ty ->
-          Builder.call ty (Global (lookup_sym ctx.tcx path.res)) args builder
-      | None ->
+      match path.res with
+      | Def (_, kind) -> (
+        match kind with
+        | Fn ->
+            let ty = Option.get (expect_def ctx.tcx path.res Fn) in
+            Builder.call ty
+              (Global (lookup_sym ctx.tcx path.res))
+              args builder
+        | Intrinsic ->
+            let ty = Option.get (expect_def ctx.tcx path.res Intrinsic) in
+            Builder.intrinsic ty (lookup_sym ctx.tcx path.res) args builder
+        | Mod | Struct -> assert false)
+      | Local _ ->
           let ptr, ty = load (Context.find_local ctx.env name) builder in
-          Builder.call ty ptr args builder)
+          Builder.call ty ptr args builder
+      | Err | PrimTy _ -> assert false)
   | Block block -> lower_block block ctx
   | Deref expr -> Builder.load (lower expr builder ctx) builder
   | Ref expr -> lower_lvalue expr builder ctx

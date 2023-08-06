@@ -108,6 +108,7 @@ and def_kind =
   | Struct
   (* Value namespace *)
   | Fn
+  | Intrinsic
 
 and res =
   | Def of (def_id * def_kind)
@@ -143,6 +144,7 @@ let print_def_kind = function
   | Mod -> "mod"
   | Struct -> "struct"
   | Fn -> "fn"
+  | Intrinsic -> "intrinsic"
 
 let print_prim_ty : prim_ty -> string = function
   | Int _ -> "int"
@@ -281,14 +283,7 @@ let print_def_table def_table =
 
 type sym_table = (def_id, string) Hashtbl.t
 
-let mangle path =
-  "_Z"
-  ^ String.concat ""
-      (List.map
-         (fun seg -> string_of_int (String.length seg) ^ seg)
-         path.segments)
-
-let create_sym sym_table id path = Hashtbl.replace sym_table id (mangle path)
+let create_sym sym_table id name = Hashtbl.replace sym_table id name
 
 let lookup_sym sym_table id =
   if Hashtbl.mem sym_table id then Hashtbl.find sym_table id
@@ -315,10 +310,10 @@ let tcx_gen_id tcx =
   tcx.uuid <- tcx.uuid + 1;
   tcx.uuid
 
-let create_def tcx id def_data path =
+let create_def tcx id def_data name =
   create_def tcx.def_table id def_data;
-  match path with
-  | Some path -> create_sym tcx.sym_table id path
+  match name with
+  | Some name -> create_sym tcx.sym_table id name
   | None -> ()
 
 let lookup_def tcx id = lookup_def tcx.def_table id

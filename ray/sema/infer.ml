@@ -227,7 +227,7 @@ let find_value infer_ctx path : ty option =
   match path.res with
   | Def (id, kind) -> (
     match kind with
-    | Fn | Struct ->
+    | Fn | Struct | Intrinsic ->
         Some (lookup_def infer_ctx.tcx id |> function Ty ty -> ty)
     | _ -> assert false)
   | Local id -> (
