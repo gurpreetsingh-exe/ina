@@ -160,7 +160,6 @@ let rec resolve_paths (resolver : Resolver.t) (modul : modul) (modd : modd) :
     | Type (Struct s) -> (
         let id = { inner = s.struct_id } in
         lookup_def resolver.tcx id |> function Ty ty -> resolve_ty ty)
-    | Foreign _ -> ()
-    | Const _ | Import _ -> ()
+    | Lib _ | Foreign _ | Const _ | Import _ -> ()
   in
   List.iter visit_item modd.items

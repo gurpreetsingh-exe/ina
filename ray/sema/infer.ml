@@ -496,8 +496,7 @@ let rec infer_begin infer_ctx (modd : modd) =
   let f (item : item) =
     match item with
     | Fn (func, _) -> infer_func infer_ctx func
-    | Type _ -> ()
-    | Import _ -> ()
+    | Type _ | Import _ | Lib _ -> ()
     | Mod { resolved_mod; _ } ->
         let modd = Option.get resolved_mod in
         let infer_ctx2 =

@@ -97,7 +97,6 @@ let rec lower_ast (ctx : Context.t) : Module.t =
             | _ -> ())
           attrs;
         items := !items @ [lower_fn func ctx !mangle]
-    | Type _ -> ()
     | Foreign funcs ->
         items := !items @ List.map (fun f -> lower_fn f ctx false) funcs
     | Import path -> (
@@ -114,7 +113,7 @@ let rec lower_ast (ctx : Context.t) : Module.t =
         ctx.modd <- modd;
         items := !items @ (lower_ast ctx).items;
         ctx.modd <- tmp
-    | _ -> assert false
+    | Const _ | Type _ | Lib _ -> ()
   in
   List.iter f ctx.modd.items;
   gen_id !items;

@@ -174,13 +174,16 @@ let gen_function_type (fn_ty : Func.fn_type) : lltype =
   (if fn_ty.is_variadic then var_arg_function_type else function_type)
     ret_ty (Array.of_list args)
 
-let gen_main ll_mod name =
-  let main = Option.get codegen_ctx.main in
-  let main_ty = function_type codegen_ctx.tcx.i32 [||] in
-  let fn = define_function "main" main_ty ll_mod in
-  let builder = builder_at_end codegen_ctx.llctx (entry_block fn) in
-  let ret = build_call main_ty main [||] "" builder in
-  ignore (build_ret ret builder)
+let gen_main (sess : Sess.t) ll_mod name =
+  match sess.options.output_type with
+  | Lib -> ()
+  | _ ->
+      let main = Option.get codegen_ctx.main in
+      let main_ty = function_type codegen_ctx.tcx.i32 [||] in
+      let fn = define_function "main" main_ty ll_mod in
+      let builder = builder_at_end codegen_ctx.llctx (entry_block fn) in
+      let ret = build_call main_ty main [||] "" builder in
+      ignore (build_ret ret builder)
 
 let gen_blocks (blocks : Func.blocks) =
   let fn = Option.get codegen_ctx.curr_fn in
@@ -382,7 +385,7 @@ let gen_module (ctx : Sess.t) (modd : Module.t) : llmodule =
   codegen_ctx.curr_mod <- Some ll_mod;
   set_target_triple (Target.default_triple ()) ll_mod;
   ignore (List.map (fun item -> gen_item item ll_mod) modd.items);
-  gen_main ll_mod ctx.options.input;
+  gen_main ctx ll_mod ctx.options.input;
   let modd =
     match verify_module ll_mod with
     | Some reason ->
@@ -400,6 +403,10 @@ let emit (modd : llmodule) (ctx : Sess.t) =
   | LlvmIr ->
       let ic = open_out (ctx.options.output ^ ".ll") in
       output_string ic (string_of_llmodule modd)
+  | Lib ->
+      let objfile = "lib" ^ ctx.options.output ^ ".o" in
+      TargetMachine.emit_to_file modd CodeGenFileType.ObjectFile objfile
+        codegen_ctx.machine
   | Object ->
       let objfile = ctx.options.output ^ ".o" in
       TargetMachine.emit_to_file modd CodeGenFileType.ObjectFile objfile
