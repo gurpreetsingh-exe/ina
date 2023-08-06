@@ -1,4 +1,6 @@
 open Printf
+open Llvm
+open Llvm_target
 open Session
 
 type int_ty =
@@ -289,18 +291,66 @@ let lookup_sym sym_table id =
   if Hashtbl.mem sym_table id then Hashtbl.find sym_table id
   else assert false
 
+module Module = struct
+  type t = {
+    inner : llmodule;
+    llcx : llcontext;
+  }
+
+  let create (sess : Sess.t) =
+    let llcx = global_context () in
+    let inner = create_module llcx sess.options.input in
+    set_target_triple sess.target.triple inner;
+    { inner; llcx }
+end
+
 type tcx = {
   sess : Sess.t;
+  out_mod : Module.t;
   tys : common_types;
+  lltys : llvm_types;
   def_table : def_table;
   sym_table : sym_table;
   mutable uuid : int;
 }
 
+and llvm_types = {
+  i8 : lltype;
+  i16 : lltype;
+  i32 : lltype;
+  i64 : lltype;
+  f32 : lltype;
+  f64 : lltype;
+  bool : lltype;
+  ptr : lltype;
+  size_type : lltype;
+  void : lltype;
+  structs : (string, lltype) Hashtbl.t;
+}
+
+let backend_types (target : Sess.target) (out_mod : Module.t) =
+  let ctx = out_mod.llcx in
+  {
+    i8 = i8_type ctx;
+    i16 = i16_type ctx;
+    i32 = i32_type ctx;
+    i64 = i64_type ctx;
+    f32 = float_type ctx;
+    f64 = double_type ctx;
+    bool = i1_type ctx;
+    ptr = pointer_type ctx;
+    size_type = DataLayout.intptr_type ctx target.data_layout;
+    void = void_type ctx;
+    structs = Hashtbl.create 0;
+  }
+
 let tcx_create sess =
+  let out_mod = Module.create sess in
   {
     sess;
+    out_mod;
     tys = common_types ();
+    lltys = backend_types sess.target out_mod;
     def_table = { table = Hashtbl.create 0 };
     sym_table = Hashtbl.create 0;
     uuid = 0;
@@ -348,3 +398,32 @@ let rec unwrap_ty tcx ty : ty =
       FnTy
         (List.map (fun ty -> unwrap_ty tcx ty) args, unwrap_ty tcx ty, is_var)
   | Infer _ -> ty
+
+let rec get_backend_type tcx' (ty : ty) : lltype =
+  let ctx = tcx'.out_mod.llcx in
+  let tcx = tcx'.lltys in
+  match ty with
+  | Float ty -> ( match ty with F32 -> tcx.f32 | F64 -> tcx.f64)
+  | Bool -> tcx.bool
+  | Str -> struct_type ctx [|pointer_type ctx; tcx.size_type|]
+  | Int ty -> (
+    match ty with
+    | Isize | Usize -> tcx.size_type
+    | I64 | U64 -> tcx.i64
+    | I32 | U32 -> tcx.i32
+    | I16 | U16 -> tcx.i16
+    | I8 | U8 -> tcx.i8)
+  | Ptr _ | RefTy _ | FnTy _ -> tcx.ptr
+  | Struct (name, tys) ->
+      if Hashtbl.mem tcx.structs name then Hashtbl.find tcx.structs name
+      else (
+        let ty = named_struct_type ctx name in
+        struct_set_body ty
+          (Array.of_list
+             (List.map (fun (_, ty) -> get_backend_type tcx' ty) tys))
+          false;
+        Hashtbl.add tcx.structs name ty;
+        ty)
+  | Unit -> tcx.void
+  | Ident path -> Hashtbl.find tcx.structs (render_path path)
+  | Infer _ -> assert false

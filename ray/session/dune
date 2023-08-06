@@ -1,3 +1,4 @@
 (library
  (name session)
- (modules args sess config))
+ (modules args sess config)
+ (libraries llvm.target))

@@ -1,3 +1,5 @@
+open Llvm_target
+
 type timings = {
   mutable parse : float;
   mutable resolve : float;
@@ -18,12 +20,39 @@ let display timings =
     timings.parse timings.resolve timings.sema timings.lowering timings.llvm
     timings.gen_and_link
 
+type target = {
+  lltarget : Target.t;
+  triple : string;
+  ptr_size : int;
+  data_layout : DataLayout.t;
+}
+
+let target _ =
+  let triple = Target.default_triple () in
+  let lltarget = Target.by_triple triple in
+  let machine =
+    TargetMachine.create ~triple ?cpu:(Some "generic") ?features:None
+      ?level:(Some CodeGenOptLevel.Default) ?reloc_mode:(Some RelocMode.PIC)
+      ?code_model:(Some CodeModel.Default) lltarget
+  in
+  let data_layout = TargetMachine.data_layout machine in
+  ( {
+      lltarget;
+      triple;
+      ptr_size = DataLayout.pointer_size data_layout;
+      data_layout;
+    },
+    machine )
+
 type t = {
   options : Config.t;
   timings : timings;
+  target : target;
+  machine : TargetMachine.t;
 }
 
 let create options =
+  let target, machine = target () in
   {
     options;
     timings =
@@ -35,4 +64,6 @@ let create options =
         llvm = 0.;
         gen_and_link = 0.;
       };
+    target;
+    machine;
   }

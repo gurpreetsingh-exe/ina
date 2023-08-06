@@ -358,7 +358,14 @@ let rec resolve resolver : modul =
         let binding = { binding = { kind = Res res } } in
         add_name_res modul.resolutions key binding
     | Foreign funcs -> List.iter (fun f -> visit_fn f modul) funcs
-    | Lib name -> ()
+    | Lib name ->
+        let lib_name = "lib" ^ name ^ ".o" in
+        if Sys.file_exists lib_name then (
+    )
+        else (
+          eprintf "error(%s): library `%s` not found\n"
+            resolver.modd.mod_path name;
+          flush stderr)
     | Const _ | Import _ -> ()
   in
   List.iter visit_item resolver.modd.items;

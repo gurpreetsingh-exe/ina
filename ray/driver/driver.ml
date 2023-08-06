@@ -63,13 +63,14 @@ let () =
             Lowering.Item.lower_ast lowering_ctx)
       in
       sess.timings.lowering <- time;
-      if sess.options.print_ir then Ir.Module.render modulee;
-      if sess.options.dot_cfg then Ir.Module.dot_graph modulee;
-      let time, modd =
-        Timer.time (fun () -> Llvm_gen.gen_module sess modulee)
-      in
+      if sess.options.print_ir then (Ir.Module.render modulee; exit 0);
+      if sess.options.dot_cfg then (
+        Ir.Module.dot_graph modulee;
+        exit 0);
+      let cx = Llvm_gen.codegen_ctx tcx in
+      let time, _ = Timer.time (fun () -> Llvm_gen.gen_module cx modulee) in
       sess.timings.llvm <- time;
-      let time, _ = Timer.time (fun () -> Llvm_gen.emit modd sess) in
+      let time, _ = Timer.time (fun () -> Llvm_gen.emit cx) in
       sess.timings.gen_and_link <- time
   | Fmt -> printf "%s" (Fmt.render_mod modd)
   | _ -> ());
