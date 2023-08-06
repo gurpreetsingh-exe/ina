@@ -148,6 +148,7 @@ let rec render_item (item : item) : string =
     | Some modd -> sprintf "mod %s {%s}\n" name (render_mod modd)
     | None -> "mod " ^ name ^ ";")
   | Import path -> sprintf "import %s;\n" (String.concat "::" path.segments)
+  | Lib name -> sprintf "lib %s;\n" name
 
 and render_mod modd : string =
   let rendered_items = render modd.items (fun item -> render_item item) "" in
