@@ -191,7 +191,8 @@ let create_path resolver name =
       path)
   in
   f
-    (if resolver.is_root then name
+    (if resolver.is_root then
+     Path.join [Filename.dirname resolver.modd.mod_path; name]
     else
       Path.join
         [
@@ -360,8 +361,7 @@ let rec resolve resolver : modul =
     | Foreign funcs -> List.iter (fun f -> visit_fn f modul) funcs
     | Lib name ->
         let lib_name = "lib" ^ name ^ ".o" in
-        if Sys.file_exists lib_name then (
-    )
+        if Sys.file_exists lib_name then ()
         else (
           eprintf "error(%s): library `%s` not found\n"
             resolver.modd.mod_path name;
