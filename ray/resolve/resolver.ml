@@ -153,6 +153,16 @@ let find_scope_res scope_table key =
   let binding = Hashtbl.find scope_table key in
   Res.modul binding.binding
 
+(* TODO: check for modules in subfolder *)
+(* foo.ray:
+
+   ``` mod bar; ```
+
+   foo/bar.ray:
+
+   ``` /// some stuff ```
+
+   this doesn't work currently *)
 let rec mod_exists resolver name =
   let f path =
     if Sys.file_exists (path ^ ".ray") then true
