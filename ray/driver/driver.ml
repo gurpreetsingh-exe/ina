@@ -43,7 +43,7 @@ let () =
             let resolver = Resolver.create tcx modd in
             let modul = Resolver.resolve resolver in
             resolver.disambiguator.stack <- [0];
-            Ident.resolve_paths resolver modul modd;
+            Paths.resolve_paths resolver modul modd;
             modul.resolutions)
       in
       sess.timings.resolve <- time;
