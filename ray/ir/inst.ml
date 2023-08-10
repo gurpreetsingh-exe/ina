@@ -1,10 +1,8 @@
 open Ty
-open Front
 open Printf
 
 let pp_ty (fmt : Format.formatter) ty : unit =
-  let open Front in
-  Format.pp_print_string fmt (Fmt.render_ty ty)
+  Format.pp_print_string fmt (render_ty ty)
 
 type t = {
   kind : inst_kind;
@@ -116,11 +114,10 @@ let rec render_const = function
       sprintf "{ %s }" (String.concat ", " (List.map render_value values))
 
 and render_value = function
-  | Const (const, ty) ->
-      sprintf "%s %s" (Fmt.render_ty ty) (render_const const)
-  | VReg (_, i, ty) -> sprintf "%s%%%i" (Fmt.render_ty ty ^ " ") i
+  | Const (const, ty) -> sprintf "%s %s" (render_ty ty) (render_const const)
+  | VReg (_, i, ty) -> sprintf "%s%%%i" (render_ty ty ^ " ") i
   | Label bb -> sprintf "label %%bb%d" bb.bid
-  | Param (ty, name, _) -> sprintf "%s %%%s" (Fmt.render_ty ty) name
+  | Param (ty, name, _) -> sprintf "%s %%%s" (render_ty ty) name
   | Global name -> sprintf "@%s" name
 
 let get_ty = function
@@ -133,7 +130,7 @@ let render_inst inst : string =
   (if has_value inst.kind then sprintf "    %%%d = " inst.id else "    ")
   ^
   match inst.kind with
-  | Alloca ty -> sprintf "alloca %s" (Fmt.render_ty ty)
+  | Alloca ty -> sprintf "alloca %s" (render_ty ty)
   | Binary (kind, left, right) ->
       sprintf "%s %s, %s" (render_binary kind) (render_value left)
         (render_value right)
@@ -141,7 +138,7 @@ let render_inst inst : string =
       sprintf "br %s, %s, %s" (render_value cond) (render_value true_block)
         (render_value false_block)
   | Phi (ty, args) ->
-      sprintf "phi %s, %s" (Fmt.render_ty ty)
+      sprintf "phi %s, %s" (render_ty ty)
         (String.concat ", "
            (List.map
               (fun (bb, inst) ->
@@ -153,8 +150,8 @@ let render_inst inst : string =
   | Load ptr ->
       sprintf "load %s, %s"
         (match get_ty ptr with
-        | Ptr ty -> Fmt.render_ty ty
-        | RefTy ty -> Fmt.render_ty ty
+        | Ptr ty -> render_ty ty
+        | RefTy ty -> render_ty ty
         | _ -> assert false)
         (render_value ptr)
   | Gep (_, value, index) -> sprintf "gep %s, %d" (render_value value) index
@@ -162,15 +159,15 @@ let render_inst inst : string =
       let ty =
         match ty with FnTy (_, ret_ty, _) -> ret_ty | _ -> assert false
       in
-      sprintf "call %s %s(%s)" (Fmt.render_ty ty) (render_value fn)
+      sprintf "call %s %s(%s)" (render_ty ty) (render_value fn)
         (String.concat ", " (List.map render_value args))
   | Intrinsic (name, args) ->
       sprintf "intrinsic %s(%s)" name
         (String.concat ", " (List.map render_value args))
   | PtrToInt (value, ty) ->
-      sprintf "ptrtoint %s to %s" (render_value value) (Fmt.render_ty ty)
+      sprintf "ptrtoint %s to %s" (render_value value) (render_ty ty)
   | IntToPtr (value, ty) ->
-      sprintf "inttoptr %s to %s" (render_value value) (Fmt.render_ty ty)
+      sprintf "inttoptr %s to %s" (render_value value) (render_ty ty)
   | Ret ret -> sprintf "ret %s" (render_value ret)
   | Trap _ -> "trap"
   | RetUnit -> "ret"

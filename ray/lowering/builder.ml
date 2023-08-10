@@ -2,7 +2,10 @@ open Ir
 open Ty
 open Inst
 
-type t = { mutable block : basic_block }
+type t = {
+  tcx : tcx;
+  mutable block : basic_block;
+}
 
 let _vreg = ref 0
 
@@ -12,7 +15,7 @@ let vreg () =
 
 let reset () = _vreg := 0
 
-let create (bb : basic_block) : t = { block = bb }
+let create tcx (bb : basic_block) : t = { tcx; block = bb }
 
 let with_ctx f (ctx : Context.t) builder =
   let tmp = builder.block in
@@ -60,12 +63,13 @@ let gep (ty : ty) (ptr : value) (index : int) (builder : t) : value =
     match ty with
     | Struct (_, tys) ->
         let _, ty = List.nth tys index in
-        ty
+        unwrap_ty builder.tcx ty
     | _ -> assert false
   in
   add_inst_with_ty (Ptr fty) (Gep (ty, ptr, index)) builder
 
 let call (ty : ty) (fn : value) (args : value list) (builder : t) : value =
+  let ty = unwrap_ty builder.tcx ty in
   let ret_ty =
     match ty with FnTy (_, ret_ty, _) -> ret_ty | _ -> assert false
   in

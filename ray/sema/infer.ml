@@ -3,58 +3,42 @@ open Ty
 open Token
 open Front.Fmt
 open Printf
-open Session
 open Errors
 
-type env = {
-  parent : env option;
-  bindings : (string, ty) Hashtbl.t;
-}
+type env = { bindings : (int, ty) Hashtbl.t }
 
-let env_create parent : env = { parent; bindings = Hashtbl.create 0 }
+let env_create _ : env = { bindings = Hashtbl.create 0 }
 
-let rec find_ty (ty_env : env) ident : ty option =
+let find_ty (ty_env : env) ident : ty option =
   if Hashtbl.mem ty_env.bindings ident then
     Some (Hashtbl.find ty_env.bindings ident)
-  else (
-    match ty_env.parent with Some env -> find_ty env ident | None -> None)
+  else None
 
 let ty_is_int (ty : ty) : bool = match ty with Int _ -> true | _ -> false
 
 let ty_is_float (ty : ty) : bool =
   match ty with Float _ -> true | _ -> false
 
-let fn_ty func =
-  let { fn_sig = { args; ret_ty; is_variadic; _ }; _ } = func in
-  let ret_ty = Option.value ret_ty ~default:Unit in
-  FnTy (List.map (fun (ty, _) -> ty) args, ret_ty, is_variadic)
-
 type infer_ctx = {
-  globl_ctx : Context.t;
+  tcx : tcx;
   mutable ty_env : env;
-  env : (node_id, expr) Hashtbl.t;
   int_unifiction_table : (ty, ty) Hashtbl.t;
   int_ut : (ty_vid, ty option) Unification_table.t;
   globl_env : (path, lang_item) Hashtbl.t;
-  func_map : (ident, ty) Hashtbl.t;
-  struct_map : (path, ty) Hashtbl.t;
   emitter : Emitter.t;
 }
 
-let add_binding (infer_ctx : infer_ctx) ident ty =
-  if Hashtbl.mem infer_ctx.ty_env.bindings ident then
-    Hashtbl.replace infer_ctx.ty_env.bindings ident ty
-  else Hashtbl.add infer_ctx.ty_env.bindings ident ty
+let add_binding (infer_ctx : infer_ctx) id ty =
+  if Hashtbl.mem infer_ctx.ty_env.bindings id then
+    Hashtbl.replace infer_ctx.ty_env.bindings id ty
+  else Hashtbl.add infer_ctx.ty_env.bindings id ty
 
-let infer_ctx_create emitter globl_ctx globl_env =
+let infer_ctx_create emitter tcx globl_env =
   {
-    globl_ctx;
+    tcx;
     ty_env = env_create None;
-    env = Hashtbl.create 0;
     int_unifiction_table = Hashtbl.create 0;
     int_ut = { values = [||] };
-    func_map = Hashtbl.create 0;
-    struct_map = Hashtbl.create 0;
     globl_env;
     emitter;
   }
@@ -190,12 +174,10 @@ let infer_err_emit emitter (ty_err : infer_err) (span : span) =
   | InvalidDeref ty -> Emitter.emit emitter (invalid_deref ty span)
   | InvalidCall ty -> Emitter.emit emitter (invalid_call ty span)
 
-let rec print_bindings ty_env =
+let print_bindings ty_env =
   Hashtbl.iter
-    (fun key value -> Printf.printf "%s: %s\n" key (render_ty value))
-    ty_env.bindings;
-  print_endline "======================";
-  match ty_env.parent with Some env -> print_bindings env | None -> ()
+    (fun key value -> Printf.printf "%d: %s\n" key (render_ty value))
+    ty_env.bindings
 
 let rec resolve_block (infer_ctx : infer_ctx) body =
   let rec sub ty =
@@ -241,31 +223,21 @@ let rec resolve_block (infer_ctx : infer_ctx) body =
   List.iter f body.block_stmts;
   match body.last_expr with Some e -> g e | None -> ()
 
-let rec find_value infer_ctx path : ty option * string =
-  let n = render_path path in
-  let name = List.hd (List.rev path.segments) in
-  match find_ty infer_ctx.ty_env n with
-  | None ->
-      if Hashtbl.mem infer_ctx.func_map n then (
-        let func = Hashtbl.find infer_ctx.func_map n in
-        (Some func, name))
-      else if Hashtbl.mem infer_ctx.globl_env path then (
-        match Hashtbl.find infer_ctx.globl_env path with
-        | Fn func -> (Some (fn_ty func), func.fn_sig.name)
-        | Struct s ->
-            ( Some
-                (Struct
-                   (n, List.map (fun (ty, field) -> (field, ty)) s.members)),
-              s.ident )
-        | _ -> (None, name))
-      else (None, name)
-  | ty -> (
-    match ty with
-    | Some (Ident path) -> find_value infer_ctx path
-    | _ -> (ty, name))
+let find_value infer_ctx path : ty option =
+  match path.res with
+  | Def (id, kind) -> (
+    match kind with
+    | Fn | Struct | Intrinsic ->
+        Some (lookup_def infer_ctx.tcx id |> function Ty ty -> ty)
+    | _ -> assert false)
+  | Local id -> (
+    match find_ty infer_ctx.ty_env id with
+    | Some ty -> Some ty
+    | None -> None)
+  | Err -> None
+  | PrimTy ty -> Some (prim_ty_to_ty ty)
 
 let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
-  Hashtbl.add infer_ctx.env expr.expr_id expr;
   let ty =
     match expr.expr_kind with
     | Lit lit -> (
@@ -276,17 +248,22 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
       | LitBool _ -> Bool
       | LitStr _ -> Str)
     | Path path -> (
-      match find_value infer_ctx path with
-      | Some ty, _ -> ty
-      | None, name ->
+        let not_found _ =
+          let name = render_path path in
           infer_err_emit infer_ctx.emitter (VarNotFound name) expr.expr_span;
-          Unit)
+          Unit
+        in
+        match find_value infer_ctx path with
+        | Some ty -> ty
+        | None -> not_found ())
     | Call (path, exprs) -> (
         let check_args _ =
           List.iter (fun expr -> ignore (infer infer_ctx expr)) exprs
         in
-        let f func ident =
+        let name = render_path path in
+        let f func =
           let check (expr : expr) (expected : ty) =
+            let expected = unwrap_ty infer_ctx.tcx expected in
             let ty = infer infer_ctx expr in
             match unify infer_ctx ty expected with
             | Some err -> infer_err_emit infer_ctx.emitter err expr.expr_span
@@ -305,7 +282,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
               else if expr_len <> ty_len then (
                 check_args ();
                 infer_err_emit infer_ctx.emitter
-                  (MismatchArgs (ident, ty_len, expr_len))
+                  (MismatchArgs (name, ty_len, expr_len))
                   expr.expr_span)
               else List.iter2 (fun expr ty -> check expr ty) exprs args_ty;
               ret_ty
@@ -316,10 +293,10 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
               Unit
         in
         match find_value infer_ctx path with
-        | Some ty, name -> f ty name
-        | None, name ->
+        | Some ty -> f ty
+        | None ->
             infer_err_emit infer_ctx.emitter (FnNotFound name) expr.expr_span;
-            (* infer types for arguments even if function is not found *)
+            (* infer types for arguments *)
             check_args ();
             Unit)
     | Binary (kind, left, right) ->
@@ -356,7 +333,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
     | StructExpr { struct_name; fields } -> (
         let ty = find_value infer_ctx struct_name in
         match ty with
-        | Some ty, _ -> (
+        | Some ty -> (
           match ty with
           | Struct (_, tys) ->
               let strukt = Hashtbl.of_seq (List.to_seq tys) in
@@ -370,7 +347,8 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
                 fields;
               ty
           | _ -> assert false)
-        | None, name ->
+        | None ->
+            let name = render_path struct_name in
             ignore (List.map (fun (_, expr) -> infer infer_ctx expr) fields);
             infer_err_emit infer_ctx.emitter (StructNotFound name)
               expr.expr_span;
@@ -391,13 +369,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
         ty
     | Ref expr -> RefTy (infer infer_ctx expr)
   in
-  let ty =
-    match ty with
-    | Ident path ->
-        let maybe_ty, _ = find_value infer_ctx path in
-        Option.get maybe_ty
-    | _ -> ty
-  in
+  let ty = unwrap_ty infer_ctx.tcx ty in
   (match ty with
   | Infer (IntVar _ | FloatVar _) -> expr.expr_ty <- Some ty
   | ty -> expr.expr_ty <- Some ty);
@@ -462,18 +434,18 @@ and infer_block (infer_ctx : infer_ctx) (block : block) : ty =
   let f stmt : ty =
     match stmt with
     | Stmt expr | Expr expr -> infer infer_ctx expr
-    | Binding { binding_pat; binding_ty; binding_expr; _ } ->
+    | Binding { binding_pat; binding_ty; binding_expr; binding_id = id } ->
         (let ty = infer infer_ctx binding_expr in
          match binding_pat with
-         | PatIdent ident -> (
+         | PatIdent _ -> (
            match binding_ty with
            | Some expected -> (
-               add_binding infer_ctx ident expected;
+               add_binding infer_ctx id expected;
                match unify infer_ctx ty expected with
                | Some e ->
                    infer_err_emit infer_ctx.emitter e binding_expr.expr_span
                | None -> ())
-           | None -> add_binding infer_ctx ident ty));
+           | None -> add_binding infer_ctx id ty));
         Unit
     | Assign (l, init) ->
         let lty = infer infer_ctx l in
@@ -499,50 +471,39 @@ and infer_block (infer_ctx : infer_ctx) (block : block) : ty =
         | None -> ());
         Unit
   in
-  let tmp_env = infer_ctx.ty_env in
-  infer_ctx.ty_env <- env_create (Some tmp_env);
   ignore (List.map f block.block_stmts);
   let ty =
     match block.last_expr with
     | Some expr -> infer infer_ctx expr
     | None -> Unit
   in
-  infer_ctx.ty_env <- tmp_env;
   ty
 
 let infer_func (infer_ctx : infer_ctx) (func : func) =
-  let { fn_sig = { name; args; ret_ty; is_variadic; _ }; body; _ } = func in
+  let { fn_sig = { args; ret_ty; _ }; body; _ } = func in
   let ret_ty = Option.value ret_ty ~default:Unit in
-  Hashtbl.add infer_ctx.func_map name
-    (FnTy (List.map (fun (ty, _) -> ty) args, ret_ty, is_variadic));
   match body with
   | Some body ->
-      let tmp_env = infer_ctx.ty_env in
-      infer_ctx.ty_env <- env_create (Some tmp_env);
-      List.iter
-        (fun (ty, ident) -> Hashtbl.add infer_ctx.ty_env.bindings ident ty)
-        args;
+      List.iter (fun (ty, _, id) -> add_binding infer_ctx id ty) args;
       let ty = infer_block infer_ctx body in
-      if infer_ctx.globl_ctx.options.display_type_vars then
+      if infer_ctx.tcx.sess.options.display_type_vars then
         print_endline (render_fn func);
       ignore (unify infer_ctx ty ret_ty, body.last_expr);
-      resolve_block infer_ctx body;
-      infer_ctx.ty_env <- tmp_env
+      resolve_block infer_ctx body
   | None -> ()
 
-let infer_begin infer_ctx (modd : modd) =
+let rec infer_begin infer_ctx (modd : modd) =
   let f (item : item) =
     match item with
     | Fn (func, _) -> infer_func infer_ctx func
-    | Type typ -> (
-      match typ with
-      | Struct s ->
-          let path = Option.get s.struct_path in
-          let name = render_path path in
-          Hashtbl.add infer_ctx.struct_map path
-            (Struct
-               (name, List.map (fun (ty, field) -> (field, ty)) s.members)))
-    | Import _ -> ()
+    | Type _ | Import _ | Lib _ -> ()
+    | Mod { resolved_mod; _ } ->
+        let modd = Option.get resolved_mod in
+        let infer_ctx2 =
+          infer_ctx_create infer_ctx.emitter infer_ctx.tcx
+            infer_ctx.globl_env
+        in
+        infer_begin infer_ctx2 modd
     | Foreign funcs -> List.iter (fun f -> infer_func infer_ctx f) funcs
     | _ -> assert false
   in

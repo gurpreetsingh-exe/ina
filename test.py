@@ -32,16 +32,37 @@ class Tests:
         self.fmt = 0
         self.n = []
         self.collected_tests = 0
+        self.reported_fails = 0
+        self.reported_skips = 0
         self.term_cols = os.get_terminal_size().columns - 1
+
+    def report(self, kind, name):
+        j = len(self.n)
+        count = self.collected_tests
+        if kind == 'FAILED':
+            kind = Color.BOLD + Color.FAIL + kind + Color.ENDC
+            self.reported_fails += 1
+        elif kind == 'SKIPPED':
+            kind = Color.BOLD + Color.WARNING + kind + Color.ENDC
+            self.reported_skips += 1
+        else:
+            assert False
+
+        print("\x1b[K[{}/{}] {}... {}".format(j, count, name, kind),
+              file=sys.stdout, flush=True)
 
     def progressbar(self, prefix="", out=sys.stdout):
         j = len(self.n)
         count = self.collected_tests
-        size = self.term_cols - (len(prefix) +
-                                 2 + 1 + len(str(j) + str(count)))
-        x = int(size * j / count)
+        if not self.n:
+            return
+        last = self.n[-1]
+        if len(self.failed) != self.reported_fails:
+            self.report('FAILED', self.failed[-1])
+        elif len(self.skipped) != self.reported_skips:
+            self.report('SKIPPED', self.skipped[-1])
 
-        print("{}[{}{}] {}/{}".format(prefix, "█" * x, " " * (size - x), j, count),
+        print("\x1b[K{} [{}/{}] {}".format(prefix, j, count, last),
               end='\r', file=out, flush=True)
 
     def print_results(self):
@@ -53,15 +74,13 @@ class Tests:
             print("  {}{}[OK]{} All {} test{} passed".format(
                 Color.OKGREEN, Color.BOLD, Color.ENDC, n, plural(n)))
         else:
-            print("  {} test{} passed out of {}{}{}".format(
+            print("\n  {} test{} passed out of {}{}{}".format(
                   len(self.passed),
                   plural(len(self.passed)),
                   n,
                   ", {} failed".format(len(self.failed)) if len(
                       self.failed) else "",
-                  ", {} skipped".format(len(self.skipped)) if len(self.skipped) else ""))
-            for f in self.failed:
-                print(f)
+                  ", {} skipped\n".format(len(self.skipped)) if len(self.skipped) else ""))
 
 
 tests = Tests()
@@ -103,6 +122,10 @@ def skip(lines: List[str]):
     return any([True for l in lines if l.startswith("// SKIP")])
 
 
+def dummy(lines: List[str]):
+    return any([True for l in lines if l.startswith("// DUMMY")])
+
+
 def parse_expected_result(lines: List[str]) -> TestResult:
     test_result = TestResult()
     if res := extract_value(lines, "STDOUT"):
@@ -142,9 +165,12 @@ def run_test(case: pathlib.Path, options: argparse.Namespace):
     if case.suffix in {'.stderr'}:
         return
 
-    tests.n.append(case)
     with open(case, 'r') as f:
         src = f.readlines()
+        if dummy(src):
+            return
+
+        tests.n.append(case)
         if skip(src):
             tests.skipped.append(case)
             return
@@ -234,5 +260,5 @@ if __name__ == "__main__":
 
     tests.collected_tests = collect_tests(test)
     run_test(test, args)
-    print("\n", flush=True)
+    print("\x1b[K", end='', flush=True)
     tests.print_results()

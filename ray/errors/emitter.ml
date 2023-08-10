@@ -3,7 +3,7 @@ open Diagnostic
 open Session
 
 type t = {
-  ctx : Context.t;
+  ctx : Sess.t;
   source : string array;
 }
 

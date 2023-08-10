@@ -3,6 +3,8 @@
   (flags
    (:standard
     -warn-error
+    "-unused-open"
+    -warn-error
     "-unused-value-declaration"
     -warn-error
     "-unused-var"

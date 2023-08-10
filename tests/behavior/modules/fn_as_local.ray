@@ -1,0 +1,16 @@
+// EXIT_CODE: 1
+
+mod foo {
+    fn f(a: i32) -> i32 {
+        a + 35
+    }
+}
+
+fn f(g: fn(i32) -> i32, a: i32) -> i32 {
+    g(a)
+}
+
+fn main() -> bool {
+    f(foo::f, 34) == 69
+}
+

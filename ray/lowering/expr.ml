@@ -24,7 +24,7 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
           Builder.br left (Label join_bb) (Label right_bb) builder
         else Builder.br left (Label right_bb) (Label join_bb) builder;
         Context.block_append ctx right_bb;
-        let right_builder = Builder.create right_bb in
+        let right_builder = Builder.create ctx.tcx right_bb in
         let right = lower right right_builder ctx in
         let right_bb = Option.get ctx.block in
         Builder.jmp (Label join_bb) right_builder;
@@ -57,16 +57,22 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
     | LitStr value -> Builder.const_string ty value
     | LitBool value -> Builder.const_bool ty value)
   | Path path -> (
-      let ident = Fmt.render_path path in
-      try
-        let ptr, _ = load (Context.find_local ctx.env ident) builder in
+      let name = render_path path in
+      let f _ =
+        let ptr, _ = load (Context.find_local ctx.env name) builder in
         ptr
-      with Not_found ->
-        let fn_ty = Hashtbl.find ctx.func_map path in
-        let name =
-          if fn_ty.is_extern then fn_ty.name else fn_ty.linkage_name
-        in
-        Global name)
+      in
+      match path.res with
+      | Def (_, kind) -> (
+        match kind with
+        | Fn -> Global (lookup_sym ctx.tcx path.res)
+        (* TODO: (error) mod and struct cannot be assigned to variables *)
+        | Intrinsic ->
+            print_endline "intrinsic can only be used in `Call`";
+            assert false
+        | Mod | Struct -> assert false)
+      | Local _ | PrimTy _ -> f ()
+      | Err -> assert false)
   | If { cond; then_block; else_block } -> (
       let cond = lower cond builder ctx in
       let then_bb = Basicblock.create () in
@@ -105,27 +111,24 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
           in
           phi)
   | Call (path, args) -> (
-      let ident = Fmt.render_path path in
-      try
-        let ptr, ty = load (Context.find_local ctx.env ident) builder in
-        let args = List.map (fun e -> lower e builder ctx) args in
-        Builder.call ty ptr args builder
-      with Not_found ->
-        let fn_ty = Hashtbl.find ctx.func_map path in
-        let args = List.map (fun e -> lower e builder ctx) args in
-        if fn_ty.is_extern && fn_ty.abi = "intrinsic" then
-          Builder.intrinsic ty fn_ty.name args builder
-        else (
-          let ty =
-            FnTy
-              ( List.map (fun (t, _) -> t) fn_ty.args,
-                fn_ty.ret_ty,
-                fn_ty.is_variadic )
-          in
-          let name =
-            if fn_ty.is_extern then fn_ty.name else fn_ty.linkage_name
-          in
-          Builder.call ty (Global name) args builder))
+      let name = render_path path in
+      let args = List.map (fun e -> lower e builder ctx) args in
+      match path.res with
+      | Def (_, kind) -> (
+        match kind with
+        | Fn ->
+            let ty = Option.get (expect_def ctx.tcx path.res Fn) in
+            Builder.call ty
+              (Global (lookup_sym ctx.tcx path.res))
+              args builder
+        | Intrinsic ->
+            let ty = Option.get (expect_def ctx.tcx path.res Intrinsic) in
+            Builder.intrinsic ty (lookup_sym ctx.tcx path.res) args builder
+        | Mod | Struct -> assert false)
+      | Local _ ->
+          let ptr, ty = load (Context.find_local ctx.env name) builder in
+          Builder.call ty ptr args builder
+      | Err | PrimTy _ -> assert false)
   | Block block -> lower_block block ctx
   | Deref expr -> Builder.load (lower expr builder ctx) builder
   | Ref expr -> lower_lvalue expr builder ctx
@@ -149,7 +152,9 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
               (fun i (field, _) -> if name = field then index := i)
               tys;
             (!index, ty)
-        | _ -> assert false
+        | _ ->
+            print_endline (render_ty ty);
+            assert false
       in
       let ptr = Builder.gep ty ptr index builder in
       Builder.load ptr builder
@@ -168,14 +173,14 @@ and lower_lvalue (expr : expr) (builder : Builder.t) (ctx : Context.t) :
     Inst.value =
   match expr.expr_kind with
   | Path path ->
-      let ident = Fmt.render_path path in
+      let ident = render_path path in
       Context.find_local ctx.env ident
   | Field (expr, name) ->
       let ptr = lower_lvalue expr builder ctx in
       let sty = Inst.get_ty ptr in
       let index, ty =
         match sty with
-        | Ptr (Struct (_, tys) as ty) ->
+        | Ptr (Struct (_, tys) as ty) | RefTy (Struct (_, tys) as ty) ->
             let index = ref (-1) in
             List.iteri
               (fun i (field, _) -> if name = field then index := i)
@@ -193,7 +198,7 @@ and lower_block (block : block) (ctx : Context.t) : Inst.value =
   let tmp = ctx.env in
   ctx.env <- { parent = Some tmp; locals = Hashtbl.create 0 };
   let bb = Option.get ctx.block in
-  let builder = Builder.create bb in
+  let builder = Builder.create ctx.tcx bb in
   if bb.is_entry then (
     let fn = Option.get ctx.fn in
     match fn with
@@ -235,10 +240,10 @@ and lower_block (block : block) (ctx : Context.t) : Inst.value =
         let join_bb = Basicblock.create () in
         Builder.br cond (Label true_bb) (Label false_bb) builder;
         Context.block_append ctx true_bb;
-        let true_builder = Builder.create true_bb in
+        let true_builder = Builder.create ctx.tcx true_bb in
         Builder.jmp (Label join_bb) true_builder;
         Context.block_append ctx false_bb;
-        let false_builder = Builder.create false_bb in
+        let false_builder = Builder.create ctx.tcx false_bb in
         let loc = Token.display_span expr.expr_span in
         let msg =
           match string with

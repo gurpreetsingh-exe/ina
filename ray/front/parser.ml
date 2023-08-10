@@ -4,7 +4,6 @@ open Token
 open Tokenizer
 open Errors
 open Diagnostic
-open Session
 
 let builtin_types =
   let tbl = Hashtbl.create 0 in
@@ -25,13 +24,12 @@ let builtin_types =
   tbl
 
 type parse_ctx = {
-  ctx : Context.t;
+  tcx : tcx;
   tokenizer : tokenizer;
   src : string;
   mutable curr_tok : token;
   mutable prev_tok : token option;
   mutable stop : bool;
-  mutable node_id : node_id;
   emitter : Emitter.t;
 }
 
@@ -106,23 +104,23 @@ let eat pctx kind =
     Emitter.emit pctx.emitter (unexpected_token pctx kind pctx.curr_tok);
     exit 1)
 
-let gen_id pctx : node_id =
-  pctx.node_id <- pctx.node_id + 1;
-  pctx.node_id
+let gen_id pctx : node_id = tcx_gen_id pctx.tcx
 
-let parse_ctx_create ctx tokenizer s =
+let parse_ctx_create tcx tokenizer s =
   match next tokenizer with
   | Some t ->
       {
-        ctx;
+        tcx;
         tokenizer;
         src = s;
         curr_tok = t;
         prev_tok = None;
         stop = false;
-        node_id = 0;
         emitter =
-          { ctx; source = Array.of_list (String.split_on_char '\n' s) };
+          {
+            ctx = tcx.sess;
+            source = Array.of_list (String.split_on_char '\n' s);
+          };
       }
   | None -> exit 0
 
@@ -210,7 +208,7 @@ let parse_path pctx : path =
         Emitter.emit pctx.emitter (unexpected_token pctx Ident pctx.curr_tok);
         exit 1
   in
-  { segments = parse_path_impl () }
+  { segments = parse_path_impl (); res = Err }
 
 let rec parse_ty pctx : ty =
   let t = pctx.curr_tok in
@@ -257,7 +255,7 @@ and parse_ret_ty pctx : ty option =
       Some (parse_ty pctx)
   | _ -> None
 
-let parse_fn_args pctx : (ty * ident) list * bool =
+let parse_fn_args pctx : (ty * ident * node_id) list * bool =
   assert (pctx.curr_tok.kind == LParen);
   ignore (eat pctx LParen);
   let arg_list = ref [] in
@@ -269,7 +267,7 @@ let parse_fn_args pctx : (ty * ident) list * bool =
           let ident = parse_ident pctx in
           ignore (eat pctx Colon);
           let ty = parse_ty pctx in
-          (ty, ident)
+          (ty, ident, gen_id pctx)
         in
         arg_list := !arg_list @ [arg];
         match pctx.curr_tok.kind with
@@ -501,10 +499,10 @@ and parse_path_or_call pctx =
   match pctx.curr_tok.kind with
   | LParen -> Call (path, parse_call_args pctx)
   | LBrace -> (
-      match npeek pctx 2 with
-      | Ident :: [Colon] | RBrace :: _ ->
-          StructExpr { struct_name = path; fields = parse_struct_expr pctx }
-      | _ -> Path path)
+    match npeek pctx 2 with
+    | Ident :: [Colon] | RBrace :: _ ->
+        StructExpr { struct_name = path; fields = parse_struct_expr pctx }
+    | _ -> Path path)
   | _ -> Path path
 
 and parse_let pctx : binding =
@@ -623,7 +621,13 @@ let parse_type pctx : typ =
         | _ -> assert false)
   done;
   ignore (eat pctx RBrace);
-  Struct { ident = name; members = !members; struct_path = None }
+  Struct
+    {
+      ident = name;
+      members = !members;
+      struct_path = None;
+      struct_id = gen_id pctx;
+    }
 
 let parse_extern pctx attrs : item =
   advance pctx;
@@ -651,7 +655,7 @@ let parse_extern pctx attrs : item =
   | Fn -> Fn (parse_fn pctx abi true, attrs)
   | _ -> assert false
 
-let parse_item pctx : item =
+let rec parse_item pctx : item =
   let attrs = parse_outer_attrs pctx in
   match pctx.curr_tok.kind with
   | Fn -> Fn (parse_fn pctx "C" false, attrs)
@@ -662,11 +666,37 @@ let parse_item pctx : item =
       let import = Ast.Import (parse_path pctx) in
       ignore (eat pctx Semi);
       import
+  | Lib ->
+      advance pctx;
+      let name = parse_ident pctx in
+      ignore (eat pctx Semi);
+      Lib name
+  | Mod ->
+      advance pctx;
+      let name = parse_ident pctx in
+      let modd, inline =
+        pctx.curr_tok.kind
+        |> function
+        | Semi ->
+            ignore (eat pctx Semi);
+            (None, false)
+        | LBrace ->
+            ignore (eat pctx LBrace);
+            let modd = parse_mod pctx in
+            modd.mod_name <- name;
+            ignore (eat pctx RBrace);
+            (Some modd, true)
+        | _ ->
+            ignore (eat pctx LBrace);
+            exit 1
+      in
+      let modd : item = Mod { name; resolved_mod = modd; inline } in
+      modd
   | kind ->
       Printf.printf "%s\n" (display_token_kind kind);
       assert false
 
-let parse_mod pctx : modd =
+and parse_mod pctx : modd =
   let mod_attrs = parse_inner_attrs pctx in
   let mod_path = pctx.tokenizer.filename in
   let mod_name =
@@ -684,7 +714,7 @@ let parse_mod pctx : modd =
       imported_mods = Hashtbl.create 0;
     }
   in
-  while not pctx.stop do
+  while (not pctx.stop) && pctx.curr_tok.kind <> RBrace do
     strip_comments pctx;
     modd.items <- modd.items @ [parse_item pctx]
   done;

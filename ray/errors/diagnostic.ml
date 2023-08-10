@@ -18,7 +18,7 @@ let display_level = function
   | Note -> "note"
   | Warn -> "warning"
   | Err -> "error"
-  | Bug -> "bug"
+  | Bug -> "internal compiler error"
 
 let render_level level =
   sprintf "%s%s%s" (level_to_color level) (display_level level) e

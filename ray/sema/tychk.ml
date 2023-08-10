@@ -1,23 +1,17 @@
 open Ast
 open Ty
 open Infer
-open Front.Fmt
 open Errors
 open Printf
 
 let ty_unwrap (ty : ty option) = Option.value ty ~default:Unit
 
-type env = {
-  parent : env option;
-  bindings : (string, ty) Hashtbl.t;
-}
+type env = { bindings : (node_id, ty) Hashtbl.t }
 
-let env_create parent : env = { parent; bindings = Hashtbl.create 0 }
+let env_create _ : env = { bindings = Hashtbl.create 0 }
 
 type ty_ctx = {
-  ty_env : env;
-  func_map : (ident, ty) Hashtbl.t;
-  struct_map : (path, ty) Hashtbl.t;
+  tcx : tcx;
   emitter : Emitter.t;
 }
 
@@ -138,12 +132,7 @@ let ty_err_emit emitter ty_err span =
       Emitter.emit emitter (invalid_binary_expr kind left right span)
 
 let ty_ctx_create (infer_ctx : infer_ctx) =
-  {
-    ty_env = env_create None;
-    func_map = infer_ctx.func_map;
-    struct_map = infer_ctx.struct_map;
-    emitter = infer_ctx.emitter;
-  }
+  { tcx = infer_ctx.tcx; emitter = infer_ctx.emitter }
 
 let tychk_func (ty_ctx : ty_ctx) (func : func) =
   let { fn_sig = { ret_ty; fn_span; _ }; body; _ } = func in
@@ -247,14 +236,13 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
     | Binding ({ binding_pat; binding_ty; binding_expr; _ } as binding) -> (
         let ty = fexpr binding_expr in
         match binding_pat with
-        | PatIdent ident -> (
-            (Hashtbl.add ty_ctx.ty_env.bindings ident ty;
-             match binding_ty with
-             | Some expected ->
-                 if expected != ty then
-                   Emitter.emit ty_ctx.emitter
-                     (mismatch_ty expected ty binding_expr.expr_span)
-             | None -> binding.binding_ty <- Some ty);
+        | PatIdent _ -> (
+            (match binding_ty with
+            | Some expected ->
+                if expected != ty then
+                  Emitter.emit ty_ctx.emitter
+                    (mismatch_ty expected ty binding_expr.expr_span)
+            | None -> binding.binding_ty <- Some ty);
             let check_overflow _value ty =
               match ty with
               | Ty.Int ty ->
@@ -289,12 +277,15 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
         ))
   | None -> ()
 
-let tychk ty_ctx (modd : modd) =
+let rec tychk ty_ctx (modd : modd) =
   let f (item : item) =
     match item with
     | Fn (func, _) -> tychk_func ty_ctx func
     | Foreign funcs -> List.iter (fun f -> tychk_func ty_ctx f) funcs
-    | Import _ | Type _ -> ()
+    | Import _ | Type _ | Lib _ -> ()
+    | Mod m ->
+        let modd = Option.get m.resolved_mod in
+        tychk ty_ctx modd
     | _ -> assert false
   in
   List.iter f modd.items

@@ -9,6 +9,8 @@ let mangle path =
          (fun seg -> string_of_int (String.length seg) ^ seg)
          path.segments)
 
+(* let mangle path = render_path path *)
+
 let rec lower_fn (fn : func) (ctx : Context.t) (mangle_name : bool) : Func.t
     =
   Builder.reset ();
@@ -24,14 +26,20 @@ let rec lower_fn (fn : func) (ctx : Context.t) (mangle_name : bool) : Func.t
   in
   let ret_ty = match ret_ty with Some ty -> ty | None -> Unit in
   let fn_path = Option.get func_path in
-  let linkage_name = if mangle_name then mangle fn_path else name in
+  let linkage_name =
+    if mangle_name then lookup_sym ctx.tcx fn_path.res else name
+  in
   let fn_ty =
     Func.
       {
         name;
-        args;
+        args =
+          List.map (fun (ty, name, _) -> (unwrap_ty ctx.tcx ty, name)) args;
         params =
-          List.mapi (fun i (ty, name) -> Inst.Param (ty, name, i)) args;
+          List.mapi
+            (fun i (ty, name, _) ->
+              Inst.Param (unwrap_ty ctx.tcx ty, name, i))
+            args;
         ret_ty;
         is_variadic;
         abi;
@@ -53,7 +61,7 @@ and lower_fn_body body ctx =
   entry.is_entry <- true;
   Context.block_append ctx entry;
   let ret = Expr.lower_block body ctx in
-  let builder = Builder.create (Option.get ctx.block) in
+  let builder = Builder.create ctx.tcx (Option.get ctx.block) in
   match ret with
   | VReg (inst, _, _) -> (
     match inst.kind with
@@ -89,7 +97,6 @@ let rec lower_ast (ctx : Context.t) : Module.t =
             | _ -> ())
           attrs;
         items := !items @ [lower_fn func ctx !mangle]
-    | Type _ -> ()
     | Foreign funcs ->
         items := !items @ List.map (fun f -> lower_fn f ctx false) funcs
     | Import path -> (
@@ -100,7 +107,13 @@ let rec lower_ast (ctx : Context.t) : Module.t =
           items := (lower_ast ctx).items @ !items;
           ctx.modd <- tmp
       | _ -> ())
-    | _ -> assert false
+    | Mod m ->
+        let modd = Option.get m.resolved_mod in
+        let tmp = ctx.modd in
+        ctx.modd <- modd;
+        items := !items @ (lower_ast ctx).items;
+        ctx.modd <- tmp
+    | Const _ | Type _ | Lib _ -> ()
   in
   List.iter f ctx.modd.items;
   gen_id !items;

@@ -1,3 +1,6 @@
 (library
  (name utils)
- (modules timer))
+ (libraries errors)
+ (preprocess
+  (pps ppx_optcomp -- -cookie "ppx_optcomp.env=env ~profile:(Defined \"%{profile}\")"))
+ (modules timer path panic))

@@ -22,8 +22,10 @@ type token_kind =
   | Fn
   | Type
   | Extern
+  | Mod
   | Let
   | Import
+  | Lib
   | If
   | Else
   | Assert
@@ -63,8 +65,10 @@ let display_token_kind = function
   | Fn -> "fn"
   | Type -> "type"
   | Extern -> "extern"
+  | Mod -> "mod"
   | Let -> "let"
   | Import -> "import"
+  | Lib -> "lib"
   | If -> "if"
   | Else -> "else"
   | Assert -> "assert"

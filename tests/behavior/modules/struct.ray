@@ -1,0 +1,19 @@
+// EXIT_CODE: 1
+
+mod foo {
+    type Foo = {
+        a: &i32,
+        b: i32
+    }
+}
+
+type Foo = {
+    a: foo::Foo,
+}
+
+fn main() -> bool {
+    let a = 34;
+    let foo = foo::Foo { a: &a, b: 35 };
+    let bar = Foo { a: foo };
+    *(bar.a.a) + foo.b == 69
+}
