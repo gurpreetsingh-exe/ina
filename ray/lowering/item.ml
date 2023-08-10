@@ -113,7 +113,7 @@ let rec lower_ast (ctx : Context.t) : Module.t =
         ctx.modd <- modd;
         items := !items @ (lower_ast ctx).items;
         ctx.modd <- tmp
-    | Const _ | Type _ | Lib _ -> ()
+    | Const _ | Type _ | Unit _ -> ()
   in
   List.iter f ctx.modd.items;
   gen_id !items;

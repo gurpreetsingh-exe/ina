@@ -666,11 +666,11 @@ let rec parse_item pctx : item =
       let import = Ast.Import (parse_path pctx) in
       ignore (eat pctx Semi);
       import
-  | Lib ->
+  | Unit ->
       advance pctx;
       let name = parse_ident pctx in
       ignore (eat pctx Semi);
-      Lib name
+      Unit name
   | Mod ->
       advance pctx;
       let name = parse_ident pctx in

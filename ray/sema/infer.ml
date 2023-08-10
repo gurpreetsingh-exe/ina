@@ -251,7 +251,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
         let not_found _ =
           let name = render_path path in
           infer_err_emit infer_ctx.emitter (VarNotFound name) expr.expr_span;
-          Unit
+          Ty.Unit
         in
         match find_value infer_ctx path with
         | Some ty -> ty
@@ -358,7 +358,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
         let ty =
           match ty with
           | Struct (_, tys) ->
-              let ty = ref Unit in
+              let ty = ref Ty.Unit in
               List.iter (fun (field, t) -> if name = field then ty := t) tys;
               !ty
           | _ -> Unit
@@ -496,7 +496,7 @@ let rec infer_begin infer_ctx (modd : modd) =
   let f (item : item) =
     match item with
     | Fn (func, _) -> infer_func infer_ctx func
-    | Type _ | Import _ | Lib _ -> ()
+    | Type _ | Import _ | Unit _ -> ()
     | Mod { resolved_mod; _ } ->
         let modd = Option.get resolved_mod in
         let infer_ctx2 =

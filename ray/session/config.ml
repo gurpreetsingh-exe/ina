@@ -27,7 +27,7 @@ and output_type =
   | Exe
   | Asm
   | Object
-  | Lib
+  | Unit
   | LlvmIr
 
 let get_opt_level = function
@@ -39,7 +39,7 @@ let get_output_type = function
   | "exe" -> Some Exe
   | "asm" -> Some Asm
   | "obj" -> Some Object
-  | "lib" -> Some Lib
+  | "unit" -> Some Unit
   | "llvm-ir" -> Some LlvmIr
   | _ -> None
 

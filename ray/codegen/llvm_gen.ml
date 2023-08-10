@@ -92,7 +92,7 @@ let gen_function_type tcx (fn_ty : Func.fn_type) : lltype =
 let gen_main cx =
   let tcx = cx.tcx in
   match tcx.sess.options.output_type with
-  | Lib -> ()
+  | Unit -> ()
   | _ ->
       let main = Option.get cx.main in
       let main_ty = function_type tcx.lltys.i32 [||] in
@@ -308,7 +308,7 @@ let emit (cx : codegen_ctx) =
   | LlvmIr ->
       let ic = open_out (output ^ ".ll") in
       output_string ic (string_of_llmodule llmod)
-  | Lib ->
+  | Unit ->
       let objfile = "lib" ^ output ^ ".o" in
       TargetMachine.emit_to_file llmod CodeGenFileType.ObjectFile objfile
         machine

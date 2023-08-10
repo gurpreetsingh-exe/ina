@@ -25,7 +25,7 @@ type token_kind =
   | Mod
   | Let
   | Import
-  | Lib
+  | Unit
   | If
   | Else
   | Assert
@@ -68,7 +68,7 @@ let display_token_kind = function
   | Mod -> "mod"
   | Let -> "let"
   | Import -> "import"
-  | Lib -> "lib"
+  | Unit -> "unit"
   | If -> "if"
   | Else -> "else"
   | Assert -> "assert"

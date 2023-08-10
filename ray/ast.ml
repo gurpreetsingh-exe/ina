@@ -50,7 +50,7 @@ and item =
       mutable resolved_mod : modd option;
       inline : bool;
     }
-  | Lib of string
+  | Unit of string
   | Import of path
 
 and fn_sig = {
