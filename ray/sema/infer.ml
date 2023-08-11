@@ -24,7 +24,6 @@ type infer_ctx = {
   mutable ty_env : env;
   int_unifiction_table : (ty, ty) Hashtbl.t;
   int_ut : (ty_vid, ty option) Unification_table.t;
-  globl_env : (path, lang_item) Hashtbl.t;
   emitter : Emitter.t;
 }
 
@@ -33,13 +32,12 @@ let add_binding (infer_ctx : infer_ctx) id ty =
     Hashtbl.replace infer_ctx.ty_env.bindings id ty
   else Hashtbl.add infer_ctx.ty_env.bindings id ty
 
-let infer_ctx_create emitter tcx globl_env =
+let infer_ctx_create emitter tcx =
   {
     tcx;
     ty_env = env_create None;
     int_unifiction_table = Hashtbl.create 0;
     int_ut = { values = [||] };
-    globl_env;
     emitter;
   }
 
@@ -185,12 +183,12 @@ let rec resolve_block (infer_ctx : infer_ctx) body =
     | Infer ((IntVar _ | FloatVar _) as i) ->
         sub
           (if Hashtbl.mem infer_ctx.int_unifiction_table ty then
-           Hashtbl.find infer_ctx.int_unifiction_table ty
-          else (
-            match i with
-            | IntVar _ -> Int I64
-            | FloatVar _ -> Float F32
-            | _ -> assert false))
+             Hashtbl.find infer_ctx.int_unifiction_table ty
+           else (
+             match i with
+             | IntVar _ -> Int I64
+             | FloatVar _ -> Float F32
+             | _ -> assert false))
     | RefTy ty -> RefTy (sub ty)
     | Ptr ty -> Ptr (sub ty)
     | _ -> ty
@@ -499,10 +497,7 @@ let rec infer_begin infer_ctx (modd : modd) =
     | Type _ | Import _ | Unit _ -> ()
     | Mod { resolved_mod; _ } ->
         let modd = Option.get resolved_mod in
-        let infer_ctx2 =
-          infer_ctx_create infer_ctx.emitter infer_ctx.tcx
-            infer_ctx.globl_env
-        in
+        let infer_ctx2 = infer_ctx_create infer_ctx.emitter infer_ctx.tcx in
         infer_begin infer_ctx2 modd
     | Foreign funcs -> List.iter (fun f -> infer_func infer_ctx f) funcs
     | _ -> assert false

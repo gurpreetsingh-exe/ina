@@ -111,7 +111,7 @@ let gen_blocks (cx : codegen_ctx) (blocks : Func.blocks) =
     (fun (bb : Inst.basic_block) ->
       Hashtbl.add bbs bb.bid
         (if bb.is_entry then entry_block fn
-        else append_block tcx.out_mod.llcx (sprintf "bb%d" bb.bid) fn))
+         else append_block tcx.out_mod.llcx (sprintf "bb%d" bb.bid) fn))
     blocks.bbs;
   let rec get_value (value : Inst.value) : llvalue =
     match value with
@@ -224,8 +224,7 @@ let gen_blocks (cx : codegen_ctx) (blocks : Func.blocks) =
                   List.map (fun ty -> get_backend_type tcx ty) args
                 in
                 let ret_ty = get_backend_type tcx ret_ty in
-                (if is_variadic then var_arg_function_type
-                else function_type)
+                (if is_variadic then var_arg_function_type else function_type)
                   ret_ty (Array.of_list args)
             | _ -> assert false
           in

@@ -1,6 +1,15 @@
 (library
  (name codegen)
- (libraries ir ast resolve session llvm llvm.target llvm.analysis llvm.debuginfo llvm_X86)
+ (libraries
+  ir
+  ast
+  resolve
+  session
+  llvm
+  llvm.target
+  llvm.analysis
+  llvm.debuginfo
+  llvm_X86)
  (modules llvm_gen intrinsics)
  (foreign_stubs
   (language c)

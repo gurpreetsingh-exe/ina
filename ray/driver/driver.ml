@@ -47,10 +47,9 @@ let () =
             modul.resolutions)
       in
       sess.timings.resolve <- time;
-      let env = Hashtbl.create 0 in
       let time, _ =
         Timer.time (fun () ->
-            let infer_ctx = Infer.infer_ctx_create pctx.emitter tcx env in
+            let infer_ctx = Infer.infer_ctx_create pctx.emitter tcx in
             ignore (Infer.infer_begin infer_ctx modd);
             let ty_ctx = Tychk.ty_ctx_create infer_ctx in
             ignore (Tychk.tychk ty_ctx modd))
@@ -59,7 +58,7 @@ let () =
       if !Infer.error <> 0 || !Tychk.error <> 0 then exit 1;
       let time, modulee =
         Timer.time (fun () ->
-            let lowering_ctx = Lowering.Context.create tcx modd env in
+            let lowering_ctx = Lowering.Context.create tcx modd in
             Lowering.Item.lower_ast lowering_ctx)
       in
       sess.timings.lowering <- time;

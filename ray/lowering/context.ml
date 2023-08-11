@@ -9,20 +9,16 @@ type env = {
 
 type t = {
   tcx : tcx;
-  func_map : (path, Func.fn_type) Hashtbl.t;
   mutable env : env;
-  globl_env : (path, lang_item) Hashtbl.t;
   mutable modd : modd;
   mutable fn : Func.t option;
   mutable block : Inst.basic_block option;
 }
 
-let create tcx modd env =
+let create tcx modd =
   {
     tcx;
-    func_map = Hashtbl.create 0;
     env = { parent = None; locals = Hashtbl.create 0 };
-    globl_env = env;
     modd;
     fn = None;
     block = None;

@@ -14,6 +14,7 @@ type int_ty =
   | U32
   | U64
   | Usize
+[@@deriving enum]
 
 let display_int_ty = function
   | I8 -> "i8"
@@ -57,6 +58,7 @@ let is_signed = function I8 | I16 | I32 | I64 | Isize -> true | _ -> false
 type float_ty =
   | F64
   | F32
+[@@deriving enum]
 
 let display_float_ty = function F32 -> "f32" | F64 -> "f64"
 
@@ -211,23 +213,23 @@ let rec ( != ) (ty1 : ty) (ty2 : ty) : bool =
       let tys1 = List.map (fun (_, ty) -> ty) fields1 in
       let tys2 = List.map (fun (_, ty) -> ty) fields2 in
       (if List.length tys1 = 0 && List.length tys2 = 0 then false
-      else (
-        try
-          List.map2 ( != ) tys1 tys2
-          |> List.filter (fun f -> not f)
-          |> List.length = 0
-        with Invalid_argument _ -> true))
+       else (
+         try
+           List.map2 ( != ) tys1 tys2
+           |> List.filter (fun f -> not f)
+           |> List.length = 0
+         with Invalid_argument _ -> true))
       || name1 <> name2
   | Ptr ty1, Ptr ty2 -> ty1 != ty2
   | RefTy ty1, RefTy ty2 -> ty1 != ty2
   | FnTy (tys1, ret_ty1, is_var1), FnTy (tys2, ret_ty2, is_var2) ->
       (if List.length tys1 = 0 && List.length tys2 = 0 then false
-      else (
-        try
-          List.map2 ( != ) tys1 tys2
-          |> List.filter (fun f -> not f)
-          |> List.length = 0
-        with Invalid_argument _ -> true))
+       else (
+         try
+           List.map2 ( != ) tys1 tys2
+           |> List.filter (fun f -> not f)
+           |> List.length = 0
+         with Invalid_argument _ -> true))
       || ret_ty1 != ret_ty2 || is_var1 <> is_var2
   | _, _ -> ty1 <> ty2
 
@@ -427,3 +429,16 @@ let rec get_backend_type tcx' (ty : ty) : lltype =
   | Unit -> tcx.void
   | Ident path -> Hashtbl.find tcx.structs (render_path path)
   | Infer _ -> assert false
+
+let discriminator = function
+  | Int _ -> 0L
+  | Float _ -> 1L
+  | Bool -> 2L
+  | Str -> 3L
+  | Ptr _ -> 4L
+  | RefTy _ -> 5L
+  | FnTy _ -> 6L
+  | Struct _ -> 7L
+  | Infer _ -> 8L
+  | Ident _ -> 9L
+  | Unit -> 10L

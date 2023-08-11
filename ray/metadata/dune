@@ -1,0 +1,3 @@
+(library
+ (name metadata)
+ (modules encoder decoder))

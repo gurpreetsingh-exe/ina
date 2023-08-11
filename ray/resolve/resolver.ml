@@ -173,14 +173,14 @@ let rec mod_exists resolver name =
   in
   f
     (if resolver.is_root then
-     Path.join [Filename.dirname resolver.modd.mod_path; name]
-    else
-      Path.join
-        [
-          Filename.dirname resolver.modd.mod_path;
-          resolver.modd.mod_name;
-          name;
-        ])
+       Path.join [Filename.dirname resolver.modd.mod_path; name]
+     else
+       Path.join
+         [
+           Filename.dirname resolver.modd.mod_path;
+           resolver.modd.mod_name;
+           name;
+         ])
 
 let create_path resolver name =
   let f name =
@@ -202,14 +202,14 @@ let create_path resolver name =
   in
   f
     (if resolver.is_root then
-     Path.join [Filename.dirname resolver.modd.mod_path; name]
-    else
-      Path.join
-        [
-          Filename.dirname resolver.modd.mod_path;
-          resolver.modd.mod_name;
-          name;
-        ])
+       Path.join [Filename.dirname resolver.modd.mod_path; name]
+     else
+       Path.join
+         [
+           Filename.dirname resolver.modd.mod_path;
+           resolver.modd.mod_name;
+           name;
+         ])
 
 let fn_ty func =
   let { fn_sig = { args; ret_ty; is_variadic; _ }; _ } = func in

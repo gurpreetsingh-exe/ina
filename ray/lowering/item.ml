@@ -47,7 +47,6 @@ let rec lower_fn (fn : func) (ctx : Context.t) (mangle_name : bool) : Func.t
         linkage_name;
       }
   in
-  Hashtbl.add ctx.func_map fn_path fn_ty;
   match body with
   | Some body ->
       let fn = Func.Def { def_ty = fn_ty; basic_blocks = { bbs = [] } } in
@@ -99,14 +98,7 @@ let rec lower_ast (ctx : Context.t) : Module.t =
         items := !items @ [lower_fn func ctx !mangle]
     | Foreign funcs ->
         items := !items @ List.map (fun f -> lower_fn f ctx false) funcs
-    | Import path -> (
-      match Hashtbl.find ctx.globl_env path with
-      | Mod modd ->
-          let tmp = ctx.modd in
-          ctx.modd <- modd;
-          items := (lower_ast ctx).items @ !items;
-          ctx.modd <- tmp
-      | _ -> ())
+    | Import _ -> ()
     | Mod m ->
         let modd = Option.get m.resolved_mod in
         let tmp = ctx.modd in
