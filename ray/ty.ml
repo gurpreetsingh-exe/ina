@@ -2,6 +2,7 @@ open Printf
 open Llvm
 open Llvm_target
 open Session
+open Metadata
 
 type int_ty =
   | I8
@@ -27,6 +28,10 @@ let display_int_ty = function
   | U32 -> "u32"
   | U64 -> "u64"
   | Usize -> "usize"
+
+let encode_int_ty (enc : Encoder.t) int_ty =
+  let disc = int_ty_to_enum int_ty |> Int64.of_int in
+  Buffer.add_int64_be enc.buf disc
 
 let signed_range (n : int) : int * int =
   let n = float_of_int (n - 1) in
@@ -61,6 +66,10 @@ type float_ty =
 [@@deriving enum]
 
 let display_float_ty = function F32 -> "f32" | F64 -> "f64"
+
+let encode_float_ty (enc : Encoder.t) float_ty =
+  let disc = float_ty_to_enum float_ty |> Int64.of_int in
+  Buffer.add_int64_be enc.buf disc
 
 type ty_vid = { index : int }
 
@@ -213,23 +222,23 @@ let rec ( != ) (ty1 : ty) (ty2 : ty) : bool =
       let tys1 = List.map (fun (_, ty) -> ty) fields1 in
       let tys2 = List.map (fun (_, ty) -> ty) fields2 in
       (if List.length tys1 = 0 && List.length tys2 = 0 then false
-       else (
-         try
-           List.map2 ( != ) tys1 tys2
-           |> List.filter (fun f -> not f)
-           |> List.length = 0
-         with Invalid_argument _ -> true))
+      else (
+        try
+          List.map2 ( != ) tys1 tys2
+          |> List.filter (fun f -> not f)
+          |> List.length = 0
+        with Invalid_argument _ -> true))
       || name1 <> name2
   | Ptr ty1, Ptr ty2 -> ty1 != ty2
   | RefTy ty1, RefTy ty2 -> ty1 != ty2
   | FnTy (tys1, ret_ty1, is_var1), FnTy (tys2, ret_ty2, is_var2) ->
       (if List.length tys1 = 0 && List.length tys2 = 0 then false
-       else (
-         try
-           List.map2 ( != ) tys1 tys2
-           |> List.filter (fun f -> not f)
-           |> List.length = 0
-         with Invalid_argument _ -> true))
+      else (
+        try
+          List.map2 ( != ) tys1 tys2
+          |> List.filter (fun f -> not f)
+          |> List.length = 0
+        with Invalid_argument _ -> true))
       || ret_ty1 != ret_ty2 || is_var1 <> is_var2
   | _, _ -> ty1 <> ty2
 
@@ -442,3 +451,18 @@ let discriminator = function
   | Infer _ -> 8L
   | Ident _ -> 9L
   | Unit -> 10L
+
+let rec encode enc ty =
+  let dis = discriminator ty in
+  ty
+  |> function
+  | Int i -> Encoder.emit_with enc dis (fun e -> encode_int_ty e i)
+  | Float f -> Encoder.emit_with enc dis (fun e -> encode_float_ty e f)
+  | FnTy (args, ret_ty, is_var) ->
+      Encoder.emit_with enc dis (fun e ->
+          Encoder.emit_u8 e (List.length args);
+          List.iter (fun ty -> encode e ty) args;
+          encode e ret_ty;
+          Encoder.emit_u8 e (if is_var then 1 else 0))
+  | Bool | Unit | Str -> Encoder.emit_with enc dis (fun _ -> ())
+  | Ptr _ | RefTy _ | Struct (_, _) | Infer _ | Ident _ -> ()

@@ -111,7 +111,7 @@ let gen_blocks (cx : codegen_ctx) (blocks : Func.blocks) =
     (fun (bb : Inst.basic_block) ->
       Hashtbl.add bbs bb.bid
         (if bb.is_entry then entry_block fn
-         else append_block tcx.out_mod.llcx (sprintf "bb%d" bb.bid) fn))
+        else append_block tcx.out_mod.llcx (sprintf "bb%d" bb.bid) fn))
     blocks.bbs;
   let rec get_value (value : Inst.value) : llvalue =
     match value with
@@ -224,7 +224,8 @@ let gen_blocks (cx : codegen_ctx) (blocks : Func.blocks) =
                   List.map (fun ty -> get_backend_type tcx ty) args
                 in
                 let ret_ty = get_backend_type tcx ret_ty in
-                (if is_variadic then var_arg_function_type else function_type)
+                (if is_variadic then var_arg_function_type
+                else function_type)
                   ret_ty (Array.of_list args)
             | _ -> assert false
           in
@@ -299,10 +300,29 @@ let gen_module (cx : codegen_ctx) (modd : Module.t) =
   | Agressive -> run_passes llmod "default<O3>" tcx.sess.machine
 
 let emit (cx : codegen_ctx) =
+  let open Metadata in
   let tcx = cx.tcx in
   let llmod = tcx.out_mod.inner in
   let output = tcx.sess.options.output in
   let machine = tcx.sess.machine in
+  let enc = Encoder.create () in
+  Encoder.emit_usize enc @@ Hashtbl.length tcx.def_table.table;
+  Hashtbl.iter
+    (fun def_id def_data ->
+      Encoder.emit_u32 enc def_id.inner;
+      def_data |> function Ty ty -> Ty.encode enc ty)
+    tcx.def_table.table;
+  Encoder.emit_usize enc @@ Hashtbl.length tcx.sym_table;
+  Hashtbl.iter
+    (fun def_id sym ->
+      Encoder.emit_str enc sym;
+      Encoder.emit_u32 enc def_id.inner)
+    tcx.sym_table;
+  let content = const_string tcx.out_mod.llcx (Encoder.data enc) in
+  let metadata = define_global "__ray_metadata" content llmod in
+  set_section ".ray" metadata;
+  set_linkage Private metadata;
+  set_visibility Visibility.Hidden metadata;
   match tcx.sess.options.output_type with
   | LlvmIr ->
       let ic = open_out (output ^ ".ll") in

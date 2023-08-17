@@ -173,14 +173,14 @@ let rec mod_exists resolver name =
   in
   f
     (if resolver.is_root then
-       Path.join [Filename.dirname resolver.modd.mod_path; name]
-     else
-       Path.join
-         [
-           Filename.dirname resolver.modd.mod_path;
-           resolver.modd.mod_name;
-           name;
-         ])
+     Path.join [Filename.dirname resolver.modd.mod_path; name]
+    else
+      Path.join
+        [
+          Filename.dirname resolver.modd.mod_path;
+          resolver.modd.mod_name;
+          name;
+        ])
 
 let create_path resolver name =
   let f name =
@@ -202,14 +202,14 @@ let create_path resolver name =
   in
   f
     (if resolver.is_root then
-       Path.join [Filename.dirname resolver.modd.mod_path; name]
-     else
-       Path.join
-         [
-           Filename.dirname resolver.modd.mod_path;
-           resolver.modd.mod_name;
-           name;
-         ])
+     Path.join [Filename.dirname resolver.modd.mod_path; name]
+    else
+      Path.join
+        [
+          Filename.dirname resolver.modd.mod_path;
+          resolver.modd.mod_name;
+          name;
+        ])
 
 let fn_ty func =
   let { fn_sig = { args; ret_ty; is_variadic; _ }; _ } = func in
@@ -371,7 +371,12 @@ let rec resolve resolver : modul =
     | Foreign funcs -> List.iter (fun f -> visit_fn f modul) funcs
     | Unit name ->
         let lib_name = "lib" ^ name ^ ".o" in
-        if Sys.file_exists lib_name then ()
+        if Sys.file_exists lib_name then (
+          let obj = Object.read_obj lib_name in
+          let _metadata =
+            Option.get @@ Object.read_section_by_name obj ".ray\000"
+          in
+          ())
         else (
           eprintf "error(%s): library `%s` not found\n"
             resolver.modd.mod_path name;

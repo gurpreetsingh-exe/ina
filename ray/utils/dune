@@ -1,10 +1,11 @@
 (library
  (name utils)
- (libraries errors)
+ (libraries errors str)
  (preprocess
   (pps
+   ppx_deriving.show
    ppx_optcomp
    --
    -cookie
-   "ppx_optcomp.env=env ~profile:(Defined \"%{profile}\")"))
- (modules timer path panic))
+   "ppx_optcomp.env=env ~profile:(Defined \"%{profile}\") ~os:(Defined \"%{os_type}\")"))
+ (modules timer path panic object))
