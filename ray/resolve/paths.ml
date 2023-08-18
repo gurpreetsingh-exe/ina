@@ -153,12 +153,12 @@ let rec resolve_paths (resolver : Resolver.t) (modul : modul) (modd : modd) :
             let binding = { binding = { kind = Res (Local id) } } in
             add_name_res m.resolutions key binding)
           func.fn_sig.args;
-        let id = { inner = func.func_id } in
+        let id = def_id func.func_id 0 in
         (lookup_def resolver.tcx id |> function Ty ty -> resolve_ty ty);
         List.iter (fun (ty, _, _) -> resolve_ty ty) func.fn_sig.args;
         match func.body with Some body -> visit_block body m | None -> ())
     | Type (Struct s) -> (
-        let id = { inner = s.struct_id } in
+        let id = def_id s.struct_id 0 in
         lookup_def resolver.tcx id |> function Ty ty -> resolve_ty ty)
     | Unit _ | Foreign _ | Const _ | Import _ -> ()
   in

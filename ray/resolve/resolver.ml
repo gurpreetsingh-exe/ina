@@ -105,6 +105,7 @@ type t = {
   mutable is_root : bool;
   disambiguator : disambiguator;
   mutable key : binding_key;
+  units : (string, int) Hashtbl.t;
 }
 
 let create tcx modd =
@@ -116,9 +117,23 @@ let create tcx modd =
     is_root = true;
     disambiguator = { stack = [0] };
     key = { ident = ""; ns = Value; disambiguator = 0 };
+    units = Hashtbl.create 0;
   }
 
 let add_mod resolver id modul = Hashtbl.replace resolver.mod_table id modul
+
+let add_unit resolver name =
+  match Hashtbl.find_opt resolver.units name with
+  | None ->
+      let id = Hashtbl.length resolver.units + 1 in
+      Hashtbl.add resolver.units name id;
+      id
+  | Some id -> id
+
+let unit_id resolver name =
+  match Hashtbl.find_opt resolver.units name with
+  | Some id -> id
+  | None -> add_unit resolver name
 
 module Disambiguator = struct
   let create disambiguator = List.hd disambiguator.stack
@@ -221,7 +236,7 @@ let struct_ty (strukt : strukt) path =
   Struct (name, List.map (fun (ty, field) -> (field, ty)) strukt.members)
 
 let rec resolve resolver : modul =
-  let id = { inner = resolver.modd.mod_id } in
+  let id = def_id resolver.modd.mod_id 0 in
   let mkind = Def (Mod, id, resolver.modd.mod_name) in
   let modul =
     {
@@ -307,7 +322,7 @@ let rec resolve resolver : modul =
                (fun seg -> string_of_int (String.length seg) ^ seg)
                segments)
     in
-    let id = { inner = func.func_id } in
+    let id = def_id func.func_id 0 in
     let res : res =
       Def (id, if func.abi = "intrinsic" then Intrinsic else Fn)
     in
@@ -360,7 +375,7 @@ let rec resolve resolver : modul =
     | Fn (func, _) -> visit_fn func modul
     | Type (Struct s) ->
         let name = s.ident in
-        let id = { inner = s.struct_id } in
+        let id = def_id s.struct_id 0 in
         let segments = get_root_path modul @ [name] in
         let res : res = Def (id, Struct) in
         let path = { segments; res } in
@@ -370,13 +385,27 @@ let rec resolve resolver : modul =
         add_name_res modul.resolutions key binding
     | Foreign funcs -> List.iter (fun f -> visit_fn f modul) funcs
     | Unit name ->
+        let unit_id = add_unit resolver name in
         let lib_name = "lib" ^ name ^ ".o" in
         if Sys.file_exists lib_name then (
           let obj = Object.read_obj lib_name in
-          let _metadata =
+          let metadata =
             Option.get @@ Object.read_section_by_name obj ".ray\000"
           in
-          ())
+          let open Metadata in
+          let dec = Decoder.create metadata in
+          let def_table_entries = Decoder.read_usize dec in
+          for _ = 0 to def_table_entries - 1 do
+            let def_id = def_id (Decoder.read_u32 dec) unit_id in
+            let ty = Ty.decode dec in
+            create_def resolver.tcx def_id (Ty ty) None
+          done;
+          let sym_table_entries = Decoder.read_usize dec in
+          for _ = 0 to sym_table_entries - 1 do
+            let sym = Decoder.read_str dec in
+            let def_id = def_id (Decoder.read_u32 dec) unit_id in
+            create_sym resolver.tcx.sym_table def_id sym
+          done)
         else (
           eprintf "error(%s): library `%s` not found\n"
             resolver.modd.mod_path name;

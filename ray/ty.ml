@@ -33,6 +33,10 @@ let encode_int_ty (enc : Encoder.t) int_ty =
   let disc = int_ty_to_enum int_ty |> Int64.of_int in
   Buffer.add_int64_be enc.buf disc
 
+let decode_int_ty (dec : Decoder.t) =
+  let dis = Decoder.read_usize dec in
+  Option.get @@ int_ty_of_enum dis
+
 let signed_range (n : int) : int * int =
   let n = float_of_int (n - 1) in
   let lo = Float.pow (-2.0) n in
@@ -71,6 +75,10 @@ let encode_float_ty (enc : Encoder.t) float_ty =
   let disc = float_ty_to_enum float_ty |> Int64.of_int in
   Buffer.add_int64_be enc.buf disc
 
+let decode_float_ty (dec : Decoder.t) =
+  let dis = Decoder.read_usize dec in
+  Option.get @@ float_ty_of_enum dis
+
 type ty_vid = { index : int }
 
 type infer_ty =
@@ -103,11 +111,14 @@ let render_infer_ty ty dbg =
 
 type path_segment = string
 
-type def_id = { inner : int }
+type def_id = {
+  inner : int;
+  unit_id : int;
+}
 
-let def_id inner = { inner }
+let def_id inner unit_id = { inner; unit_id }
 
-let print_def_id def_id = "def_id#" ^ string_of_int def_id.inner
+let print_def_id def_id = sprintf "def_id#%d:%d" def_id.inner def_id.unit_id
 
 type prim_ty =
   | Int of int_ty
@@ -466,3 +477,23 @@ let rec encode enc ty =
           Encoder.emit_u8 e (if is_var then 1 else 0))
   | Bool | Unit | Str -> Encoder.emit_with enc dis (fun _ -> ())
   | Ptr _ | RefTy _ | Struct (_, _) | Infer _ | Ident _ -> ()
+
+let rec decode dec =
+  let dis = Decoder.read_usize dec in
+  match dis with
+  | 0 -> Int (decode_int_ty dec)
+  | 1 -> Float (decode_float_ty dec)
+  | 2 -> Bool
+  | 3 -> Str
+  | 6 ->
+      let nargs = Decoder.read_u8 dec in
+      let args =
+        List.map (fun _ -> decode dec) (List.init nargs (fun x -> x))
+      in
+      let ret_ty = decode dec in
+      let is_var = Decoder.read_u8 dec = 1 in
+      FnTy (args, ret_ty, is_var)
+  | 10 -> Unit
+  | _ ->
+      printf "%d\n" dis;
+      assert false
