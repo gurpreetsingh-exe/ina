@@ -1,4 +1,5 @@
 open Llvm_target
+open Metadata
 
 type timings = {
   mutable parse : float;
@@ -48,6 +49,7 @@ type t = {
   options : Config.t;
   timings : timings;
   target : target;
+  enc : Encoder.t;
   machine : TargetMachine.t;
 }
 
@@ -65,5 +67,6 @@ let create options =
         gen_and_link = 0.;
       };
     target;
+    enc = Encoder.create ();
     machine;
   }

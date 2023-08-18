@@ -1,4 +1,4 @@
 (library
  (name resolve)
- (libraries ast front sema errors utils)
+ (libraries ast front sema errors metadata utils)
  (modules paths resolver))

@@ -140,6 +140,46 @@ and res =
   | Local of int
   | Err
 
+let def_kind_to_enum = function
+  | Mod -> 0L
+  | Struct -> 1L
+  | Fn -> 2L
+  | Intrinsic -> 3L
+
+let def_kind_from_enum = function
+  | 0 -> Mod
+  | 1 -> Struct
+  | 2 -> Fn
+  | 3 -> Intrinsic
+  | _ -> assert false
+
+let res_to_enum = function
+  | Def _ -> 0L
+  | PrimTy _ -> 1L
+  | Local _ -> 2L
+  | Err -> 3L
+
+let encode_res enc res =
+  let dis = res_to_enum res in
+  match res with
+  | Def (def_id, def_kind) ->
+      Encoder.emit_with enc dis (fun e ->
+          Encoder.emit_u32 e def_id.inner;
+          let disc = def_kind_to_enum def_kind in
+          Buffer.add_int64_be enc.buf disc)
+  | PrimTy _ -> assert false
+  | Local _ | Err -> assert false
+
+let decode_res dec unit_id : res =
+  let dis = Decoder.read_usize dec in
+  match dis with
+  | 0 ->
+      let def_id = def_id (Decoder.read_u32 dec) unit_id in
+      let def_kind = def_kind_from_enum (Decoder.read_usize dec) in
+      Def (def_id, def_kind)
+  | 1 -> assert false
+  | _ -> assert false
+
 type path = {
   mutable segments : path_segment list;
   mutable res : res;
@@ -382,6 +422,8 @@ let tcx_gen_id tcx =
   tcx.uuid <- tcx.uuid + 1;
   tcx.uuid
 
+let tcx_metadata tcx = Encoder.data tcx.sess.enc
+
 let create_def tcx id def_data name =
   create_def tcx.def_table id def_data;
   match name with
@@ -477,6 +519,20 @@ let rec encode enc ty =
           Encoder.emit_u8 e (if is_var then 1 else 0))
   | Bool | Unit | Str -> Encoder.emit_with enc dis (fun _ -> ())
   | Ptr _ | RefTy _ | Struct (_, _) | Infer _ | Ident _ -> ()
+
+let encode_metadata tcx =
+  Encoder.emit_usize tcx.sess.enc @@ Hashtbl.length tcx.def_table.table;
+  Hashtbl.iter
+    (fun def_id def_data ->
+      Encoder.emit_u32 tcx.sess.enc def_id.inner;
+      def_data |> function Ty ty -> encode tcx.sess.enc ty)
+    tcx.def_table.table;
+  Encoder.emit_usize tcx.sess.enc @@ Hashtbl.length tcx.sym_table;
+  Hashtbl.iter
+    (fun def_id sym ->
+      Encoder.emit_str tcx.sess.enc sym;
+      Encoder.emit_u32 tcx.sess.enc def_id.inner)
+    tcx.sym_table
 
 let rec decode dec =
   let dis = Decoder.read_usize dec in

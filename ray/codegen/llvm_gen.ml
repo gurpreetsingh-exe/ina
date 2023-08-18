@@ -8,6 +8,7 @@ open Llvm_X86
 open Llvm_analysis
 open Printf
 open Session
+open Utils
 
 type env = {
   bindings : (string, llvalue) Hashtbl.t;
@@ -305,20 +306,7 @@ let emit (cx : codegen_ctx) =
   let llmod = tcx.out_mod.inner in
   let output = tcx.sess.options.output in
   let machine = tcx.sess.machine in
-  let enc = Encoder.create () in
-  Encoder.emit_usize enc @@ Hashtbl.length tcx.def_table.table;
-  Hashtbl.iter
-    (fun def_id def_data ->
-      Encoder.emit_u32 enc def_id.inner;
-      def_data |> function Ty ty -> Ty.encode enc ty)
-    tcx.def_table.table;
-  Encoder.emit_usize enc @@ Hashtbl.length tcx.sym_table;
-  Hashtbl.iter
-    (fun def_id sym ->
-      Encoder.emit_str enc sym;
-      Encoder.emit_u32 enc def_id.inner)
-    tcx.sym_table;
-  let content = const_string tcx.out_mod.llcx (Encoder.data enc) in
+  let content = const_string tcx.out_mod.llcx (tcx_metadata tcx) in
   let metadata = define_global "__ray_metadata" content llmod in
   set_section ".ray" metadata;
   set_linkage Private metadata;
@@ -328,7 +316,7 @@ let emit (cx : codegen_ctx) =
       let ic = open_out (output ^ ".ll") in
       output_string ic (string_of_llmodule llmod)
   | Unit ->
-      let objfile = "lib" ^ output ^ ".o" in
+      let objfile = Path.with_ext (Path.add_suffix output "lib") ".o" in
       TargetMachine.emit_to_file llmod CodeGenFileType.ObjectFile objfile
         machine
   | Object ->

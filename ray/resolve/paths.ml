@@ -55,6 +55,19 @@ let resolve_path resolver (modul : modul) (path : path) ns : res =
       done;
       !res
 
+let resolve_path resolver modul path ns =
+  let res = ref @@ resolve_path resolver modul path ns in
+  (match !res with
+  | Err ->
+      let i = ref 0 in
+      while !i < List.length resolver.extern_units && !res = Err do
+        let modul = List.nth resolver.extern_units !i in
+        res := resolve_path resolver modul path ns;
+        incr i
+      done
+  | _ -> ());
+  !res
+
 let rec resolve_paths (resolver : Resolver.t) (modul : modul) (modd : modd) :
     unit =
   let rec resolve_ty ty =

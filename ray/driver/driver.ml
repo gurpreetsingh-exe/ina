@@ -20,7 +20,6 @@ let open_file (ctx : Sess.t) =
       fprintf stderr
         "error: input file `%s` will be overwritten by the executable\n" name;
       exit 1);
-    ctx.options.output <- Filename.chop_extension name;
     close_in ic;
     s)
   else (
@@ -35,6 +34,8 @@ let () =
   let tokenizer = Tokenizer.tokenize sess.options.input s in
   let pctx = Parser.parse_ctx_create tcx tokenizer s in
   let time, modd = Timer.time (fun () -> Parser.parse_mod pctx) in
+  tcx.sess.options.output <-
+    Path.join [Filename.dirname modd.mod_path; modd.mod_name];
   sess.timings.parse <- time;
   (match sess.options.command with
   | Build ->
@@ -42,6 +43,7 @@ let () =
         Timer.time (fun () ->
             let resolver = Resolver.create tcx modd in
             let modul = Resolver.resolve resolver in
+            encode_metadata tcx;
             resolver.disambiguator.stack <- [0];
             Paths.resolve_paths resolver modul modd;
             modul.resolutions)

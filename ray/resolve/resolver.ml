@@ -3,6 +3,7 @@ open Ast
 open Ty
 open Utils
 open Front
+open Metadata
 
 type namespace =
   | Type
@@ -36,6 +37,8 @@ and name_binding = { kind : name_binding_kind (* vis : vis *) }
 and name_resolution = { binding : name_binding }
 
 and resolutions = (binding_key, name_resolution) Hashtbl.t
+
+let name_binding_kind_to_enum = function Res _ -> 0L | Module _ -> 1L
 
 module Res = struct
   type t = res
@@ -102,6 +105,7 @@ type t = {
   mutable modd : modd;
   mutable modul : modul option;
   mod_table : (def_id, modul) Hashtbl.t;
+  mutable extern_units : modul list;
   mutable is_root : bool;
   disambiguator : disambiguator;
   mutable key : binding_key;
@@ -114,6 +118,7 @@ let create tcx modd =
     modd;
     modul = None;
     mod_table = Hashtbl.create 0;
+    extern_units = [];
     is_root = true;
     disambiguator = { stack = [0] };
     key = { ident = ""; ns = Value; disambiguator = 0 };
@@ -134,6 +139,59 @@ let unit_id resolver name =
   match Hashtbl.find_opt resolver.units name with
   | Some id -> id
   | None -> add_unit resolver name
+
+let rec encode_module enc modul =
+  (match modul.mkind with
+  | Def (_, def_id, name) ->
+      Encoder.emit_u32 enc def_id.inner;
+      Encoder.emit_str enc name
+  | _ -> assert false);
+  Encoder.emit_usize enc @@ Hashtbl.length modul.resolutions;
+  Hashtbl.iter
+    (fun key nameres ->
+      Encoder.emit_str enc key.ident;
+      Encoder.emit_u8 enc (match key.ns with Value -> 0 | Type -> 1);
+      let kind = nameres.binding.kind in
+      let dis = name_binding_kind_to_enum kind in
+      match kind with
+      | Res res -> Encoder.emit_with enc dis (fun e -> encode_res e res)
+      | Module m -> Encoder.emit_with enc dis (fun e -> encode_module e m))
+    modul.resolutions
+
+let rec decode_module resolver dec parent unit_id =
+  let def_id = def_id (Decoder.read_u32 dec) unit_id in
+  let name = Decoder.read_str dec in
+  let modul =
+    {
+      mkind = Def (Mod, def_id, name);
+      parent;
+      resolutions = Hashtbl.create 0;
+      scope_table = Hashtbl.create 0;
+    }
+  in
+  let module_entries = Decoder.read_usize dec in
+  List.iter
+    (fun _ ->
+      let ident = Decoder.read_str dec in
+      let ns =
+        match Decoder.read_u8 dec with
+        | 0 -> Value
+        | 1 -> Type
+        | _ -> assert false
+      in
+      let key = { ident; ns; disambiguator = 0 } in
+      let dis = Decoder.read_usize dec in
+      let kind =
+        match dis with
+        | 0 -> Res (decode_res dec unit_id)
+        | 1 -> Module (decode_module resolver dec (Some modul) unit_id)
+        | _ -> assert false
+      in
+      let binding = { binding = { kind } } in
+      add_name_res modul.resolutions key binding)
+    (List.init module_entries (fun x -> x));
+  add_mod resolver def_id modul;
+  modul
 
 module Disambiguator = struct
   let create disambiguator = List.hd disambiguator.stack
@@ -394,6 +452,8 @@ let rec resolve resolver : modul =
           in
           let open Metadata in
           let dec = Decoder.create metadata in
+          let modul = decode_module resolver dec None unit_id in
+          resolver.extern_units <- resolver.extern_units @ [modul];
           let def_table_entries = Decoder.read_usize dec in
           for _ = 0 to def_table_entries - 1 do
             let def_id = def_id (Decoder.read_u32 dec) unit_id in
@@ -413,4 +473,5 @@ let rec resolve resolver : modul =
     | Const _ | Import _ -> ()
   in
   List.iter visit_item resolver.modd.items;
-  modul
+  let enc = resolver.tcx.sess.enc in
+  encode_module enc modul; modul

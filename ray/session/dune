@@ -1,4 +1,4 @@
 (library
  (name session)
  (modules args sess config)
- (libraries llvm.target))
+ (libraries llvm.target metadata))
