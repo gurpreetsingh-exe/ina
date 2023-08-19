@@ -454,6 +454,7 @@ let rec resolve resolver : modul =
           let dec = Decoder.create metadata in
           let modul = decode_module resolver dec None unit_id in
           resolver.extern_units <- resolver.extern_units @ [modul];
+          resolver.tcx.units <- resolver.tcx.units @ [lib_name];
           let def_table_entries = Decoder.read_usize dec in
           for _ = 0 to def_table_entries - 1 do
             let def_id = def_id (Decoder.read_u32 dec) unit_id in
@@ -464,10 +465,11 @@ let rec resolve resolver : modul =
           for _ = 0 to sym_table_entries - 1 do
             let sym = Decoder.read_str dec in
             let def_id = def_id (Decoder.read_u32 dec) unit_id in
-            create_sym resolver.tcx.sym_table def_id sym
+            create_sym resolver.tcx.sym_table def_id sym;
+            create_sym resolver.tcx.sym_table2 sym def_id
           done)
         else (
-          eprintf "error(%s): library `%s` not found\n"
+          eprintf "error(%s): unit `%s` not found\n"
             resolver.modd.mod_path name;
           flush stderr)
     | Const _ | Import _ -> ()

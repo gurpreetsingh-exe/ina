@@ -373,6 +373,8 @@ type tcx = {
   lltys : llvm_types;
   def_table : def_table;
   sym_table : sym_table;
+  sym_table2 : (string, def_id) Hashtbl.t;
+  mutable units : string list;
   mutable uuid : int;
 }
 
@@ -415,6 +417,8 @@ let tcx_create sess =
     lltys = backend_types sess.target out_mod;
     def_table = { table = Hashtbl.create 0 };
     sym_table = Hashtbl.create 0;
+    sym_table2 = Hashtbl.create 0;
+    units = [];
     uuid = 0;
   }
 
@@ -427,7 +431,9 @@ let tcx_metadata tcx = Encoder.data tcx.sess.enc
 let create_def tcx id def_data name =
   create_def tcx.def_table id def_data;
   match name with
-  | Some name -> create_sym tcx.sym_table id name
+  | Some name ->
+      create_sym tcx.sym_table id name;
+      create_sym tcx.sym_table2 name id
   | None -> ()
 
 let lookup_def tcx id = lookup_def tcx.def_table id
@@ -438,6 +444,8 @@ let expect_def tcx res expected : ty option =
       let def = lookup_def tcx id in
       match def with Ty ty -> Some ty)
   | _ -> None
+
+let lookup_sym2 tcx str : def_id = lookup_sym tcx.sym_table2 str
 
 let lookup_sym tcx res : string =
   match res with

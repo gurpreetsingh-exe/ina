@@ -144,7 +144,26 @@ let gen_blocks (cx : codegen_ctx) (blocks : Func.blocks) =
     | VReg (inst, id, _) -> Hashtbl.find insts id
     | Label bb -> value_of_block (Hashtbl.find bbs bb.bid)
     | Param (_, _, i) -> (params (Option.get cx.curr_fn)).(i)
-    | Global name -> Option.get (lookup_function name llmod)
+    | Global name -> (
+      match lookup_function name llmod with
+      | Some f -> f
+      | None ->
+          let ty =
+            lookup_def tcx @@ lookup_sym2 tcx name |> function Ty ty -> ty
+          in
+          let fn_ty =
+            match ty with
+            | FnTy (args, ret_ty, is_variadic) ->
+                let args =
+                  List.map (fun ty -> get_backend_type tcx ty) args
+                in
+                let ret_ty = get_backend_type tcx ret_ty in
+                (if is_variadic then var_arg_function_type
+                else function_type)
+                  ret_ty (Array.of_list args)
+            | _ -> assert false
+          in
+          declare_function name fn_ty llmod)
   in
   let get_load_ty ptr =
     match Inst.get_ty ptr with
@@ -328,8 +347,11 @@ let emit (cx : codegen_ctx) =
         (output ^ ".s") machine
   | Exe ->
       let objfile = output ^ ".o" in
+      let link_args = " " ^ String.concat " " tcx.units in
       TargetMachine.emit_to_file llmod CodeGenFileType.ObjectFile objfile
         machine;
-      let command = Sys.command ("clang " ^ objfile ^ " -o " ^ output) in
+      let command =
+        Sys.command @@ sprintf "clang %s%s -o %s" objfile link_args output
+      in
       if command <> 0 then Printf.fprintf stderr "cannot emit executable\n";
       ignore (Sys.command ("rm -f " ^ objfile))
