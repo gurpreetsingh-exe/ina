@@ -99,13 +99,18 @@ let rec lower_ast (ctx : Context.t) : Module.t =
     | Foreign funcs ->
         items := !items @ List.map (fun f -> lower_fn f ctx false) funcs
     | Import _ -> ()
+    | Const _ | Type _ | Unit _ | Mod _ -> ()
+  in
+  List.iter f ctx.modd.items;
+  let f (item : item) =
+    match item with
     | Mod m ->
         let modd = Option.get m.resolved_mod in
         let tmp = ctx.modd in
         ctx.modd <- modd;
         items := !items @ (lower_ast ctx).items;
         ctx.modd <- tmp
-    | Const _ | Type _ | Unit _ -> ()
+    | _ -> ()
   in
   List.iter f ctx.modd.items;
   gen_id !items;

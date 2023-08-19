@@ -15,6 +15,7 @@ type t = {
   mutable display_type_vars : bool;
   mutable ui_testing : bool;
   mutable dot_cfg : bool;
+  mutable build_stdlib : bool;
 }
 
 and opt_level =
@@ -55,4 +56,5 @@ let config () : t =
     display_type_vars = false;
     ui_testing = false;
     dot_cfg = false;
+    build_stdlib = false;
   }

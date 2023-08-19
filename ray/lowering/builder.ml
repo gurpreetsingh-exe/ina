@@ -77,6 +77,11 @@ let call (ty : ty) (fn : value) (args : value list) (builder : t) : value =
 
 let intrinsic (ty : ty) (name : string) (args : value list) (builder : t) :
     value =
+  let ty =
+    match unwrap_ty builder.tcx ty with
+    | FnTy (_, ret_ty, _) -> ret_ty
+    | _ -> assert false
+  in
   add_inst_with_ty ty (Intrinsic (name, args)) builder
 
 let ptrtoint (value : value) (ty : ty) (builder : t) : value =

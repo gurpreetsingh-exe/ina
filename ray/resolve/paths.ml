@@ -32,28 +32,42 @@ let rec resolve_ident_in_lexical_scope resolver modul ident ns =
       | _ -> Err)
     | _ -> Err)
 
+let resolve_path_in_modul modul path ns =
+  let segs_len = List.length path in
+  let res = ref Err in
+  let unit_in_path_report = ref false in
+  for i = 0 to segs_len - 1 do
+    let ns = if i = segs_len - 1 then ns else Type in
+    let ident = List.nth path i in
+    if i <> 0 && ident = "unit" && not !unit_in_path_report then (
+      unit_in_path_report := true;
+      eprintf "error: `unit` can only appear at the start of a path\n";
+      flush stdout)
+    else (
+      let key = { ident; ns; disambiguator = 0 } in
+      match get_name_res !modul.resolutions key with
+      | Some r -> (
+        match r.binding.kind with
+        | Res r -> res := r
+        | Module modul' -> modul := modul')
+      | None -> ())
+  done;
+  !res
+
 let resolve_path resolver (modul : modul) (path : path) ns : res =
   let segs = path.segments in
   let segs_len = List.length segs in
   let ns = Option.value ~default:Type ns in
-  match (ns, segs_len) with
-  | Value, 1 ->
+  match (ns, segs_len, List.hd segs) with
+  | Value, 1, "unit" -> assert false
+  | Value, 1, _ ->
       resolve_ident_in_lexical_scope resolver modul (List.hd segs) Value
+  | _, _, "unit" ->
+      let modul = ref resolver.unit_root in
+      resolve_path_in_modul modul (List.tl segs) ns
   | _ ->
       let modul = ref (get_root_mod resolver modul) in
-      let res = ref Err in
-      for i = 0 to segs_len - 1 do
-        let ns = if i = segs_len - 1 then ns else Type in
-        let ident = List.nth segs i in
-        let key = { ident; ns; disambiguator = 0 } in
-        match get_name_res !modul.resolutions key with
-        | Some r -> (
-          match r.binding.kind with
-          | Res r -> res := r
-          | Module modul' -> modul := modul')
-        | None -> ()
-      done;
-      !res
+      resolve_path_in_modul modul segs ns
 
 let resolve_path resolver modul path ns =
   let res = ref @@ resolve_path resolver modul path ns in
@@ -159,17 +173,20 @@ let rec resolve_paths (resolver : Resolver.t) (modul : modul) (modd : modd) :
           { ident = func.fn_sig.name; ns = Value; disambiguator = 0 }
         in
         resolver.key <- key;
-        let m = find_scope_res modul.scope_table key in
-        List.iter
-          (fun (_, name, id) ->
-            let key = { ident = name; ns = Value; disambiguator = 0 } in
-            let binding = { binding = { kind = Res (Local id) } } in
-            add_name_res m.resolutions key binding)
-          func.fn_sig.args;
         let id = def_id func.func_id 0 in
         (lookup_def resolver.tcx id |> function Ty ty -> resolve_ty ty);
         List.iter (fun (ty, _, _) -> resolve_ty ty) func.fn_sig.args;
-        match func.body with Some body -> visit_block body m | None -> ())
+        match func.body with
+        | Some body ->
+            let m = find_scope_res modul.scope_table key in
+            List.iter
+              (fun (_, name, id) ->
+                let key = { ident = name; ns = Value; disambiguator = 0 } in
+                let binding = { binding = { kind = Res (Local id) } } in
+                add_name_res m.resolutions key binding)
+              func.fn_sig.args;
+            visit_block body m
+        | None -> ())
     | Type (Struct s) -> (
         let id = def_id s.struct_id 0 in
         lookup_def resolver.tcx id |> function Ty ty -> resolve_ty ty)

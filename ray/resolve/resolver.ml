@@ -104,6 +104,7 @@ type t = {
   tcx : tcx;
   mutable modd : modd;
   mutable modul : modul option;
+  mutable unit_root : modul;
   mod_table : (def_id, modul) Hashtbl.t;
   mutable extern_units : modul list;
   mutable is_root : bool;
@@ -117,6 +118,13 @@ let create tcx modd =
     tcx;
     modd;
     modul = None;
+    unit_root =
+      {
+        mkind = Block;
+        parent = None;
+        resolutions = Hashtbl.create 0;
+        scope_table = Hashtbl.create 0;
+      };
     mod_table = Hashtbl.create 0;
     extern_units = [];
     is_root = true;
@@ -293,7 +301,7 @@ let struct_ty (strukt : strukt) path =
   let name = render_path path in
   Struct (name, List.map (fun (ty, field) -> (field, ty)) strukt.members)
 
-let rec resolve resolver : modul =
+let rec resolve resolver root : modul =
   let id = def_id resolver.modd.mod_id 0 in
   let mkind = Def (Mod, id, resolver.modd.mod_name) in
   let modul =
@@ -304,6 +312,7 @@ let rec resolve resolver : modul =
       scope_table = Hashtbl.create 0;
     }
   in
+  if root then resolver.unit_root <- modul;
   add_mod resolver id modul;
   let rec visit_expr (expr : expr) (key : binding_key) (modul : modul) =
     match expr.expr_kind with
@@ -419,10 +428,19 @@ let rec resolve resolver : modul =
         in
         match modd with
         | Some modd ->
-            let resolver =
-              { resolver with modd; modul = Some modul; is_root = false }
-            in
-            let modul' = resolve resolver in
+            (* let resolver = *)
+            (*   { resolver with modd; modul = Some modul; is_root = false } *)
+            (* in *)
+            let tmp_modd = resolver.modd in
+            let tmp_modul = resolver.modul in
+            let tmp_is_root = resolver.is_root in
+            resolver.modd <- modd;
+            resolver.modul <- Some modul;
+            resolver.is_root <- false;
+            let modul' = resolve resolver false in
+            resolver.modd <- tmp_modd;
+            resolver.modul <- tmp_modul;
+            resolver.is_root <- tmp_is_root;
             let key =
               { ident = modd.mod_name; ns = Type; disambiguator = 0 }
             in
@@ -445,8 +463,8 @@ let rec resolve resolver : modul =
     | Unit name ->
         let unit_id = add_unit resolver name in
         let lib_name = "lib" ^ name ^ ".o" in
-        if Sys.file_exists lib_name then (
-          let obj = Object.read_obj lib_name in
+        let f name =
+          let obj = Object.read_obj name in
           let metadata =
             Option.get @@ Object.read_section_by_name obj ".ray\000"
           in
@@ -454,7 +472,7 @@ let rec resolve resolver : modul =
           let dec = Decoder.create metadata in
           let modul = decode_module resolver dec None unit_id in
           resolver.extern_units <- resolver.extern_units @ [modul];
-          resolver.tcx.units <- resolver.tcx.units @ [lib_name];
+          resolver.tcx.units <- resolver.tcx.units @ [name];
           let def_table_entries = Decoder.read_usize dec in
           for _ = 0 to def_table_entries - 1 do
             let def_id = def_id (Decoder.read_u32 dec) unit_id in
@@ -467,13 +485,16 @@ let rec resolve resolver : modul =
             let def_id = def_id (Decoder.read_u32 dec) unit_id in
             create_sym resolver.tcx.sym_table def_id sym;
             create_sym resolver.tcx.sym_table2 sym def_id
-          done)
+          done
+        in
+        if Sys.file_exists lib_name then f lib_name
+        else if Sys.file_exists (Path.join ["library"; lib_name]) then
+          f (Path.join ["library"; lib_name])
         else (
-          eprintf "error(%s): unit `%s` not found\n"
-            resolver.modd.mod_path name;
+          eprintf "error(%s): unit `%s` not found\n" resolver.modd.mod_path
+            name;
           flush stderr)
     | Const _ | Import _ -> ()
   in
   List.iter visit_item resolver.modd.items;
-  let enc = resolver.tcx.sess.enc in
-  encode_module enc modul; modul
+  modul

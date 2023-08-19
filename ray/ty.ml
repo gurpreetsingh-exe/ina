@@ -168,7 +168,8 @@ let encode_res enc res =
           let disc = def_kind_to_enum def_kind in
           Buffer.add_int64_be enc.buf disc)
   | PrimTy _ -> assert false
-  | Local _ | Err -> assert false
+  | Local _ -> assert false
+  | Err -> assert false
 
 let decode_res dec unit_id : res =
   let dis = Decoder.read_usize dec in
@@ -526,7 +527,20 @@ let rec encode enc ty =
           encode e ret_ty;
           Encoder.emit_u8 e (if is_var then 1 else 0))
   | Bool | Unit | Str -> Encoder.emit_with enc dis (fun _ -> ())
-  | Ptr _ | RefTy _ | Struct (_, _) | Infer _ | Ident _ -> ()
+  | Ptr ty | RefTy ty -> Encoder.emit_with enc dis (fun e -> encode e ty)
+  | Struct (name, fields) ->
+      Encoder.emit_with enc dis (fun e ->
+          Encoder.emit_str e name;
+          Encoder.emit_u32 e (List.length fields);
+          List.iter
+            (fun (field, ty) -> Encoder.emit_str e field; encode e ty)
+            fields)
+  | Ident path ->
+      Encoder.emit_with enc dis (fun e ->
+          Encoder.emit_u32 e (List.length path.segments);
+          List.iter (fun s -> Encoder.emit_str e s) path.segments;
+          encode_res e path.res)
+  | Infer _ -> assert false
 
 let encode_metadata tcx =
   Encoder.emit_usize tcx.sess.enc @@ Hashtbl.length tcx.def_table.table;
@@ -549,6 +563,8 @@ let rec decode dec =
   | 1 -> Float (decode_float_ty dec)
   | 2 -> Bool
   | 3 -> Str
+  | 4 -> Ptr (decode dec)
+  | 5 -> RefTy (decode dec)
   | 6 ->
       let nargs = Decoder.read_u8 dec in
       let args =
@@ -559,5 +575,5 @@ let rec decode dec =
       FnTy (args, ret_ty, is_var)
   | 10 -> Unit
   | _ ->
-      printf "%d\n" dis;
+      printf "%Ld: %d\n" (dis |> Int64.of_int) dec.pos;
       assert false

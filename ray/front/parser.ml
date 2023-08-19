@@ -204,6 +204,14 @@ let parse_path pctx : path =
             advance pctx;
             segment @ parse_path_impl ()
         | _ -> segment)
+    | Unit -> (
+        let segment = ["unit"] in
+        advance pctx;
+        match pctx.curr_tok.kind with
+        | Colon2 ->
+            advance pctx;
+            segment @ parse_path_impl ()
+        | _ -> segment)
     | _ ->
         Emitter.emit pctx.emitter (unexpected_token pctx Ident pctx.curr_tok);
         exit 1

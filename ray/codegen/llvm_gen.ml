@@ -297,6 +297,9 @@ let gen_item cx (func : Func.t) =
       if fn.name = "main" then cx.main <- Some llfn;
       set_linkage Linkage.External llfn)
     else (
+      (match lookup_function fn.linkage_name llmod with
+      | Some fn -> delete_function fn
+      | None -> ());
       let llfn = define_function fn.linkage_name fn_ty llmod in
       cx.curr_fn <- Some llfn;
       if fn.name = "main" then cx.main <- Some llfn)

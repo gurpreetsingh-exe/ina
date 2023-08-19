@@ -35,17 +35,22 @@ let () =
   let pctx = Parser.parse_ctx_create tcx tokenizer s in
   let time, modd = Timer.time (fun () -> Parser.parse_mod pctx) in
   tcx.sess.options.output <-
-    Path.join [Filename.dirname modd.mod_path; modd.mod_name];
+    (if Filename.basename modd.mod_path = "lib.ray" then
+     Filename.dirname modd.mod_path
+    else Path.join [Filename.dirname modd.mod_path; modd.mod_name]);
   sess.timings.parse <- time;
   (match sess.options.command with
   | Build ->
       let time, _ =
         Timer.time (fun () ->
             let resolver = Resolver.create tcx modd in
-            let modul = Resolver.resolve resolver in
-            encode_metadata tcx;
+            let modul = Resolver.resolve resolver true in
             resolver.disambiguator.stack <- [0];
             Paths.resolve_paths resolver modul modd;
+            if tcx.sess.options.output_type = Unit then (
+              let enc = tcx.sess.enc in
+              Resolver.encode_module enc modul;
+              encode_metadata tcx);
             modul.resolutions)
       in
       sess.timings.resolve <- time;

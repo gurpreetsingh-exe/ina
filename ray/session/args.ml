@@ -53,6 +53,7 @@ let parse_args () =
         | "--type-vars" -> config.display_type_vars <- true
         | "--ui-testing" -> config.ui_testing <- true
         | "--dot-cfg" -> config.dot_cfg <- true
+        | "--stdlib" -> config.build_stdlib <- true
         | _ ->
             if String.contains arg '=' then (
               let pair = String.split_on_char '=' arg in
