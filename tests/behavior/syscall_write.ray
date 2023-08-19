@@ -1,10 +1,10 @@
 // STDOUT: Hello World
 
-import core::intrinsics;
-import std::os::linux;
+unit std;
+unit core;
 
 fn main() -> i32 {
     let out = "Hello World\n";
-    linux::write(1, intrinsics::as_ptr(out), intrinsics::len(out));
+    std::os::linux::write(1, core::intrinsics::as_ptr(out), core::intrinsics::len(out));
     0
 }

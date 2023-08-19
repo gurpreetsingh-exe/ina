@@ -1,14 +1,14 @@
 // EXIT_CODE: 1
 // STDOUT: it works
 
-import std::io;
+unit std;
 
 fn f(g: fn(i32) -> i32, a: i32) -> i32 {
     g(a)
 }
 
 fn some_function(a: i32) -> i32 {
-    io::print("it works\n");
+    std::io::print("it works\n");
     a
 }
 
