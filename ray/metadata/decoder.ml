@@ -1,9 +1,10 @@
 type t = {
   buf : bytes;
   mutable pos : int;
+  unit_id : int;
 }
 
-let create buf = { buf; pos = 0 }
+let create buf unit_id = { buf; pos = 0; unit_id }
 
 let read_usize dec : int =
   let n = Bytes.get_int64_be dec.buf dec.pos |> Int64.to_int in

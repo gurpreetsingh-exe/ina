@@ -166,8 +166,8 @@ let rec encode_module enc modul =
       | Module m -> Encoder.emit_with enc dis (fun e -> encode_module e m))
     modul.resolutions
 
-let rec decode_module resolver dec parent unit_id =
-  let def_id = def_id (Decoder.read_u32 dec) unit_id in
+let rec decode_module resolver dec parent =
+  let def_id = def_id (Decoder.read_u32 dec) dec.unit_id in
   let name = Decoder.read_str dec in
   let modul =
     {
@@ -191,8 +191,8 @@ let rec decode_module resolver dec parent unit_id =
       let dis = Decoder.read_usize dec in
       let kind =
         match dis with
-        | 0 -> Res (decode_res dec unit_id)
-        | 1 -> Module (decode_module resolver dec (Some modul) unit_id)
+        | 0 -> Res (decode_res dec)
+        | 1 -> Module (decode_module resolver dec (Some modul))
         | _ -> assert false
       in
       let binding = { binding = { kind } } in
@@ -469,8 +469,8 @@ let rec resolve resolver root : modul =
             Option.get @@ Object.read_section_by_name obj ".ray\000"
           in
           let open Metadata in
-          let dec = Decoder.create metadata in
-          let modul = decode_module resolver dec None unit_id in
+          let dec = Decoder.create metadata unit_id in
+          let modul = decode_module resolver dec None in
           resolver.extern_units <- resolver.extern_units @ [modul];
           resolver.tcx.units <- resolver.tcx.units @ [name];
           let def_table_entries = Decoder.read_usize dec in

@@ -171,11 +171,11 @@ let encode_res enc res =
   | Local _ -> assert false
   | Err -> assert false
 
-let decode_res dec unit_id : res =
+let decode_res dec : res =
   let dis = Decoder.read_usize dec in
   match dis with
   | 0 ->
-      let def_id = def_id (Decoder.read_u32 dec) unit_id in
+      let def_id = def_id (Decoder.read_u32 dec) dec.unit_id in
       let def_kind = def_kind_from_enum (Decoder.read_usize dec) in
       Def (def_id, def_kind)
   | 1 -> assert false
@@ -498,7 +498,12 @@ let rec get_backend_type tcx' (ty : ty) : lltype =
         Hashtbl.add tcx.structs name ty;
         ty)
   | Unit -> tcx.void
-  | Ident path -> Hashtbl.find tcx.structs (render_path path)
+  | Ident path -> (
+    match path.res with
+    | Def (def_id, _) -> (
+        lookup_def tcx' def_id
+        |> function Ty ty -> ty |> get_backend_type tcx')
+    | _ -> Hashtbl.find tcx.structs (render_path path))
   | Infer _ -> assert false
 
 let discriminator = function
@@ -522,7 +527,7 @@ let rec encode enc ty =
   | Float f -> Encoder.emit_with enc dis (fun e -> encode_float_ty e f)
   | FnTy (args, ret_ty, is_var) ->
       Encoder.emit_with enc dis (fun e ->
-          Encoder.emit_u8 e (List.length args);
+          Encoder.emit_u32 e (List.length args);
           List.iter (fun ty -> encode e ty) args;
           encode e ret_ty;
           Encoder.emit_u8 e (if is_var then 1 else 0))
@@ -566,13 +571,35 @@ let rec decode dec =
   | 4 -> Ptr (decode dec)
   | 5 -> RefTy (decode dec)
   | 6 ->
-      let nargs = Decoder.read_u8 dec in
+      let nargs = Decoder.read_u32 dec in
       let args =
         List.map (fun _ -> decode dec) (List.init nargs (fun x -> x))
       in
       let ret_ty = decode dec in
       let is_var = Decoder.read_u8 dec = 1 in
       FnTy (args, ret_ty, is_var)
+  | 7 ->
+      let name = Decoder.read_str dec in
+      let nfields = Decoder.read_u32 dec in
+      let fields =
+        List.map
+          (fun _ ->
+            let field = Decoder.read_str dec in
+            let ty = decode dec in
+            (field, ty))
+          (List.init nfields (fun x -> x))
+      in
+      Struct (name, fields)
+  | 8 -> assert false (* Infer *)
+  | 9 ->
+      let nsegments = Decoder.read_u32 dec in
+      let segments =
+        List.map
+          (fun _ -> Decoder.read_str dec)
+          (List.init nsegments (fun x -> x))
+      in
+      let res = decode_res dec in
+      Ident { segments; res }
   | 10 -> Unit
   | _ ->
       printf "%Ld: %d\n" (dis |> Int64.of_int) dec.pos;
