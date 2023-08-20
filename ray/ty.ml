@@ -548,17 +548,20 @@ let rec encode enc ty =
   | Infer _ -> assert false
 
 let encode_metadata tcx =
-  Encoder.emit_usize tcx.sess.enc @@ Hashtbl.length tcx.def_table.table;
+  let enc = tcx.sess.enc in
+  Encoder.emit_usize enc @@ List.length tcx.units;
+  List.iter (fun name -> Encoder.emit_str enc name) tcx.units;
+  Encoder.emit_usize enc @@ Hashtbl.length tcx.def_table.table;
   Hashtbl.iter
     (fun def_id def_data ->
-      Encoder.emit_u32 tcx.sess.enc def_id.inner;
-      def_data |> function Ty ty -> encode tcx.sess.enc ty)
+      Encoder.emit_u32 enc def_id.inner;
+      def_data |> function Ty ty -> encode enc ty)
     tcx.def_table.table;
-  Encoder.emit_usize tcx.sess.enc @@ Hashtbl.length tcx.sym_table;
+  Encoder.emit_usize enc @@ Hashtbl.length tcx.sym_table;
   Hashtbl.iter
     (fun def_id sym ->
-      Encoder.emit_str tcx.sess.enc sym;
-      Encoder.emit_u32 tcx.sess.enc def_id.inner)
+      Encoder.emit_str enc sym;
+      Encoder.emit_u32 enc def_id.inner)
     tcx.sym_table
 
 let rec decode dec =
@@ -604,3 +607,25 @@ let rec decode dec =
   | _ ->
       printf "%Ld: %d\n" (dis |> Int64.of_int) dec.pos;
       assert false
+
+let decode_metadata tcx dec =
+  let nunits = Decoder.read_usize dec in
+  let units =
+    List.map (fun _ -> Decoder.read_str dec) (List.init nunits (fun x -> x))
+  in
+  tcx.units <- tcx.units @ units;
+  let ndef_table_entries = Decoder.read_usize dec in
+  List.iter
+    (fun _ ->
+      let def_id = def_id (Decoder.read_u32 dec) dec.unit_id in
+      let ty = decode dec in
+      create_def tcx def_id (Ty ty) None)
+    (List.init ndef_table_entries (fun x -> x));
+  let nsym_table_entries = Decoder.read_usize dec in
+  List.iter
+    (fun _ ->
+      let sym = Decoder.read_str dec in
+      let def_id = def_id (Decoder.read_u32 dec) dec.unit_id in
+      create_sym tcx.sym_table def_id sym;
+      create_sym tcx.sym_table2 sym def_id)
+    (List.init nsym_table_entries (fun x -> x))

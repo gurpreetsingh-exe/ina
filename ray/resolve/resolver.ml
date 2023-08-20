@@ -473,19 +473,7 @@ let rec resolve resolver root : modul =
           let modul = decode_module resolver dec None in
           resolver.extern_units <- resolver.extern_units @ [modul];
           resolver.tcx.units <- resolver.tcx.units @ [name];
-          let def_table_entries = Decoder.read_usize dec in
-          for _ = 0 to def_table_entries - 1 do
-            let def_id = def_id (Decoder.read_u32 dec) unit_id in
-            let ty = Ty.decode dec in
-            create_def resolver.tcx def_id (Ty ty) None
-          done;
-          let sym_table_entries = Decoder.read_usize dec in
-          for _ = 0 to sym_table_entries - 1 do
-            let sym = Decoder.read_str dec in
-            let def_id = def_id (Decoder.read_u32 dec) unit_id in
-            create_sym resolver.tcx.sym_table def_id sym;
-            create_sym resolver.tcx.sym_table2 sym def_id
-          done
+          decode_metadata resolver.tcx dec
         in
         if Sys.file_exists lib_name then f lib_name
         else if Sys.file_exists (Path.join ["library"; lib_name]) then

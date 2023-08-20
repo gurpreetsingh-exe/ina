@@ -93,14 +93,14 @@ let gen_function_type tcx (fn_ty : Func.fn_type) : lltype =
 let gen_main cx =
   let tcx = cx.tcx in
   match tcx.sess.options.output_type with
-  | Unit -> ()
-  | _ ->
+  | Exe ->
       let main = Option.get cx.main in
       let main_ty = function_type tcx.lltys.i32 [||] in
       let fn = define_function "main" main_ty tcx.out_mod.inner in
       let builder = builder_at_end tcx.out_mod.llcx (entry_block fn) in
       let ret = build_call main_ty main [||] "" builder in
       ignore (build_ret ret builder)
+  | _ -> ()
 
 let gen_blocks (cx : codegen_ctx) (blocks : Func.blocks) =
   let tcx = cx.tcx in
