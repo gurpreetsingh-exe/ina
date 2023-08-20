@@ -124,7 +124,8 @@ let rec resolve_paths (resolver : Resolver.t) (modul : modul) (modd : modd) :
         visit_block block modul
     | Lit _ -> ()
     | StructExpr { struct_name; fields } ->
-        struct_name.res <- resolve_path resolver modul struct_name None;
+        struct_name.res <-
+          resolve_path resolver modul struct_name (Some Type);
         List.iter (fun (_, expr) -> visit_expr expr modul) fields
     | Field (expr, _) -> visit_expr expr modul
     | Cast (expr, ty) -> visit_expr expr modul; resolve_ty ty
@@ -153,6 +154,24 @@ let rec resolve_paths (resolver : Resolver.t) (modul : modul) (modd : modd) :
     | None -> ());
     Disambiguator.pop resolver.disambiguator
   in
+  let visit_fn (func : func) =
+    let key = { ident = func.fn_sig.name; ns = Value; disambiguator = 0 } in
+    resolver.key <- key;
+    let id = def_id func.func_id 0 in
+    (lookup_def resolver.tcx id |> function Ty ty -> resolve_ty ty);
+    List.iter (fun (ty, _, _) -> resolve_ty ty) func.fn_sig.args;
+    match func.body with
+    | Some body ->
+        let m = find_scope_res modul.scope_table key in
+        List.iter
+          (fun (_, name, id) ->
+            let key = { ident = name; ns = Value; disambiguator = 0 } in
+            let binding = { binding = { kind = Res (Local id) } } in
+            add_name_res m.resolutions key binding)
+          func.fn_sig.args;
+        visit_block body m
+    | None -> ()
+  in
   let visit_item (item : item) =
     match item with
     | Mod { resolved_mod; _ } -> (
@@ -168,28 +187,11 @@ let rec resolve_paths (resolver : Resolver.t) (modul : modul) (modd : modd) :
           let modul = Res.modul res in
           resolve_paths resolver modul modd
       | None -> ())
-    | Fn (func, _) -> (
-        let key =
-          { ident = func.fn_sig.name; ns = Value; disambiguator = 0 }
-        in
-        resolver.key <- key;
-        let id = def_id func.func_id 0 in
-        (lookup_def resolver.tcx id |> function Ty ty -> resolve_ty ty);
-        List.iter (fun (ty, _, _) -> resolve_ty ty) func.fn_sig.args;
-        match func.body with
-        | Some body ->
-            let m = find_scope_res modul.scope_table key in
-            List.iter
-              (fun (_, name, id) ->
-                let key = { ident = name; ns = Value; disambiguator = 0 } in
-                let binding = { binding = { kind = Res (Local id) } } in
-                add_name_res m.resolutions key binding)
-              func.fn_sig.args;
-            visit_block body m
-        | None -> ())
+    | Fn (func, _) -> visit_fn func
     | Type (Struct s) -> (
         let id = def_id s.struct_id 0 in
         lookup_def resolver.tcx id |> function Ty ty -> resolve_ty ty)
-    | Unit _ | Foreign _ | Const _ | Import _ -> ()
+    | Foreign fns -> List.iter visit_fn fns
+    | Unit _ | Const _ | Import _ -> ()
   in
   List.iter visit_item modd.items
