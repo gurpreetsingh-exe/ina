@@ -5,6 +5,8 @@ open Utils
 open Front
 open Metadata
 
+let stdlib = "lib"
+
 type namespace =
   | Type
   | Value
@@ -476,8 +478,8 @@ let rec resolve resolver root : modul =
           decode_metadata resolver.tcx dec
         in
         if Sys.file_exists lib_name then f lib_name
-        else if Sys.file_exists (Path.join ["library"; lib_name]) then
-          f (Path.join ["library"; lib_name])
+        else if Sys.file_exists (Path.join [stdlib; lib_name]) then
+          f (Path.join [stdlib; lib_name])
         else (
           eprintf "error(%s): unit `%s` not found\n" resolver.modd.mod_path
             name;
