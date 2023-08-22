@@ -66,7 +66,7 @@ and lower_fn_body body ctx =
     match inst.kind with
     | Nop -> Builder.ret_unit builder
     | _ -> Builder.ret ret builder)
-  | Const _ -> Builder.ret ret builder
+  | Const _ | Global _ -> Builder.ret ret builder
   | _ -> Builder.ret_unit builder
 
 let gen_id (items : Func.t list) =
