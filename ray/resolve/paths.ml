@@ -76,7 +76,14 @@ let resolve_path resolver modul path ns =
       let i = ref 0 in
       while !i < List.length resolver.extern_units && !res = Err do
         let modul = List.nth resolver.extern_units !i in
-        res := resolve_path resolver modul path ns;
+        (* TODO: not gonna work when `using` is introduced *)
+        let name =
+          match modul.mkind with
+          | Def (_, _, name) -> name
+          | Block -> assert false
+        in
+        if List.hd path.segments = name then
+          res := resolve_path resolver modul path ns;
         incr i
       done
   | _ -> ());
