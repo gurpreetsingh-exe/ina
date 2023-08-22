@@ -477,7 +477,10 @@ let rec resolve resolver root : modul =
           resolver.tcx.units <- resolver.tcx.units @ [name];
           decode_metadata resolver.tcx dec
         in
-        if Sys.file_exists lib_name then f lib_name
+        let p =
+          Path.join [Filename.dirname resolver.modd.mod_path; lib_name]
+        in
+        if Sys.file_exists p then f p
         else if Sys.file_exists (Path.join [stdlib; lib_name]) then
           f (Path.join [stdlib; lib_name])
         else (
