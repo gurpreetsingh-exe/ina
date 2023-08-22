@@ -254,12 +254,12 @@ let gen_blocks (cx : codegen_ctx) (blocks : Func.blocks) =
           Some (build_call fn_ty fn args "" builder)
       | Intrinsic (name, args) ->
           let args = Array.map get_value (Array.of_list args) in
-          Some (Intrinsics.gen_intrinsic name args builder llcx)
+          Some (Intrinsics.gen_intrinsic name args builder tcx)
       | Nop -> None
       | Trap msg ->
           let msg = get_value msg in
-          let ptr = Intrinsics.gen_intrinsic "as_ptr" [|msg|] builder llcx in
-          let len = Intrinsics.gen_intrinsic "len" [|msg|] builder llcx in
+          let ptr = Intrinsics.gen_intrinsic "as_ptr" [|msg|] builder tcx in
+          let len = Intrinsics.gen_intrinsic "len" [|msg|] builder tcx in
           let func, write_ty = find_func cx "write" in
           ignore
             (build_call write_ty func

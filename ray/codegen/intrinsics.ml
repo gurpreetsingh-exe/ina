@@ -1,6 +1,8 @@
 open Llvm
+open Ty
 
-let gen_intrinsic name args builder ctx : llvalue =
+let gen_intrinsic name args builder tcx : llvalue =
+  let ctx = tcx.out_mod.llcx in
   match name with
   | "as_ptr" ->
       let self = args.(0) in
