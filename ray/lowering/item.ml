@@ -62,9 +62,13 @@ and lower_fn_body body ctx =
   let ret = Expr.lower_block body ctx in
   let builder = Builder.create ctx.tcx (Option.get ctx.block) in
   match ret with
-  | VReg (inst, _, _) -> (
-    match inst.kind with
-    | Nop -> Builder.ret_unit builder
+  | VReg (inst, _, ty) -> (
+    match (inst.kind, ty) with
+    | Nop, _ -> Builder.ret_unit builder
+    | _, Ptr (Struct _) ->
+        (* HACK: load struct before returning *)
+        let ret = Builder.load ret builder in
+        Builder.ret ret builder
     | _ -> Builder.ret ret builder)
   | Const _ | Global _ -> Builder.ret ret builder
   | _ -> Builder.ret_unit builder

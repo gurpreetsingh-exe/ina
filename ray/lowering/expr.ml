@@ -226,8 +226,16 @@ and lower_block (block : block) (ctx : Context.t) : Inst.value =
           let ty = Option.get binding_ty in
           match ty with
           | Struct _ ->
+              (* TODO: find a better solution *)
+              let dst = Builder.alloca ty builder in
               let ptr = lower binding_expr builder ctx in
-              Context.add_local ctx ident ptr
+              let src =
+                match Inst.get_ty ptr with
+                | Ptr _ -> Builder.load ptr builder
+                | _ -> ptr
+              in
+              Builder.store src dst builder;
+              Context.add_local ctx ident dst
           | _ ->
               let dst = Builder.alloca ty builder in
               let src = lower binding_expr builder ctx in
