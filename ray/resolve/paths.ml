@@ -142,7 +142,9 @@ let rec resolve_paths (resolver : Resolver.t) (modul : modul) (modd : modd) :
       (fun stmt ->
         match stmt with
         | Stmt expr | Expr expr -> visit_expr expr modul
-        | Binding { binding_pat; binding_id; binding_expr = expr; _ } -> (
+        | Binding
+            { binding_pat; binding_id; binding_expr = expr; binding_ty } -> (
+            (match binding_ty with Some ty -> resolve_ty ty | None -> ());
             binding_pat
             |> function
             | PatIdent ident ->
