@@ -183,12 +183,12 @@ let rec resolve_block (infer_ctx : infer_ctx) body =
     | Infer ((IntVar _ | FloatVar _) as i) ->
         sub
           (if Hashtbl.mem infer_ctx.int_unifiction_table ty then
-             Hashtbl.find infer_ctx.int_unifiction_table ty
-           else (
-             match i with
-             | IntVar _ -> Int I64
-             | FloatVar _ -> Float F32
-             | _ -> assert false))
+           Hashtbl.find infer_ctx.int_unifiction_table ty
+          else (
+            match i with
+            | IntVar _ -> Int I64
+            | FloatVar _ -> Float F32
+            | _ -> assert false))
     | RefTy ty -> RefTy (sub ty)
     | Ptr ty -> Ptr (sub ty)
     | _ -> ty
@@ -426,7 +426,10 @@ and unify (infer_ctx : infer_ctx) (ty : ty) (expected : ty) :
     match expected with
     | Ptr expected -> unify infer_ctx t expected
     | _ -> Some (MismatchTy (expected, ty)))
-  | ty -> if ty != expected then Some (MismatchTy (expected, ty)) else None
+  | ty ->
+      if ty_neq infer_ctx.tcx ty expected then
+        Some (MismatchTy (expected, ty))
+      else None
 
 and infer_block (infer_ctx : infer_ctx) (block : block) : ty =
   let f stmt : ty =

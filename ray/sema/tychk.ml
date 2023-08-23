@@ -136,22 +136,23 @@ let ty_ctx_create (infer_ctx : infer_ctx) =
 
 let tychk_func (ty_ctx : ty_ctx) (func : func) =
   let { fn_sig = { ret_ty; fn_span; _ }; body; _ } = func in
+  let tcx = ty_ctx.tcx in
   let rec fexpr expr : ty =
     (match expr.expr_kind with
     | Binary (kind, left, right) ->
         let left, right = (fexpr left, fexpr right) in
-        if left != right then
+        if ty_neq tcx left right then
           ty_err_emit ty_ctx.emitter
             (InvalidBinaryExpression (kind, left, right))
             expr.expr_span
     | Call (_, args) -> ignore (List.map fexpr args)
     | If { cond; then_block; else_block } -> (
-        if fexpr cond != Bool then ();
+        if ty_neq tcx (fexpr cond) Bool then ();
         let then_ty = fblock then_block in
         match else_block with
         | Some else_block ->
             let else_ty = fexpr else_block in
-            if then_ty != else_ty then (
+            if ty_neq tcx then_ty else_ty then (
               let span = expr.expr_span in
               let msg =
                 sprintf "expected `%s`, found `%s`"
@@ -191,7 +192,7 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
                 if Hashtbl.mem strukt name then (
                   let ty = Hashtbl.find strukt name in
                   let t = fexpr expr in
-                  if t != ty then
+                  if ty_neq tcx t ty then
                     ty_err_emit ty_ctx.emitter
                       (MismatchTy (ty, t))
                       expr.expr_span)
@@ -226,12 +227,12 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
     | Assign (expr1, expr2) ->
         let left = fexpr expr1 in
         let right = fexpr expr2 in
-        if left != right then
+        if ty_neq tcx left right then
           Emitter.emit ty_ctx.emitter
             (mismatch_ty left right expr2.expr_span)
     | Stmt expr | Expr expr ->
         let ty = fexpr expr in
-        if ty != Unit then
+        if ty_neq tcx ty Unit then
           Emitter.emit ty_ctx.emitter (unused_value expr.expr_span)
     | Binding ({ binding_pat; binding_ty; binding_expr; _ } as binding) -> (
         let ty = fexpr binding_expr in
@@ -239,7 +240,7 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
         | PatIdent _ -> (
             (match binding_ty with
             | Some expected ->
-                if expected != ty then
+                if ty_neq tcx expected ty then
                   Emitter.emit ty_ctx.emitter
                     (mismatch_ty expected ty binding_expr.expr_span)
             | None -> binding.binding_ty <- Some ty);
@@ -266,7 +267,7 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
       match body.last_expr with
       | Some expr ->
           let ty = fexpr expr in
-          if ty != ret_ty then
+          if ty_neq tcx ty ret_ty then
             ty_err_emit ty_ctx.emitter
               (MismatchTy (ret_ty, ty))
               expr.expr_span

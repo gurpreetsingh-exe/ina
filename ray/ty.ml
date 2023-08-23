@@ -264,36 +264,6 @@ let size_of = function
   | Float f -> size_of_float f
   | _ -> assert false
 
-let rec ( != ) (ty1 : ty) (ty2 : ty) : bool =
-  match (ty1, ty2) with
-  | Ident path, Struct (name, _) | Struct (name, _), Ident path ->
-      String.concat "::" path.segments <> name
-  | Ident path1, Ident path2 ->
-      String.concat "::" path1.segments <> String.concat "::" path2.segments
-  | Struct (name1, fields1), Struct (name2, fields2) ->
-      let tys1 = List.map (fun (_, ty) -> ty) fields1 in
-      let tys2 = List.map (fun (_, ty) -> ty) fields2 in
-      (if List.length tys1 = 0 && List.length tys2 = 0 then false
-      else (
-        try
-          List.map2 ( != ) tys1 tys2
-          |> List.filter (fun f -> not f)
-          |> List.length = 0
-        with Invalid_argument _ -> true))
-      || name1 <> name2
-  | Ptr ty1, Ptr ty2 -> ty1 != ty2
-  | RefTy ty1, RefTy ty2 -> ty1 != ty2
-  | FnTy (tys1, ret_ty1, is_var1), FnTy (tys2, ret_ty2, is_var2) ->
-      (if List.length tys1 = 0 && List.length tys2 = 0 then false
-      else (
-        try
-          List.map2 ( != ) tys1 tys2
-          |> List.filter (fun f -> not f)
-          |> List.length = 0
-        with Invalid_argument _ -> true))
-      || ret_ty1 != ret_ty2 || is_var1 <> is_var2
-  | _, _ -> ty1 <> ty2
-
 type common_types = {
   i8 : ty;
   i16 : ty;
@@ -629,3 +599,14 @@ let decode_metadata tcx dec =
       create_sym tcx.sym_table def_id sym;
       create_sym tcx.sym_table2 sym def_id)
     (List.init nsym_table_entries (fun x -> x))
+
+let ty_eq tcx t1 t2 : bool =
+  match (t1, t2) with
+  | Ident p1, Ident p2 -> p1.res = p2.res
+  | Ident path, (Struct _ as t) | (Struct _ as t), Ident path -> (
+    match expect_def tcx path.res Struct with
+    | Some ty -> ty = t
+    | None -> false)
+  | _ -> t1 = t2
+
+let ty_neq tcx t1 t2 = not @@ ty_eq tcx t1 t2
