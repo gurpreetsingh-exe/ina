@@ -1,0 +1,19 @@
+// DUMMY
+
+type Unit = {}
+
+fn f1(_: Unit) {}
+
+mod StrBuf {
+    type t = {
+        ptr: *i8,
+        len: usize,
+    }
+
+    fn new() -> t {
+        t { ptr: 0 as *i8, len: 0 }
+    }
+
+    fn len(self: t) -> usize { self.len }
+}
+

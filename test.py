@@ -4,7 +4,7 @@ from __future__ import annotations
 import pathlib
 import sys
 import os
-from typing import List
+from typing import List, Dict
 import subprocess
 import argparse
 
@@ -34,6 +34,7 @@ class Tests:
         self.collected_tests = 0
         self.reported_fails = 0
         self.reported_skips = 0
+        self.units: Dict[pathlib.Path, pathlib.Path] = {}
         self.term_cols = os.get_terminal_size().columns - 1
 
     def report(self, kind, name):
@@ -92,6 +93,7 @@ class TestResult:
         self.stderr: str | None = None
         self.exit_code: int = 0
         self.compile_fail: bool = False
+        self.compile_pass: bool = False
 
     def __eq__(self, other: TestResult) -> bool:
         return self.stdout == other.stdout \
@@ -139,6 +141,8 @@ def parse_expected_result(lines: List[str]) -> TestResult:
         test_result.exit_code = 0
     if res := extract_flag(lines, "COMPILE_FAIL"):
         test_result.compile_fail = True
+    elif res := extract_flag(lines, "COMPILE_PASS"):
+        test_result.compile_pass = True
     return test_result
 
 
@@ -166,9 +170,11 @@ def run_test(case: pathlib.Path, options: argparse.Namespace):
         return
 
     with open(case, 'r') as f:
-        src = f.readlines()
+        src = [f.readline()]
         if dummy(src):
             return
+
+        src += f.readlines()
 
         tests.n.append(case)
         if skip(src):
@@ -176,6 +182,18 @@ def run_test(case: pathlib.Path, options: argparse.Namespace):
             return
         fmt_test(tests, case, "".join(src))
         expected = parse_expected_result(src)
+
+        if res := extract_value(src, "REQUIRES"):
+            res = list(map(lambda r: r.replace("\n", ""), res))
+            for r in res:
+                unit = case.with_name("lib" + r).with_suffix(".o")
+                unit_src = case.with_name(r).with_suffix(".ray")
+                if unit_src in tests.units:
+                    continue
+                tests.units[unit_src] = unit
+                subprocess.call("./bin/ray build {} --emit=unit".format(
+                    unit_src).split(" "))
+
         command = "./bin/ray build {} --ui-testing".format(case).split(" ")
         proc = subprocess.Popen(
             command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -183,6 +201,7 @@ def run_test(case: pathlib.Path, options: argparse.Namespace):
         if proc.stderr:
             stderr = proc.stderr.read().decode()
         proc.communicate()
+        exe = case.with_suffix("")
         if expected.compile_fail:
             if proc.returncode == 0:
                 tests.failed.append(case)
@@ -203,11 +222,17 @@ def run_test(case: pathlib.Path, options: argparse.Namespace):
                     else:
                         tests.passed.append(case)
                 return
+        elif expected.compile_pass:
+            if proc.returncode != 0:
+                tests.failed.append(case)
+            else:
+                subprocess.call("rm -f {}".format(exe).split(" "))
+                tests.passed.append(case)
+            return
         else:
             if proc.returncode != 0:
                 tests.failed.append(case)
                 return
-        exe = case.with_suffix("")
         proc = subprocess.Popen(
             exe, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         output = TestResult()
@@ -243,6 +268,10 @@ def collect_tests(case: pathlib.Path):
     if case.suffix in {'.stderr'}:
         return 0
 
+    with open(case, 'r') as f:
+        if dummy([f.readline()]):
+            return 0
+
     return 1
 
 
@@ -261,4 +290,6 @@ if __name__ == "__main__":
     tests.collected_tests = collect_tests(test)
     run_test(test, args)
     print("\x1b[K", end='', flush=True)
+    subprocess.call(
+        "rm -f {}".format(" ".join(map(str, tests.units.values()))).split())
     tests.print_results()
