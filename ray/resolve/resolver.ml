@@ -461,6 +461,7 @@ let rec resolve resolver root : modul =
         let key = { ident = name; ns = Type; disambiguator = 0 } in
         let binding = { binding = { kind = Res res } } in
         add_name_res modul.resolutions key binding
+    | Impl _ -> assert false
     | Foreign funcs -> List.iter (fun f -> visit_fn f modul) funcs
     | Unit name ->
         let unit_id = add_unit resolver name in

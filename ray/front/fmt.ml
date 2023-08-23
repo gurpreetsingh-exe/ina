@@ -142,6 +142,10 @@ let rec render_item (item : item) : string =
   | Foreign funcs ->
       sprintf "\nextern {\n%s\n}\n"
         (String.concat "\n" (List.map (fun f -> "    " ^ render_fn f) funcs))
+  | Impl { impl_ty; impl_items } ->
+      sprintf "\nimpl %s {\n%s\n}\n" (render_ty impl_ty)
+        (String.concat "\n"
+           (List.map (function AssocFn fn -> render_fn fn) impl_items))
   | Const constant -> render_const constant
   | Mod { name; resolved_mod; _ } -> (
     match resolved_mod with

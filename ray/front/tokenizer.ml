@@ -19,7 +19,8 @@ Hashtbl.add keywords "unit" Unit;
 Hashtbl.add keywords "if" If;
 Hashtbl.add keywords "else" Else;
 Hashtbl.add keywords "assert" Assert;
-Hashtbl.add keywords "as" As
+Hashtbl.add keywords "as" As;
+Hashtbl.add keywords "impl" Impl
 
 let mk_tok (tokenizer : tokenizer) (kind : token_kind)
     (tok : token option ref) (start : pos) =

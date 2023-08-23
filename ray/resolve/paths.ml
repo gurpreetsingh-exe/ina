@@ -201,6 +201,7 @@ let rec resolve_paths (resolver : Resolver.t) (modul : modul) (modd : modd) :
         let id = def_id s.struct_id 0 in
         lookup_def resolver.tcx id |> function Ty ty -> resolve_ty ty)
     | Foreign fns -> List.iter visit_fn fns
+    | Impl _ -> assert false
     | Unit _ | Const _ | Import _ -> ()
   in
   List.iter visit_item modd.items

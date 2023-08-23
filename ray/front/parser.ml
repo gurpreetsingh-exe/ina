@@ -663,12 +663,31 @@ let parse_extern pctx attrs : item =
   | Fn -> Fn (parse_fn pctx abi true, attrs)
   | _ -> assert false
 
+let parse_impl pctx : impl =
+  advance pctx;
+  let impl_ty = parse_ty pctx in
+  ignore (eat pctx LBrace);
+  let items = ref [] in
+  while pctx.curr_tok.kind <> RBrace do
+    items :=
+      !items
+      @
+      match pctx.curr_tok.kind with
+      | Fn -> [AssocFn (parse_fn pctx "C" false)]
+      | _ ->
+          ignore (eat pctx RBrace);
+          assert false
+  done;
+  ignore (eat pctx RBrace);
+  { impl_ty; impl_items = !items }
+
 let rec parse_item pctx : item =
   let attrs = parse_outer_attrs pctx in
   match pctx.curr_tok.kind with
   | Fn -> Fn (parse_fn pctx "C" false, attrs)
   | Type -> Type (parse_type pctx)
   | Extern -> parse_extern pctx attrs
+  | Impl -> Impl (parse_impl pctx)
   | Import ->
       advance pctx;
       let import = Ast.Import (parse_path pctx) in
