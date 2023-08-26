@@ -217,6 +217,7 @@ let rec resolve_block (infer_ctx : infer_ctx) body =
     | Field (expr, _) -> g expr
     | Cast (expr, _) -> g expr
     | Lit _ | Path _ -> ()
+    | MethodCall _ -> assert false
   in
   List.iter f body.block_stmts;
   match body.last_expr with Some e -> g e | None -> ()
@@ -366,6 +367,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
         ignore (infer infer_ctx expr);
         ty
     | Ref expr -> RefTy (infer infer_ctx expr)
+    | MethodCall _ -> assert false
   in
   let ty = unwrap_ty infer_ctx.tcx ty in
   (match ty with

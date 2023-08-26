@@ -142,6 +142,7 @@ and expr_kind =
   | StructExpr of struct_expr
   | Field of expr * ident
   | Cast of expr * ty
+  | MethodCall of expr * string * expr list
 
 and struct_expr = {
   struct_name : path;

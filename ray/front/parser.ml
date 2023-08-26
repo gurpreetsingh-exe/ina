@@ -400,10 +400,18 @@ and parse_precedence pctx min_prec : expr =
     do
       let kind =
         match pctx.curr_tok.kind with
-        | Dot ->
-            advance pctx;
-            let field = parse_ident pctx in
-            Field (!left, field)
+        | Dot -> (
+          match npeek pctx 2 with
+          | [Ident; LParen] ->
+              ignore (eat pctx Dot);
+              let name = parse_ident pctx in
+              let args = parse_call_args pctx in
+              MethodCall (!left, name, args)
+          | [Ident; _] ->
+              ignore (eat pctx Dot);
+              let field = parse_ident pctx in
+              Field (!left, field)
+          | _ -> assert false)
         | _ ->
             let kind = binary_kind_from_token pctx.curr_tok.kind in
             advance pctx;

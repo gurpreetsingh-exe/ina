@@ -145,6 +145,7 @@ let rec resolve_paths (resolver : Resolver.t) (modul : modul) (modd : modd) :
         List.iter (fun (_, expr) -> visit_expr expr modul) fields
     | Field (expr, _) -> visit_expr expr modul
     | Cast (expr, ty) -> visit_expr expr modul; resolve_ty ty
+    | MethodCall _ -> assert false
   and visit_block body (modul : modul) =
     Disambiguator.push resolver.disambiguator;
     List.iter

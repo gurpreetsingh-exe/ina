@@ -168,6 +168,7 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
       | Ptr _, Int _ -> Builder.ptrtoint value dst_ty builder
       | Int _, Ptr _ -> Builder.inttoptr value dst_ty builder
       | _ -> assert false)
+  | MethodCall _ -> assert false
 
 and lower_lvalue (expr : expr) (builder : Builder.t) (ctx : Context.t) :
     Inst.value =

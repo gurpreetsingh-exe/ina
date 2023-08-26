@@ -66,6 +66,9 @@ let rec render_expr (expr : expr) (indent : int) : string =
     | Deref expr -> sprintf "*%s" (render_expr expr indent)
     | Cast (expr, ty) ->
         sprintf "%s as %s" (render_expr expr indent) (render_ty ty)
+    | MethodCall (expr, name, args) ->
+        sprintf "%s.%s(%s)" (render_expr expr indent) name
+          (render args (fun e -> render_expr e indent) ", ")
     | Ref expr -> sprintf "&%s" (render_expr expr indent))
     (match expr.expr_ty with Some ty -> render_ty ty | None -> "none")
 
