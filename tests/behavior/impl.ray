@@ -8,8 +8,15 @@ impl T {
     }
 }
 
+impl T {
+    fn new2() -> T {
+        T { inner: 420 }
+    }
+}
+
 fn main() -> bool {
-    let t = T::new(69);
-    t.inner == 69
+    let t1 = T::new(69);
+    let t2 = T::new2();
+    t1.inner == 69 && t2.inner == 420
 }
 

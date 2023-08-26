@@ -462,32 +462,38 @@ let rec resolve resolver root : modul =
         let key = { ident = name; ns = Type; disambiguator = 0 } in
         let binding = { binding = { kind = Res res } } in
         add_name_res modul.resolutions key binding
-    | Impl { impl_ty; impl_items } ->
+    | Impl { impl_ty; impl_items } -> (
         let ident =
           match impl_ty with
           | Ident path ->
               List.nth path.segments (List.length path.segments - 1)
           | _ -> render_ty impl_ty
         in
-        let mkind = Def (Mod, id, ident) in
-        let modul' =
-          {
-            mkind;
-            parent = Some modul;
-            resolutions = Hashtbl.create 0;
-            scope_table = Hashtbl.create 0;
-          }
+        let f modul' =
+          List.iter
+            (function
+              | AssocFn fn ->
+                  let id = visit_fn fn modul' in
+                  let name = fn.fn_sig.name in
+                  create_impl resolver.tcx impl_ty name id)
+            impl_items
         in
         let key = { ident; ns = Type; disambiguator = 1 } in
-        let binding = { binding = { kind = Module modul' } } in
-        List.iter
-          (function
-            | AssocFn fn ->
-                let id = visit_fn fn modul' in
-                let name = fn.fn_sig.name in
-                create_impl resolver.tcx impl_ty name id)
-          impl_items;
-        add_name_res modul.resolutions key binding
+        match get_name_res modul.resolutions key with
+        | Some res -> f @@ Res.modul res.binding
+        | None ->
+            let mkind = Def (Mod, id, ident) in
+            let modul' =
+              {
+                mkind;
+                parent = Some modul;
+                resolutions = Hashtbl.create 0;
+                scope_table = Hashtbl.create 0;
+              }
+            in
+            let binding = { binding = { kind = Module modul' } } in
+            f modul';
+            add_name_res modul.resolutions key binding)
     | Foreign funcs -> List.iter (fun f -> ignore (visit_fn f modul)) funcs
     | Unit name ->
         let unit_id = add_unit resolver name in

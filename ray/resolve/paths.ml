@@ -222,11 +222,16 @@ let rec resolve_paths (resolver : Resolver.t) (modul : modul) (modd : modd) :
           (Option.get (get_name_res modul.resolutions key)).binding
         in
         let modul = Res.modul res in
-        let tbl = Hashtbl.find resolver.tcx.def_table.impls impl_ty in
-        Hashtbl.remove resolver.tcx.def_table.impls impl_ty;
-        resolve_ty impl_ty;
-        let impl_ty = unwrap_ty resolver.tcx impl_ty in
-        Hashtbl.add resolver.tcx.def_table.impls impl_ty @@ Hashtbl.copy tbl;
+        (match Hashtbl.find_opt resolver.tcx.def_table.impls impl_ty with
+        | Some old_table -> (
+            Hashtbl.remove resolver.tcx.def_table.impls impl_ty;
+            resolve_ty impl_ty;
+            let impl_ty = unwrap_ty resolver.tcx impl_ty in
+            match Hashtbl.find_opt resolver.tcx.def_table.impls impl_ty with
+            | Some tbl -> Hashtbl.add_seq tbl @@ Hashtbl.to_seq old_table
+            | None ->
+                Hashtbl.add resolver.tcx.def_table.impls impl_ty old_table)
+        | None -> resolve_ty impl_ty);
         List.iter (function AssocFn fn -> visit_fn fn modul) impl_items
     | Unit _ | Const _ | Import _ -> ()
   in
