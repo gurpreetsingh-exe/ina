@@ -244,7 +244,7 @@ let rec render_ty ?(dbg = true) (ty : ty) : string =
         (if is_variadic then ", ..." else "")
         (render_ty ret_ty)
   | Struct (s, _) -> s
-  | Ident path -> "IDENT:" ^ render_path path
+  | Ident path -> render_path path
   | Infer ty -> render_infer_ty ty dbg
 
 type def_data = Ty of ty
@@ -301,13 +301,32 @@ let common_types () =
     unit = Unit;
   }
 
-type def_table = { table : (def_id, def_data) Hashtbl.t }
+type def_table = {
+  table : (def_id, def_data) Hashtbl.t;
+  impls : (ty, (string, def_id) Hashtbl.t) Hashtbl.t;
+}
 
 let create_def def_table id data = Hashtbl.replace def_table.table id data
+
+let create_impl def_table ty name impl =
+  match Hashtbl.find_opt def_table.impls ty with
+  | Some impls -> Hashtbl.replace impls name impl
+  | None ->
+      let tbl = Hashtbl.create 0 in
+      Hashtbl.add tbl name impl;
+      Hashtbl.add def_table.impls ty tbl
 
 let lookup_def def_table id =
   if Hashtbl.mem def_table.table id then Hashtbl.find def_table.table id
   else assert false
+
+let lookup_assoc_fn def_table ty name =
+  match Hashtbl.find_opt def_table.impls ty with
+  | Some tbl -> (
+    match Hashtbl.find_opt tbl name with
+    | Some id -> id
+    | None -> assert false)
+  | None -> assert false
 
 let print_def_table def_table =
   let f (def_id, def_data) =
@@ -386,7 +405,7 @@ let tcx_create sess =
     out_mod;
     tys = common_types ();
     lltys = backend_types sess.target out_mod;
-    def_table = { table = Hashtbl.create 0 };
+    def_table = { table = Hashtbl.create 0; impls = Hashtbl.create 0 };
     sym_table = Hashtbl.create 0;
     sym_table2 = Hashtbl.create 0;
     units = [];
@@ -406,6 +425,8 @@ let create_def tcx id def_data name =
       create_sym tcx.sym_table id name;
       create_sym tcx.sym_table2 name id
   | None -> ()
+
+let create_impl tcx ty name impl = create_impl tcx.def_table ty name impl
 
 let lookup_def tcx id = lookup_def tcx.def_table id
 

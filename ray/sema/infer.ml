@@ -498,6 +498,8 @@ let rec infer_begin infer_ctx (modd : modd) =
     match item with
     | Fn (func, _) -> infer_func infer_ctx func
     | Type _ | Import _ | Unit _ -> ()
+    | Impl { impl_items; _ } ->
+        List.iter (function AssocFn f -> infer_func infer_ctx f) impl_items
     | Mod { resolved_mod; _ } ->
         let modd = Option.get resolved_mod in
         let infer_ctx2 = infer_ctx_create infer_ctx.emitter infer_ctx.tcx in

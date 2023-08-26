@@ -107,7 +107,16 @@ let rec resolve_paths (resolver : Resolver.t) (modul : modul) (modd : modd) :
   let rec visit_expr expr (modul : modul) =
     match expr.expr_kind with
     | Call (path, exprs) ->
-        path.res <- resolve_path resolver modul path (Some Value);
+        let res = resolve_path resolver modul path (Some Value) in
+        let name = List.nth path.segments (List.length path.segments - 1) in
+        path.res <-
+          (match res with
+          | Def (id, Struct) ->
+              let ty =
+                lookup_def resolver.tcx id |> function Ty ty -> ty
+              in
+              Def (lookup_assoc_fn resolver.tcx.def_table ty name, Fn)
+          | _ -> res);
         List.iter (fun expr -> visit_expr expr modul) exprs
     | Binary (_, left, right) ->
         visit_expr left modul; visit_expr right modul
@@ -163,7 +172,7 @@ let rec resolve_paths (resolver : Resolver.t) (modul : modul) (modd : modd) :
     | None -> ());
     Disambiguator.pop resolver.disambiguator
   in
-  let visit_fn (func : func) =
+  let visit_fn (func : func) (modul : modul) =
     let key = { ident = func.fn_sig.name; ns = Value; disambiguator = 0 } in
     resolver.key <- key;
     let id = def_id func.func_id 0 in
@@ -196,12 +205,29 @@ let rec resolve_paths (resolver : Resolver.t) (modul : modul) (modd : modd) :
           let modul = Res.modul res in
           resolve_paths resolver modul modd
       | None -> ())
-    | Fn (func, _) -> visit_fn func
+    | Fn (func, _) -> visit_fn func modul
     | Type (Struct s) -> (
         let id = def_id s.struct_id 0 in
         lookup_def resolver.tcx id |> function Ty ty -> resolve_ty ty)
-    | Foreign fns -> List.iter visit_fn fns
-    | Impl _ -> assert false
+    | Foreign fns -> List.iter (fun f -> visit_fn f modul) fns
+    | Impl { impl_ty; impl_items } ->
+        let ident =
+          match impl_ty with
+          | Ident path ->
+              List.nth path.segments (List.length path.segments - 1)
+          | _ -> render_ty impl_ty
+        in
+        let key = { ident; ns = Type; disambiguator = 1 } in
+        let res =
+          (Option.get (get_name_res modul.resolutions key)).binding
+        in
+        let modul = Res.modul res in
+        let tbl = Hashtbl.find resolver.tcx.def_table.impls impl_ty in
+        Hashtbl.remove resolver.tcx.def_table.impls impl_ty;
+        resolve_ty impl_ty;
+        let impl_ty = unwrap_ty resolver.tcx impl_ty in
+        Hashtbl.add resolver.tcx.def_table.impls impl_ty @@ Hashtbl.copy tbl;
+        List.iter (function AssocFn fn -> visit_fn fn modul) impl_items
     | Unit _ | Const _ | Import _ -> ()
   in
   List.iter visit_item modd.items

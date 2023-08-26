@@ -283,6 +283,8 @@ let rec tychk ty_ctx (modd : modd) =
     match item with
     | Fn (func, _) -> tychk_func ty_ctx func
     | Foreign funcs -> List.iter (fun f -> tychk_func ty_ctx f) funcs
+    | Impl { impl_items; _ } ->
+        List.iter (function AssocFn f -> tychk_func ty_ctx f) impl_items
     | Import _ | Type _ | Unit _ -> ()
     | Mod m ->
         let modd = Option.get m.resolved_mod in

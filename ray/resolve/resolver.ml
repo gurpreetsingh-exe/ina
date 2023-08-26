@@ -401,12 +401,13 @@ let rec resolve resolver root : modul =
     let key = { ident = name; ns = Value; disambiguator = 0 } in
     let binding = { binding = { kind = Res res } } in
     add_name_res modul.resolutions key binding;
-    match func.body with
+    (match func.body with
     | Some block ->
         let m = visit_block block key (Some modul) in
         let binding = { binding = { kind = Module m } } in
         add_scope_res modul.scope_table key binding
-    | None -> ()
+    | None -> ());
+    id
   in
   let visit_item (item : item) =
     match item with
@@ -450,7 +451,7 @@ let rec resolve resolver root : modul =
             add_name_res modul.resolutions key binding;
             m.resolved_mod <- Some modd
         | None -> ())
-    | Fn (func, _) -> visit_fn func modul
+    | Fn (func, _) -> ignore (visit_fn func modul)
     | Type (Struct s) ->
         let name = s.ident in
         let id = def_id s.struct_id 0 in
@@ -461,8 +462,33 @@ let rec resolve resolver root : modul =
         let key = { ident = name; ns = Type; disambiguator = 0 } in
         let binding = { binding = { kind = Res res } } in
         add_name_res modul.resolutions key binding
-    | Impl _ -> assert false
-    | Foreign funcs -> List.iter (fun f -> visit_fn f modul) funcs
+    | Impl { impl_ty; impl_items } ->
+        let ident =
+          match impl_ty with
+          | Ident path ->
+              List.nth path.segments (List.length path.segments - 1)
+          | _ -> render_ty impl_ty
+        in
+        let mkind = Def (Mod, id, ident) in
+        let modul' =
+          {
+            mkind;
+            parent = Some modul;
+            resolutions = Hashtbl.create 0;
+            scope_table = Hashtbl.create 0;
+          }
+        in
+        let key = { ident; ns = Type; disambiguator = 1 } in
+        let binding = { binding = { kind = Module modul' } } in
+        List.iter
+          (function
+            | AssocFn fn ->
+                let id = visit_fn fn modul' in
+                let name = fn.fn_sig.name in
+                create_impl resolver.tcx impl_ty name id)
+          impl_items;
+        add_name_res modul.resolutions key binding
+    | Foreign funcs -> List.iter (fun f -> ignore (visit_fn f modul)) funcs
     | Unit name ->
         let unit_id = add_unit resolver name in
         let lib_name = "lib" ^ name ^ ".o" in

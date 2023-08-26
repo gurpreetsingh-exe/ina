@@ -326,13 +326,14 @@ let emit (cx : codegen_ctx) =
   let open Metadata in
   let tcx = cx.tcx in
   let llmod = tcx.out_mod.inner in
+  let llcx = tcx.out_mod.llcx in
   let output = tcx.sess.options.output in
   let machine = tcx.sess.machine in
-  let content = const_string tcx.out_mod.llcx (tcx_metadata tcx) in
+  let content = const_string llcx (tcx_metadata tcx) in
   let metadata = define_global "__ray_metadata" content llmod in
   set_section ".ray" metadata;
   set_linkage Private metadata;
-  set_visibility Visibility.Hidden metadata;
+  set_visibility Hidden metadata;
   match tcx.sess.options.output_type with
   | LlvmIr ->
       let ic = open_out (output ^ ".ll") in

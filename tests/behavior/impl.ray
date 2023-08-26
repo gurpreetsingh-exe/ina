@@ -1,0 +1,15 @@
+// EXIT_CODE: 1
+
+type T = { inner: i32 }
+
+impl T {
+    fn new(inner: i32) -> T {
+        T { inner: inner }
+    }
+}
+
+fn main() -> bool {
+    let t = T::new(69);
+    t.inner == 69
+}
+
