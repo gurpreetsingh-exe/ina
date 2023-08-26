@@ -217,7 +217,7 @@ let rec resolve_block (infer_ctx : infer_ctx) body =
     | Field (expr, _) -> g expr
     | Cast (expr, _) -> g expr
     | Lit _ | Path _ -> ()
-    | MethodCall _ -> assert false
+    | MethodCall (expr, _, args) -> g expr; List.iter g args
   in
   List.iter f body.block_stmts;
   match body.last_expr with Some e -> g e | None -> ()
@@ -237,6 +237,39 @@ let find_value infer_ctx path : ty option =
   | PrimTy ty -> Some (prim_ty_to_ty ty)
 
 let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
+  let tcx = infer_ctx.tcx in
+  let check_args exprs =
+    List.iter (fun expr -> ignore (infer infer_ctx expr)) exprs
+  in
+  let check_call exprs name func =
+    let check (expr : expr) (expected : ty) =
+      let expected = unwrap_ty tcx expected in
+      let ty = infer infer_ctx expr in
+      match unify infer_ctx ty expected with
+      | Some err -> infer_err_emit infer_ctx.emitter err expr.expr_span
+      | None -> ()
+    in
+    match func with
+    | FnTy (args_ty, ret_ty, is_variadic) ->
+        let expr_len = List.length exprs in
+        let ty_len = List.length args_ty in
+        if is_variadic then
+          for i = 0 to expr_len - 1 do
+            if i < ty_len then check (List.nth exprs i) (List.nth args_ty i)
+            else ignore (infer infer_ctx (List.nth exprs i))
+          done
+        else if expr_len <> ty_len then (
+          check_args exprs;
+          infer_err_emit infer_ctx.emitter
+            (MismatchArgs (name, ty_len, expr_len))
+            expr.expr_span)
+        else List.iter2 (fun expr ty -> check expr ty) exprs args_ty;
+        ret_ty
+    | ty ->
+        check_args exprs;
+        infer_err_emit infer_ctx.emitter (InvalidCall ty) expr.expr_span;
+        Unit
+  in
   let ty =
     match expr.expr_kind with
     | Lit lit -> (
@@ -256,47 +289,13 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
         | Some ty -> ty
         | None -> not_found ())
     | Call (path, exprs) -> (
-        let check_args _ =
-          List.iter (fun expr -> ignore (infer infer_ctx expr)) exprs
-        in
         let name = render_path path in
-        let f func =
-          let check (expr : expr) (expected : ty) =
-            let expected = unwrap_ty infer_ctx.tcx expected in
-            let ty = infer infer_ctx expr in
-            match unify infer_ctx ty expected with
-            | Some err -> infer_err_emit infer_ctx.emitter err expr.expr_span
-            | None -> ()
-          in
-          match func with
-          | FnTy (args_ty, ret_ty, is_variadic) ->
-              let expr_len = List.length exprs in
-              let ty_len = List.length args_ty in
-              if is_variadic then
-                for i = 0 to expr_len - 1 do
-                  if i < ty_len then
-                    check (List.nth exprs i) (List.nth args_ty i)
-                  else ignore (infer infer_ctx (List.nth exprs i))
-                done
-              else if expr_len <> ty_len then (
-                check_args ();
-                infer_err_emit infer_ctx.emitter
-                  (MismatchArgs (name, ty_len, expr_len))
-                  expr.expr_span)
-              else List.iter2 (fun expr ty -> check expr ty) exprs args_ty;
-              ret_ty
-          | ty ->
-              check_args ();
-              infer_err_emit infer_ctx.emitter (InvalidCall ty)
-                expr.expr_span;
-              Unit
-        in
         match find_value infer_ctx path with
-        | Some ty -> f ty
+        | Some ty -> check_call exprs name ty
         | None ->
             infer_err_emit infer_ctx.emitter (FnNotFound name) expr.expr_span;
             (* infer types for arguments *)
-            check_args ();
+            check_args exprs;
             Unit)
     | Binary (kind, left, right) ->
         let left, right = (infer infer_ctx left, infer infer_ctx right) in
@@ -367,7 +366,11 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
         ignore (infer infer_ctx expr);
         ty
     | Ref expr -> RefTy (infer infer_ctx expr)
-    | MethodCall _ -> assert false
+    | MethodCall (expr, name, args) ->
+        let ty = infer infer_ctx expr in
+        let id = lookup_assoc_fn tcx.def_table ty name in
+        let ty = lookup_def tcx id |> function Ty ty -> ty in
+        check_call args name ty
   in
   let ty = unwrap_ty infer_ctx.tcx ty in
   (match ty with

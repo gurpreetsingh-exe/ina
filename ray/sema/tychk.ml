@@ -217,7 +217,9 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
               expr.expr_span);
         ignore (fexpr expr)
     | Cast (expr, _) -> ignore (fexpr expr)
-    | MethodCall _ -> assert false
+    | MethodCall (expr, _, args) ->
+        ignore (fexpr expr);
+        ignore (List.map fexpr args)
     | Lit _ | Path _ -> ());
     Option.get expr.expr_ty
   and fblock body =

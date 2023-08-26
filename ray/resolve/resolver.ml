@@ -348,7 +348,9 @@ let rec resolve resolver root : modul =
         | Some expr -> visit_expr expr key modul
         | None -> ())
     | Call (_, args) -> List.iter (fun e -> visit_expr e key modul) args
-    | MethodCall _ -> assert false
+    | MethodCall (expr, _, args) ->
+        visit_expr expr key modul;
+        List.iter (fun e -> visit_expr e key modul) args
     | Field (expr, _) | Cast (expr, _) | Ref expr | Deref expr ->
         visit_expr expr key modul
     | StructExpr { fields; _ } ->
