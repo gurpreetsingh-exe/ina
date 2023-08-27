@@ -21,6 +21,7 @@ type ty_err =
   | UnknownField of ident * ident
   | NoFieldInPrimitiveType of ty
   | InvalidBinaryExpression of binary_kind * ty * ty
+  | MethodNotFound of ty * string
 
 exception TypeError of ty_err
 
@@ -117,6 +118,22 @@ let no_field_in_prim_ty ty span =
       loc = Diagnostic.dg_loc_from_span span;
     }
 
+let method_not_found ty name span =
+  let msg =
+    sprintf "type `%s` has no method `%s`"
+      (render_ty ?dbg:(Some false) ty)
+      name
+  in
+  Diagnostic.
+    {
+      level = Err;
+      message = msg;
+      span = { primary_spans = [span]; labels = [] };
+      children = [];
+      sugg = [];
+      loc = Diagnostic.dg_loc_from_span span;
+    }
+
 let ty_err_emit emitter ty_err span =
   incr error;
   match ty_err with
@@ -130,6 +147,8 @@ let ty_err_emit emitter ty_err span =
       Emitter.emit emitter (no_field_in_prim_ty ty span)
   | InvalidBinaryExpression (kind, left, right) ->
       Emitter.emit emitter (invalid_binary_expr kind left right span)
+  | MethodNotFound (ty, name) ->
+      Emitter.emit emitter (method_not_found ty name span)
 
 let ty_ctx_create (infer_ctx : infer_ctx) =
   { tcx = infer_ctx.tcx; emitter = infer_ctx.emitter }
@@ -217,8 +236,14 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
               expr.expr_span);
         ignore (fexpr expr)
     | Cast (expr, _) -> ignore (fexpr expr)
-    | MethodCall (expr, _, args) ->
-        ignore (fexpr expr);
+    | MethodCall (e, name, args) ->
+        let ty = fexpr e in
+        (match lookup_assoc_fn tcx.def_table ty name with
+        | Some _ -> ()
+        | None ->
+            ty_err_emit ty_ctx.emitter
+              (MethodNotFound (ty, name))
+              expr.expr_span);
         ignore (List.map fexpr args)
     | Lit _ | Path _ -> ());
     Option.get expr.expr_ty

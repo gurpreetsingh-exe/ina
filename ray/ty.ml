@@ -197,6 +197,7 @@ type ty =
   | Struct of string * (string * ty) list
   | Infer of infer_ty
   | Ident of path
+  | ImplicitSelf of { mutable ty : ty option }
   | Unit
 
 let prim_ty_to_ty : prim_ty -> ty = function
@@ -246,6 +247,7 @@ let rec render_ty ?(dbg = true) (ty : ty) : string =
   | Struct (s, _) -> s
   | Ident path -> render_path path
   | Infer ty -> render_infer_ty ty dbg
+  | ImplicitSelf _ -> "self"
 
 type def_data = Ty of ty
 
@@ -322,11 +324,8 @@ let lookup_def def_table id =
 
 let lookup_assoc_fn def_table ty name =
   match Hashtbl.find_opt def_table.impls ty with
-  | Some tbl -> (
-    match Hashtbl.find_opt tbl name with
-    | Some id -> id
-    | None -> assert false)
-  | None -> assert false
+  | Some tbl -> Hashtbl.find_opt tbl name
+  | None -> None
 
 let print_def_table def_table =
   let f (def_id, def_data) =
@@ -462,6 +461,7 @@ let rec unwrap_ty tcx ty : ty =
       FnTy
         (List.map (fun ty -> unwrap_ty tcx ty) args, unwrap_ty tcx ty, is_var)
   | Infer _ -> ty
+  | ImplicitSelf { ty } -> Option.get ty
 
 let rec get_backend_type tcx' (ty : ty) : lltype =
   let ctx = tcx'.out_mod.llcx in
@@ -495,7 +495,8 @@ let rec get_backend_type tcx' (ty : ty) : lltype =
         lookup_def tcx' def_id
         |> function Ty ty -> ty |> get_backend_type tcx')
     | _ -> Hashtbl.find tcx.structs (render_path path))
-  | Infer _ -> assert false
+  | ImplicitSelf { ty } -> get_backend_type tcx' @@ Option.get ty
+  | Infer _  -> assert false
 
 let discriminator = function
   | Int _ -> 0L
@@ -509,6 +510,7 @@ let discriminator = function
   | Infer _ -> 8L
   | Ident _ -> 9L
   | Unit -> 10L
+  | ImplicitSelf _ -> 11L
 
 let rec encode enc ty =
   let dis = discriminator ty in
@@ -536,6 +538,7 @@ let rec encode enc ty =
           Encoder.emit_u32 e (List.length path.segments);
           List.iter (fun s -> Encoder.emit_str e s) path.segments;
           encode_res e path.res)
+  | ImplicitSelf _ -> Encoder.emit_with enc dis (fun _ -> ())
   | Infer _ -> assert false
 
 let encode_metadata tcx =
@@ -628,6 +631,7 @@ let ty_eq tcx t1 t2 : bool =
     match expect_def tcx path.res Struct with
     | Some ty -> ty = t
     | None -> false)
+  | ImplicitSelf { ty }, t | t, ImplicitSelf { ty } -> Option.get ty = t
   | _ -> t1 = t2
 
 let ty_neq tcx t1 t2 = not @@ ty_eq tcx t1 t2

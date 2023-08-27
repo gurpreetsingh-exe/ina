@@ -268,24 +268,43 @@ let parse_fn_args pctx : (ty * ident * node_id) list * bool =
   ignore (eat pctx LParen);
   let arg_list = ref [] in
   let is_variadic = ref false in
+  let first_self = ref true in
+  let i = ref 0 in
   while (not pctx.stop) && pctx.curr_tok.kind <> RParen do
-    match pctx.curr_tok.kind with
+    (match pctx.curr_tok.kind with
     | Ident -> (
-        let arg =
-          let ident = parse_ident pctx in
+        let f ident =
           ignore (eat pctx Colon);
           let ty = parse_ty pctx in
           (ty, ident, gen_id pctx)
+        in
+        let arg =
+          let ident = parse_ident pctx in
+          match (!i, !first_self) with
+          | 0, true ->
+              if ident = "self" then (
+                first_self := false;
+                (ImplicitSelf { ty = None }, ident, gen_id pctx))
+              else f ident
+          | _, true ->
+              if ident = "self" then (
+                print_endline "`self` is only allowed at first position";
+                assert false)
+              else f ident
+          | _, _ -> f ident
         in
         arg_list := !arg_list @ [arg];
         match pctx.curr_tok.kind with
         | Comma -> advance pctx
         | RParen -> ()
-        | _ -> assert false)
+        | _ ->
+            print_endline @@ display_span pctx.curr_tok.span;
+            assert false)
     | Dot3 ->
         advance pctx;
         is_variadic := true
-    | _ -> assert false
+    | _ -> assert false);
+    incr i
   done;
   ignore (eat pctx RParen);
   (!arg_list, !is_variadic)

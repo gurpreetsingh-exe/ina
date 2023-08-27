@@ -13,6 +13,7 @@ type namespace =
 
 and module_kind =
   | Block
+  | Impl of ty
   | Def of (def_kind * def_id * string)
 
 and modul = {
@@ -53,7 +54,14 @@ module Res = struct
 end
 
 let rec get_root_path modul =
-  let name = function Block -> assert false | Def (_, _, name) -> name in
+  let name = function
+    | Block -> assert false
+    | Impl ty -> (
+      match ty with
+      | Ident path -> List.nth path.segments (List.length path.segments - 1)
+      | _ -> render_ty ty)
+    | Def (_, _, name) -> name
+  in
   match modul.parent with
   | Some parent -> get_root_path parent @ [name modul.mkind]
   | None -> [name modul.mkind]
@@ -101,6 +109,7 @@ let print_scope scope_table =
 let print_mkind = function
   | Block -> "block"
   | Def (_, id, ident) -> sprintf "%s%d" ident id.inner
+  | Impl ty -> sprintf "impl %s" @@ render_ty ty
 
 type t = {
   tcx : tcx;
@@ -113,6 +122,7 @@ type t = {
   disambiguator : disambiguator;
   mutable key : binding_key;
   units : (string, int) Hashtbl.t;
+  mutable impl : ty option;
 }
 
 let create tcx modd =
@@ -133,6 +143,7 @@ let create tcx modd =
     disambiguator = { stack = [0] };
     key = { ident = ""; ns = Value; disambiguator = 0 };
     units = Hashtbl.create 0;
+    impl = None;
   }
 
 let add_mod resolver id modul = Hashtbl.replace resolver.mod_table id modul
@@ -485,7 +496,7 @@ let rec resolve resolver root : modul =
         match get_name_res modul.resolutions key with
         | Some res -> f @@ Res.modul res.binding
         | None ->
-            let mkind = Def (Mod, id, ident) in
+            let mkind = Impl impl_ty in
             let modul' =
               {
                 mkind;

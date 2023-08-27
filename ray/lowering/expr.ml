@@ -168,7 +168,15 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
       | Ptr _, Int _ -> Builder.ptrtoint value dst_ty builder
       | Int _, Ptr _ -> Builder.inttoptr value dst_ty builder
       | _ -> assert false)
-  | MethodCall _ -> assert false
+  | MethodCall (expr, name, args) ->
+      let self = lower expr builder ctx in
+      let ty = unwrap_ty ctx.tcx @@ Option.get expr.expr_ty in
+      let args = List.map (fun e -> lower e builder ctx) args in
+      let id = Option.get @@ lookup_assoc_fn ctx.tcx.def_table ty name in
+      let ty = lookup_def ctx.tcx id |> function Ty ty -> ty in
+      Builder.call ty
+        (Global (lookup_sym ctx.tcx (Def (id, Struct))))
+        ([self] @ args) builder
 
 and lower_lvalue (expr : expr) (builder : Builder.t) (ctx : Context.t) :
     Inst.value =

@@ -14,6 +14,6 @@ mod StrBuf {
         t { ptr: 0 as *i8, len: 0 }
     }
 
-    fn len(self: t) -> usize { self.len }
+    fn len(t: t) -> usize { t.len }
 }
 

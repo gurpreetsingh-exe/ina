@@ -1,0 +1,26 @@
+// EXIT_CODE: 1
+
+mod _ {
+    impl i32 {
+        fn type_of(self) -> isize { 0 }
+    }
+}
+
+impl i64 {
+    fn type_of(self) -> isize { 1 }
+}
+
+impl f32 {
+    fn type_of(self) -> isize { 2 }
+}
+
+fn main() -> bool {
+    let a: i32 = 20;
+    let b: i64 = 50;
+    let c: f32 = 20.0;
+
+    a.type_of() == 0 &&
+    b.type_of() == 1 &&
+    c.type_of() == 2
+}
+

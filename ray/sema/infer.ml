@@ -75,6 +75,7 @@ type infer_err =
   | MismatchArgs of ident * int * int
   | InvalidCall of ty
   | InvalidDeref of ty
+  | AssocFnAsMethod of string
 
 let mismatch_ty expected ty span =
   let msg =
@@ -157,6 +158,20 @@ let mismatch_args func expected found span =
       loc = Diagnostic.dg_loc_from_span span;
     }
 
+let assoc_call_as_method name span =
+  let msg =
+    sprintf "`%s` is an associated function, not a method call" name
+  in
+  Diagnostic.
+    {
+      level = Err;
+      message = "invalid method call";
+      span = { primary_spans = [span]; labels = [(span, msg, true)] };
+      children = [];
+      sugg = [];
+      loc = Diagnostic.dg_loc_from_span span;
+    }
+
 let error = ref 0
 
 let infer_err_emit emitter (ty_err : infer_err) (span : span) =
@@ -171,6 +186,8 @@ let infer_err_emit emitter (ty_err : infer_err) (span : span) =
       Emitter.emit emitter (mismatch_args func expected args span)
   | InvalidDeref ty -> Emitter.emit emitter (invalid_deref ty span)
   | InvalidCall ty -> Emitter.emit emitter (invalid_call ty span)
+  | AssocFnAsMethod name ->
+      Emitter.emit emitter (assoc_call_as_method name span)
 
 let print_bindings ty_env =
   Hashtbl.iter
@@ -366,11 +383,19 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
         ignore (infer infer_ctx expr);
         ty
     | Ref expr -> RefTy (infer infer_ctx expr)
-    | MethodCall (expr, name, args) ->
-        let ty = infer infer_ctx expr in
-        let id = lookup_assoc_fn tcx.def_table ty name in
-        let ty = lookup_def tcx id |> function Ty ty -> ty in
-        check_call args name ty
+    | MethodCall (e, name, args) -> (
+        let ty = infer infer_ctx e in
+        match lookup_assoc_fn tcx.def_table ty name with
+        | Some id -> (
+            let ty = lookup_def tcx id |> function Ty ty -> ty in
+            match ty with
+            | FnTy (args, ret_ty, _) when List.length args = 0 ->
+                infer_err_emit infer_ctx.emitter (AssocFnAsMethod name)
+                  expr.expr_span;
+                ret_ty
+            | FnTy _ -> check_call ([e] @ args) name ty
+            | _ -> assert false)
+        | None -> check_args args; Unit)
   in
   let ty = unwrap_ty infer_ctx.tcx ty in
   (match ty with
