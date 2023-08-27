@@ -178,14 +178,17 @@ let infer_err_emit emitter (ty_err : infer_err) (span : span) =
   incr error;
   match ty_err with
   | MismatchTy (expected, ty) ->
-      Emitter.emit emitter (mismatch_ty expected ty span)
+      if expected <> Err && ty <> Err then
+        Emitter.emit emitter (mismatch_ty expected ty span)
   | FnNotFound name -> Emitter.emit emitter (fn_not_found name span)
   | StructNotFound name -> Emitter.emit emitter (struct_not_found name span)
   | VarNotFound name -> Emitter.emit emitter (local_var_not_found name span)
   | MismatchArgs (func, expected, args) ->
       Emitter.emit emitter (mismatch_args func expected args span)
-  | InvalidDeref ty -> Emitter.emit emitter (invalid_deref ty span)
-  | InvalidCall ty -> Emitter.emit emitter (invalid_call ty span)
+  | InvalidDeref ty ->
+      if ty <> Err then Emitter.emit emitter (invalid_deref ty span)
+  | InvalidCall ty ->
+      if ty <> Err then Emitter.emit emitter (invalid_call ty span)
   | AssocFnAsMethod name ->
       Emitter.emit emitter (assoc_call_as_method name span)
 
@@ -285,7 +288,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
     | ty ->
         check_args exprs;
         infer_err_emit infer_ctx.emitter (InvalidCall ty) expr.expr_span;
-        Unit
+        Err
   in
   let ty =
     match expr.expr_kind with
@@ -300,7 +303,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
         let not_found _ =
           let name = render_path path in
           infer_err_emit infer_ctx.emitter (VarNotFound name) expr.expr_span;
-          Ty.Unit
+          Err
         in
         match find_value infer_ctx path with
         | Some ty -> ty
@@ -313,7 +316,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
             infer_err_emit infer_ctx.emitter (FnNotFound name) expr.expr_span;
             (* infer types for arguments *)
             check_args exprs;
-            Unit)
+            Err)
     | Binary (kind, left, right) ->
         let left, right = (infer infer_ctx left, infer infer_ctx right) in
         let cmp t1 : ty = match kind with Eq | NotEq -> Bool | _ -> t1 in
@@ -367,16 +370,16 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
             ignore (List.map (fun (_, expr) -> infer infer_ctx expr) fields);
             infer_err_emit infer_ctx.emitter (StructNotFound name)
               expr.expr_span;
-            Unit)
+            Err)
     | Field (expr, name) ->
         let ty = infer infer_ctx expr in
         let ty =
           match ty with
           | Struct (_, tys) ->
-              let ty = ref Ty.Unit in
+              let ty = ref Err in
               List.iter (fun (field, t) -> if name = field then ty := t) tys;
               !ty
-          | _ -> Unit
+          | _ -> Err
         in
         ty
     | Cast (expr, ty) ->
@@ -395,7 +398,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
                 ret_ty
             | FnTy _ -> check_call ([e] @ args) name ty
             | _ -> assert false)
-        | None -> check_args args; Unit)
+        | None -> check_args args; Err)
   in
   let ty = unwrap_ty infer_ctx.tcx ty in
   (match ty with
@@ -416,16 +419,10 @@ and compare_types infer_ctx ty1 ty2 fi ff span : ty =
       ty1
   | RefTy t0, RefTy t1 -> RefTy (compare_types infer_ctx t0 t1 fi ff span)
   | Ptr t0, Ptr t1 -> Ptr (compare_types infer_ctx t0 t1 fi ff span)
-  | t0, Infer (IntVar _ | FloatVar _) ->
-      (match unify infer_ctx ty2 t0 with
-      | Some err -> infer_err_emit infer_ctx.emitter err span
-      | None -> ());
-      ty1
-  | Infer (IntVar _ | FloatVar _), t0 ->
-      (match unify infer_ctx ty1 t0 with
-      | Some err -> infer_err_emit infer_ctx.emitter err span
-      | None -> ());
-      ty2
+  | t0, Infer (IntVar _ | FloatVar _) -> (
+    match unify infer_ctx ty2 t0 with Some _ -> Err | None -> ty1)
+  | Infer (IntVar _ | FloatVar _), t0 -> (
+    match unify infer_ctx ty1 t0 with Some _ -> Err | None -> ty2)
   | _, _ -> ty1
 
 and rec_replace (infer_ctx : infer_ctx) k ty =

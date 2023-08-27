@@ -199,6 +199,7 @@ type ty =
   | Ident of path
   | ImplicitSelf of { mutable ty : ty option }
   | Unit
+  | Err
 
 let prim_ty_to_ty : prim_ty -> ty = function
   | Int int_ty -> Int int_ty
@@ -248,6 +249,7 @@ let rec render_ty ?(dbg = true) (ty : ty) : string =
   | Ident path -> render_path path
   | Infer ty -> render_infer_ty ty dbg
   | ImplicitSelf _ -> "self"
+  | Err -> "error"
 
 type def_data = Ty of ty
 
@@ -462,6 +464,7 @@ let rec unwrap_ty tcx ty : ty =
         (List.map (fun ty -> unwrap_ty tcx ty) args, unwrap_ty tcx ty, is_var)
   | Infer _ -> ty
   | ImplicitSelf { ty } -> Option.get ty
+  | Err -> Err
 
 let rec get_backend_type tcx' (ty : ty) : lltype =
   let ctx = tcx'.out_mod.llcx in
@@ -496,7 +499,7 @@ let rec get_backend_type tcx' (ty : ty) : lltype =
         |> function Ty ty -> ty |> get_backend_type tcx')
     | _ -> Hashtbl.find tcx.structs (render_path path))
   | ImplicitSelf { ty } -> get_backend_type tcx' @@ Option.get ty
-  | Infer _  -> assert false
+  | Infer _ | Err -> assert false
 
 let discriminator = function
   | Int _ -> 0L
@@ -511,6 +514,7 @@ let discriminator = function
   | Ident _ -> 9L
   | Unit -> 10L
   | ImplicitSelf _ -> 11L
+  | Err -> assert false
 
 let rec encode enc ty =
   let dis = discriminator ty in
@@ -539,7 +543,7 @@ let rec encode enc ty =
           List.iter (fun s -> Encoder.emit_str e s) path.segments;
           encode_res e path.res)
   | ImplicitSelf _ -> Encoder.emit_with enc dis (fun _ -> ())
-  | Infer _ -> assert false
+  | Infer _ | Err -> assert false
 
 let encode_metadata tcx =
   let enc = tcx.sess.enc in

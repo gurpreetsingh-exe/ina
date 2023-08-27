@@ -35,7 +35,8 @@ let rec resolve_ident_in_lexical_scope resolver modul ident ns =
 
 let resolve_path_in_modul modul path ns =
   let segs_len = List.length path in
-  let res = ref Err in
+  let res : res = Err in
+  let res = ref res in
   let unit_in_path_report = ref false in
   for i = 0 to segs_len - 1 do
     let ns = if i = segs_len - 1 then ns else Type in

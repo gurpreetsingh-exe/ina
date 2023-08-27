@@ -138,17 +138,19 @@ let ty_err_emit emitter ty_err span =
   incr error;
   match ty_err with
   | MismatchTy (expected, ty) ->
-      Emitter.emit emitter (mismatch_ty expected ty span)
+      if ty <> Err && expected <> Err then
+        Emitter.emit emitter (mismatch_ty expected ty span)
   | UninitializedFields name ->
       Emitter.emit emitter (uninitialized_fields name span)
   | UnknownField (strukt, name) ->
       Emitter.emit emitter (unknown_field strukt name span)
   | NoFieldInPrimitiveType ty ->
-      Emitter.emit emitter (no_field_in_prim_ty ty span)
+      if ty <> Err then Emitter.emit emitter (no_field_in_prim_ty ty span)
   | InvalidBinaryExpression (kind, left, right) ->
-      Emitter.emit emitter (invalid_binary_expr kind left right span)
+      if left <> Err && right <> Err then
+        Emitter.emit emitter (invalid_binary_expr kind left right span)
   | MethodNotFound (ty, name) ->
-      Emitter.emit emitter (method_not_found ty name span)
+      if ty <> Err then Emitter.emit emitter (method_not_found ty name span)
 
 let ty_ctx_create (infer_ctx : infer_ctx) =
   { tcx = infer_ctx.tcx; emitter = infer_ctx.emitter }
@@ -220,7 +222,7 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
                     (UnknownField (struct_name, name))
                     expr.expr_span)
               fields
-        | Unit -> () (* error was handled by infer *)
+        | Err -> () (* error was handled by infer *)
         | _ -> assert false)
     | Field (expr, name) ->
         let ty = Option.get expr.expr_ty in
@@ -256,11 +258,12 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
         let left = fexpr expr1 in
         let right = fexpr expr2 in
         if ty_neq tcx left right then
-          Emitter.emit ty_ctx.emitter
-            (mismatch_ty left right expr2.expr_span)
+          ty_err_emit ty_ctx.emitter
+            (MismatchTy (left, right))
+            expr2.expr_span
     | Stmt expr | Expr expr ->
         let ty = fexpr expr in
-        if ty_neq tcx ty Unit then
+        if ty <> Unit && ty <> Err then
           Emitter.emit ty_ctx.emitter (unused_value expr.expr_span)
     | Binding ({ binding_pat; binding_ty; binding_expr; _ } as binding) -> (
         let ty = fexpr binding_expr in
@@ -269,8 +272,9 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
             (match binding_ty with
             | Some expected ->
                 if ty_neq tcx expected ty then
-                  Emitter.emit ty_ctx.emitter
-                    (mismatch_ty expected ty binding_expr.expr_span)
+                  ty_err_emit ty_ctx.emitter
+                    (MismatchTy (expected, ty))
+                    binding_expr.expr_span
             | None -> binding.binding_ty <- Some ty);
             let check_overflow _value ty =
               match ty with
