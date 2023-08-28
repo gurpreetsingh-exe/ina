@@ -542,7 +542,8 @@ let rec encode enc ty =
           Encoder.emit_u32 e (List.length path.segments);
           List.iter (fun s -> Encoder.emit_str e s) path.segments;
           encode_res e path.res)
-  | ImplicitSelf _ -> Encoder.emit_with enc dis (fun _ -> ())
+  | ImplicitSelf self ->
+      Encoder.emit_with enc dis (fun e -> encode e (Option.get self.ty))
   | Infer _ | Err -> assert false
 
 let encode_metadata tcx =
@@ -555,6 +556,17 @@ let encode_metadata tcx =
       Encoder.emit_u32 enc def_id.inner;
       def_data |> function Ty ty -> encode enc ty)
     tcx.def_table.table;
+  Encoder.emit_usize enc @@ Hashtbl.length tcx.def_table.impls;
+  Hashtbl.iter
+    (fun ty def_table ->
+      encode enc ty;
+      Encoder.emit_usize enc @@ Hashtbl.length def_table;
+      Hashtbl.iter
+        (fun name def_id ->
+          Encoder.emit_str enc name;
+          Encoder.emit_u32 enc def_id.inner)
+        def_table)
+    tcx.def_table.impls;
   Encoder.emit_usize enc @@ Hashtbl.length tcx.sym_table;
   Hashtbl.iter
     (fun def_id sym ->
@@ -602,6 +614,7 @@ let rec decode dec =
       let res = decode_res dec in
       Ident { segments; res }
   | 10 -> Unit
+  | 11 -> ImplicitSelf { ty = Some (decode dec) }
   | _ ->
       printf "%Ld: %d\n" (dis |> Int64.of_int) dec.pos;
       assert false
@@ -619,6 +632,18 @@ let decode_metadata tcx dec =
       let ty = decode dec in
       create_def tcx def_id (Ty ty) None)
     (List.init ndef_table_entries (fun x -> x));
+  let nimpls = Decoder.read_usize dec in
+  List.iter
+    (fun _ ->
+      let ty = decode dec in
+      let nimpl_defs = Decoder.read_usize dec in
+      List.iter
+        (fun _ ->
+          let name = Decoder.read_str dec in
+          let def_id = def_id (Decoder.read_u32 dec) dec.unit_id in
+          create_impl tcx ty name def_id)
+        (List.init nimpl_defs (fun x -> x)))
+    (List.init nimpls (fun x -> x));
   let nsym_table_entries = Decoder.read_usize dec in
   List.iter
     (fun _ ->

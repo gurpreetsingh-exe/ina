@@ -12,11 +12,28 @@ impl T {
     fn new2() -> T {
         T { inner: 420 }
     }
+
+    fn value(self) -> i32 {
+        self.inner
+    }
+}
+
+type T2 = {}
+
+impl T2 {
+    fn new() -> T2 { T2 {} }
+
+    fn value(self) -> i32 {
+        5
+    }
 }
 
 fn main() -> bool {
     let t1 = T::new(69);
     let t2 = T::new2();
-    t1.inner == 69 && t2.inner == 420
+    let t3 = T2::new();
+    t1.inner == 69
+    && t2.value() == 420
+    && t3.value() == 5
 }
 

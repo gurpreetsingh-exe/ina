@@ -164,8 +164,10 @@ let unit_id resolver name =
 let rec encode_module enc modul =
   (match modul.mkind with
   | Def (_, def_id, name) ->
+      Encoder.emit_usize enc 0;
       Encoder.emit_u32 enc def_id.inner;
       Encoder.emit_str enc name
+  | Impl ty -> Encoder.emit_usize enc 1; encode enc ty
   | _ -> assert false);
   Encoder.emit_usize enc @@ Hashtbl.length modul.resolutions;
   Hashtbl.iter
@@ -180,11 +182,18 @@ let rec encode_module enc modul =
     modul.resolutions
 
 let rec decode_module resolver dec parent =
-  let def_id = def_id (Decoder.read_u32 dec) dec.unit_id in
-  let name = Decoder.read_str dec in
+  let mkind =
+    match Decoder.read_usize dec with
+    | 0 ->
+        let def_id = def_id (Decoder.read_u32 dec) dec.unit_id in
+        let name = Decoder.read_str dec in
+        Def (Mod, def_id, name)
+    | 1 -> Impl (decode dec)
+    | _ -> assert false
+  in
   let modul =
     {
-      mkind = Def (Mod, def_id, name);
+      mkind;
       parent;
       resolutions = Hashtbl.create 0;
       scope_table = Hashtbl.create 0;
@@ -211,7 +220,10 @@ let rec decode_module resolver dec parent =
       let binding = { binding = { kind } } in
       add_name_res modul.resolutions key binding)
     (List.init module_entries (fun x -> x));
-  add_mod resolver def_id modul;
+  (match modul.mkind with
+  | Def (_, def_id, _) -> add_mod resolver def_id modul
+  | Impl _ -> ()
+  | _ -> ());
   modul
 
 module Disambiguator = struct
