@@ -297,10 +297,20 @@ let gen_item cx (func : Func.t) =
       if fn.name = "main" then cx.main <- Some llfn;
       set_linkage Linkage.External llfn)
     else (
-      (match lookup_function fn.linkage_name llmod with
-      | Some fn -> delete_function fn
-      | None -> ());
-      let llfn = define_function fn.linkage_name fn_ty llmod in
+      let llfn =
+        match lookup_function fn.linkage_name llmod with
+        | Some f ->
+            let fn =
+              define_function
+                (fn.linkage_name ^ string_of_int @@ Hashtbl.hash f)
+                fn_ty llmod
+            in
+            replace_all_uses_with f fn;
+            delete_function f;
+            fn
+        | None -> define_function fn.linkage_name fn_ty llmod
+      in
+      set_value_name fn.linkage_name llfn;
       cx.curr_fn <- Some llfn;
       if fn.name = "main" then cx.main <- Some llfn)
   in
@@ -333,7 +343,6 @@ let emit (cx : codegen_ctx) =
   let metadata = define_global "__ray_metadata" content llmod in
   set_section ".ray" metadata;
   set_linkage Private metadata;
-  set_visibility Hidden metadata;
   match tcx.sess.options.output_type with
   | LlvmIr ->
       let ic = open_out (output ^ ".ll") in
