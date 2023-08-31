@@ -374,7 +374,7 @@ type tcx = {
   def_table : def_table;
   sym_table : sym_table;
   sym_table2 : (string, def_id) Hashtbl.t;
-  mutable units : string list;
+  units : (string, int) Hashtbl.t;
   mutable uuid : int;
 }
 
@@ -418,7 +418,7 @@ let tcx_create sess =
     def_table = { table = Hashtbl.create 0; impls = Hashtbl.create 0 };
     sym_table = Hashtbl.create 0;
     sym_table2 = Hashtbl.create 0;
-    units = [];
+    units = Hashtbl.create 0;
     uuid = 0;
   }
 
@@ -562,8 +562,8 @@ let rec encode enc ty =
 
 let encode_metadata tcx =
   let enc = tcx.sess.enc in
-  Encoder.emit_usize enc @@ List.length tcx.units;
-  List.iter (fun name -> Encoder.emit_str enc name) tcx.units;
+  Encoder.emit_usize enc @@ Hashtbl.length tcx.units;
+  Hashtbl.iter (fun name _ -> Encoder.emit_str enc name) tcx.units;
   Encoder.emit_usize enc @@ Hashtbl.length tcx.def_table.table;
   Hashtbl.iter
     (fun def_id def_data ->
@@ -639,9 +639,13 @@ let rec decode dec =
 let decode_metadata tcx dec =
   let nunits = Decoder.read_usize dec in
   let units =
-    List.map (fun _ -> Decoder.read_str dec) (List.init nunits (fun x -> x))
+    Seq.filter_map
+      (fun _ ->
+        let str = Decoder.read_str dec in
+        if Hashtbl.mem tcx.units str then None else Some (str, 0))
+      (Seq.init nunits (fun x -> x))
   in
-  tcx.units <- tcx.units @ units;
+  Hashtbl.add_seq tcx.units units;
   let ndef_table_entries = Decoder.read_usize dec in
   List.iter
     (fun _ ->

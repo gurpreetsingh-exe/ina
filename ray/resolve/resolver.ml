@@ -525,16 +525,19 @@ let rec resolve resolver root : modul =
         let unit_id = add_unit resolver name in
         let lib_name = "lib" ^ name ^ ".o" in
         let f name =
-          let obj = Object.read_obj name in
-          let metadata =
-            Option.get @@ Object.read_section_by_name obj ".ray\000"
-          in
-          let open Metadata in
-          let dec = Decoder.create metadata unit_id in
-          let modul = decode_module resolver dec None in
-          resolver.extern_units <- resolver.extern_units @ [modul];
-          resolver.tcx.units <- resolver.tcx.units @ [name];
-          decode_metadata resolver.tcx dec
+          match Hashtbl.find_opt resolver.tcx.units name with
+          | Some i when i = 1 -> ()
+          | _ ->
+              let obj = Object.read_obj name in
+              let metadata =
+                Option.get @@ Object.read_section_by_name obj ".ray\000"
+              in
+              let open Metadata in
+              let dec = Decoder.create metadata unit_id in
+              let modul = decode_module resolver dec None in
+              resolver.extern_units <- resolver.extern_units @ [modul];
+              Hashtbl.replace resolver.tcx.units name 1;
+              decode_metadata resolver.tcx dec
         in
         let p =
           Path.join [Filename.dirname resolver.modd.mod_path; lib_name]

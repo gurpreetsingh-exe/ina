@@ -360,7 +360,9 @@ let emit (cx : codegen_ctx) =
         (output ^ ".s") machine
   | Exe ->
       let objfile = output ^ ".o" in
-      let link_args = " " ^ String.concat " " tcx.units in
+      let link_args =
+        " " ^ String.concat " " (List.of_seq @@ Hashtbl.to_seq_keys tcx.units)
+      in
       TargetMachine.emit_to_file llmod CodeGenFileType.ObjectFile objfile
         machine;
       let command =
