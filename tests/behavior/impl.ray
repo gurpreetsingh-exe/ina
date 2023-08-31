@@ -16,6 +16,11 @@ impl T {
     fn value(self) -> i32 {
         self.inner
     }
+
+    fn incr(&self) {
+        let v = (*self).inner;
+        (*self).inner = v + 1;
+    }
 }
 
 type T2 = {}
@@ -35,5 +40,9 @@ fn main() -> bool {
     t1.inner == 69
     && t2.value() == 420
     && t3.value() == 5
+    && {
+        t2.incr();
+        t2.value() == 421
+    }
 }
 

@@ -261,7 +261,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
   let check_args exprs =
     List.iter (fun expr -> ignore (infer infer_ctx expr)) exprs
   in
-  let check_call exprs name func =
+  let check_call exprs name func is_method =
     let check (expr : expr) (expected : ty) =
       let expected = unwrap_ty tcx expected in
       let ty = infer infer_ctx expr in
@@ -271,6 +271,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
     in
     match func with
     | FnTy (args_ty, ret_ty, is_variadic) ->
+        let args_ty = if is_method then List.tl args_ty else args_ty in
         let expr_len = List.length exprs in
         let ty_len = List.length args_ty in
         if is_variadic then
@@ -311,7 +312,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
     | Call (path, exprs) -> (
         let name = render_path path in
         match find_value infer_ctx path with
-        | Some ty -> check_call exprs name ty
+        | Some ty -> check_call exprs name ty false
         | None ->
             infer_err_emit infer_ctx.emitter (FnNotFound name) expr.expr_span;
             (* infer types for arguments *)
@@ -396,7 +397,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
                 infer_err_emit infer_ctx.emitter (AssocFnAsMethod name)
                   expr.expr_span;
                 ret_ty
-            | FnTy _ -> check_call ([e] @ args) name ty
+            | FnTy _ -> check_call args name ty true
             | _ -> assert false)
         | None -> check_args args; Err)
   in

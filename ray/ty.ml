@@ -197,9 +197,18 @@ type ty =
   | Struct of string * (string * ty) list
   | Infer of infer_ty
   | Ident of path
-  | ImplicitSelf of { mutable ty : ty option }
+  | ImplicitSelf of {
+      mutable ty : ty option;
+      is_ref : bool;
+    }
   | Unit
   | Err
+
+let ty_is_ref = function
+  | RefTy _ | ImplicitSelf { is_ref = true; _ } -> true
+  | _ -> false
+
+let ty_get_fn_args = function FnTy (args, _, _) -> args | _ -> assert false
 
 let prim_ty_to_ty : prim_ty -> ty = function
   | Int int_ty -> Int int_ty
@@ -463,7 +472,9 @@ let rec unwrap_ty tcx ty : ty =
       FnTy
         (List.map (fun ty -> unwrap_ty tcx ty) args, unwrap_ty tcx ty, is_var)
   | Infer _ -> ty
-  | ImplicitSelf { ty } -> Option.get ty
+  | ImplicitSelf { ty; is_ref } ->
+      let ty = Option.get ty in
+      if is_ref then RefTy ty else ty
   | Err -> Err
 
 let rec get_backend_type tcx' (ty : ty) : lltype =
@@ -498,7 +509,8 @@ let rec get_backend_type tcx' (ty : ty) : lltype =
         lookup_def tcx' def_id
         |> function Ty ty -> ty |> get_backend_type tcx')
     | _ -> Hashtbl.find tcx.structs (render_path path))
-  | ImplicitSelf { ty } -> get_backend_type tcx' @@ Option.get ty
+  | ImplicitSelf { ty; is_ref } ->
+      if is_ref then tcx.ptr else get_backend_type tcx' @@ Option.get ty
   | Infer _ | Err -> assert false
 
 let discriminator = function
@@ -543,7 +555,9 @@ let rec encode enc ty =
           List.iter (fun s -> Encoder.emit_str e s) path.segments;
           encode_res e path.res)
   | ImplicitSelf self ->
-      Encoder.emit_with enc dis (fun e -> encode e (Option.get self.ty))
+      Encoder.emit_with enc dis (fun e ->
+          encode e (Option.get self.ty);
+          Encoder.emit_bool e self.is_ref)
   | Infer _ | Err -> assert false
 
 let encode_metadata tcx =
@@ -614,7 +628,10 @@ let rec decode dec =
       let res = decode_res dec in
       Ident { segments; res }
   | 10 -> Unit
-  | 11 -> ImplicitSelf { ty = Some (decode dec) }
+  | 11 ->
+      let ty = decode dec in
+      let is_ref = if Decoder.read_u8 dec = 0 then false else true in
+      ImplicitSelf { ty = Some ty; is_ref }
   | _ ->
       printf "%Ld: %d\n" (dis |> Int64.of_int) dec.pos;
       assert false
@@ -660,7 +677,8 @@ let ty_eq tcx t1 t2 : bool =
     match expect_def tcx path.res Struct with
     | Some ty -> ty = t
     | None -> false)
-  | ImplicitSelf { ty }, t | t, ImplicitSelf { ty } -> Option.get ty = t
+  | ImplicitSelf { ty; _ }, t | t, ImplicitSelf { ty; _ } ->
+      Option.get ty = t
   | _ -> t1 = t2
 
 let ty_neq tcx t1 t2 = not @@ ty_eq tcx t1 t2

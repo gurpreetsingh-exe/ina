@@ -272,6 +272,20 @@ let parse_fn_args pctx : (ty * ident * node_id) list * bool =
   let i = ref 0 in
   while (not pctx.stop) && pctx.curr_tok.kind <> RParen do
     (match pctx.curr_tok.kind with
+    | Ampersand -> (
+        advance pctx;
+        let ident = parse_ident pctx in
+        assert (ident = "self");
+        let arg =
+          (ImplicitSelf { ty = None; is_ref = true }, ident, gen_id pctx)
+        in
+        arg_list := !arg_list @ [arg];
+        match pctx.curr_tok.kind with
+        | Comma -> advance pctx
+        | RParen -> ()
+        | _ ->
+            print_endline @@ display_span pctx.curr_tok.span;
+            assert false)
     | Ident -> (
         let f ident =
           ignore (eat pctx Colon);
@@ -284,7 +298,9 @@ let parse_fn_args pctx : (ty * ident * node_id) list * bool =
           | 0, true ->
               if ident = "self" then (
                 first_self := false;
-                (ImplicitSelf { ty = None }, ident, gen_id pctx))
+                ( ImplicitSelf { ty = None; is_ref = false },
+                  ident,
+                  gen_id pctx ))
               else f ident
           | _, true ->
               if ident = "self" then (
