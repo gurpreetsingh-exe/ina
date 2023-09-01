@@ -66,6 +66,9 @@ let rec render_expr (expr : expr) (indent : int) : string =
     | Deref expr -> sprintf "*%s" (render_expr expr indent)
     | Cast (expr, ty) ->
         sprintf "%s as %s" (render_expr expr indent) (render_ty ty)
+    | MethodCall (expr, name, args) ->
+        sprintf "%s.%s(%s)" (render_expr expr indent) name
+          (render args (fun e -> render_expr e indent) ", ")
     | Ref expr -> sprintf "&%s" (render_expr expr indent))
     (match expr.expr_ty with Some ty -> render_ty ty | None -> "none")
 
@@ -142,6 +145,10 @@ let rec render_item (item : item) : string =
   | Foreign funcs ->
       sprintf "\nextern {\n%s\n}\n"
         (String.concat "\n" (List.map (fun f -> "    " ^ render_fn f) funcs))
+  | Impl { impl_ty; impl_items } ->
+      sprintf "\nimpl %s {\n%s\n}\n" (render_ty impl_ty)
+        (String.concat "\n"
+           (List.map (function AssocFn fn -> render_fn fn) impl_items))
   | Const constant -> render_const constant
   | Mod { name; resolved_mod; _ } -> (
     match resolved_mod with

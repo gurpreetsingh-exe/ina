@@ -1,0 +1,48 @@
+// EXIT_CODE: 1
+
+type T = { inner: i32 }
+
+impl T {
+    fn new(inner: i32) -> T {
+        T { inner: inner }
+    }
+}
+
+impl T {
+    fn new2() -> T {
+        T { inner: 420 }
+    }
+
+    fn value(self) -> i32 {
+        self.inner
+    }
+
+    fn incr(&self) {
+        let v = (*self).inner;
+        (*self).inner = v + 1;
+    }
+}
+
+type T2 = {}
+
+impl T2 {
+    fn new() -> T2 { T2 {} }
+
+    fn value(self) -> i32 {
+        5
+    }
+}
+
+fn main() -> bool {
+    let t1 = T::new(69);
+    let t2 = T::new2();
+    let t3 = T2::new();
+    t1.inner == 69
+    && t2.value() == 420
+    && t3.value() == 5
+    && {
+        t2.incr();
+        t2.value() == 421
+    }
+}
+

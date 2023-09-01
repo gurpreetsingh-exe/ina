@@ -8,7 +8,7 @@ let rec get_root_mod resolver modul : modul =
   | Def (kind, id, _) ->
       assert (kind = Mod);
       Hashtbl.find resolver.mod_table id
-  | Block -> (
+  | Block | Impl _ -> (
     match modul.parent with
     | Some m -> get_root_mod resolver m
     | _ -> assert false)
@@ -28,13 +28,15 @@ let rec resolve_ident_in_lexical_scope resolver modul ident ns =
     match modul.parent with
     | Some modul' -> (
       match modul.mkind with
-      | Block -> resolve_ident_in_lexical_scope resolver modul' ident ns
-      | _ -> Err)
+      | Block | Impl _ ->
+          resolve_ident_in_lexical_scope resolver modul' ident ns
+      | _ -> print_endline ident; Err)
     | _ -> Err)
 
 let resolve_path_in_modul modul path ns =
   let segs_len = List.length path in
-  let res = ref Err in
+  let res : res = Err in
+  let res = ref res in
   let unit_in_path_report = ref false in
   for i = 0 to segs_len - 1 do
     let ns = if i = segs_len - 1 then ns else Type in
@@ -80,7 +82,7 @@ let resolve_path resolver modul path ns =
         let name =
           match modul.mkind with
           | Def (_, _, name) -> name
-          | Block -> assert false
+          | Block | Impl _ -> assert false
         in
         if List.hd path.segments = name then
           res := resolve_path resolver modul path ns;
@@ -98,6 +100,7 @@ let rec resolve_paths (resolver : Resolver.t) (modul : modul) (modd : modd) :
         List.iter (fun ty -> resolve_ty ty) args;
         resolve_ty ty
     | Ident path -> path.res <- resolve_path resolver modul path (Some Type)
+    | ImplicitSelf self -> self.ty <- resolver.impl
     | RefTy ty | Ptr ty -> resolve_ty ty
     | Int _ | Float _ | Bool | Str | Unit -> ()
     | _ ->
@@ -107,7 +110,18 @@ let rec resolve_paths (resolver : Resolver.t) (modul : modul) (modd : modd) :
   let rec visit_expr expr (modul : modul) =
     match expr.expr_kind with
     | Call (path, exprs) ->
-        path.res <- resolve_path resolver modul path (Some Value);
+        let res = resolve_path resolver modul path (Some Value) in
+        let name = List.nth path.segments (List.length path.segments - 1) in
+        path.res <-
+          (match res with
+          | Def (id, Struct) -> (
+              let ty =
+                lookup_def resolver.tcx id |> function Ty ty -> ty
+              in
+              match lookup_assoc_fn resolver.tcx.def_table ty name with
+              | Some id -> Def (id, Fn)
+              | None -> assert false)
+          | _ -> res);
         List.iter (fun expr -> visit_expr expr modul) exprs
     | Binary (_, left, right) ->
         visit_expr left modul; visit_expr right modul
@@ -136,6 +150,9 @@ let rec resolve_paths (resolver : Resolver.t) (modul : modul) (modd : modd) :
         List.iter (fun (_, expr) -> visit_expr expr modul) fields
     | Field (expr, _) -> visit_expr expr modul
     | Cast (expr, ty) -> visit_expr expr modul; resolve_ty ty
+    | MethodCall (expr, _, args) ->
+        visit_expr expr modul;
+        List.iter (fun expr -> visit_expr expr modul) args
   and visit_block body (modul : modul) =
     Disambiguator.push resolver.disambiguator;
     List.iter
@@ -163,7 +180,7 @@ let rec resolve_paths (resolver : Resolver.t) (modul : modul) (modd : modd) :
     | None -> ());
     Disambiguator.pop resolver.disambiguator
   in
-  let visit_fn (func : func) =
+  let visit_fn (func : func) (modul : modul) =
     let key = { ident = func.fn_sig.name; ns = Value; disambiguator = 0 } in
     resolver.key <- key;
     let id = def_id func.func_id 0 in
@@ -196,11 +213,39 @@ let rec resolve_paths (resolver : Resolver.t) (modul : modul) (modd : modd) :
           let modul = Res.modul res in
           resolve_paths resolver modul modd
       | None -> ())
-    | Fn (func, _) -> visit_fn func
+    | Fn (func, _) -> visit_fn func modul
     | Type (Struct s) -> (
         let id = def_id s.struct_id 0 in
         lookup_def resolver.tcx id |> function Ty ty -> resolve_ty ty)
-    | Foreign fns -> List.iter visit_fn fns
+    | Foreign fns -> List.iter (fun f -> visit_fn f modul) fns
+    | Impl { impl_ty; impl_items } ->
+        let ident =
+          match impl_ty with
+          | Ident path ->
+              List.nth path.segments (List.length path.segments - 1)
+          | _ -> render_ty impl_ty
+        in
+        let key = { ident; ns = Type; disambiguator = 1 } in
+        let res =
+          (Option.get (get_name_res modul.resolutions key)).binding
+        in
+        let modul = Res.modul res in
+        let f () =
+          resolve_ty impl_ty;
+          let impl_ty = unwrap_ty resolver.tcx impl_ty in
+          resolver.impl <- Some impl_ty;
+          impl_ty
+        in
+        (match Hashtbl.find_opt resolver.tcx.def_table.impls impl_ty with
+        | Some old_table -> (
+            Hashtbl.remove resolver.tcx.def_table.impls impl_ty;
+            let impl_ty = f () in
+            match Hashtbl.find_opt resolver.tcx.def_table.impls impl_ty with
+            | Some tbl -> Hashtbl.add_seq tbl @@ Hashtbl.to_seq old_table
+            | None ->
+                Hashtbl.add resolver.tcx.def_table.impls impl_ty old_table)
+        | None -> ignore (f ()));
+        List.iter (function AssocFn fn -> visit_fn fn modul) impl_items
     | Unit _ | Const _ | Import _ -> ()
   in
   List.iter visit_item modd.items

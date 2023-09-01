@@ -197,7 +197,18 @@ type ty =
   | Struct of string * (string * ty) list
   | Infer of infer_ty
   | Ident of path
+  | ImplicitSelf of {
+      mutable ty : ty option;
+      is_ref : bool;
+    }
   | Unit
+  | Err
+
+let ty_is_ref = function
+  | RefTy _ | ImplicitSelf { is_ref = true; _ } -> true
+  | _ -> false
+
+let ty_get_fn_args = function FnTy (args, _, _) -> args | _ -> assert false
 
 let prim_ty_to_ty : prim_ty -> ty = function
   | Int int_ty -> Int int_ty
@@ -244,8 +255,10 @@ let rec render_ty ?(dbg = true) (ty : ty) : string =
         (if is_variadic then ", ..." else "")
         (render_ty ret_ty)
   | Struct (s, _) -> s
-  | Ident path -> "IDENT:" ^ render_path path
+  | Ident path -> render_path path
   | Infer ty -> render_infer_ty ty dbg
+  | ImplicitSelf _ -> "self"
+  | Err -> "error"
 
 type def_data = Ty of ty
 
@@ -301,13 +314,29 @@ let common_types () =
     unit = Unit;
   }
 
-type def_table = { table : (def_id, def_data) Hashtbl.t }
+type def_table = {
+  table : (def_id, def_data) Hashtbl.t;
+  impls : (ty, (string, def_id) Hashtbl.t) Hashtbl.t;
+}
 
 let create_def def_table id data = Hashtbl.replace def_table.table id data
+
+let create_impl def_table ty name impl =
+  match Hashtbl.find_opt def_table.impls ty with
+  | Some impls -> Hashtbl.replace impls name impl
+  | None ->
+      let tbl = Hashtbl.create 0 in
+      Hashtbl.add tbl name impl;
+      Hashtbl.add def_table.impls ty tbl
 
 let lookup_def def_table id =
   if Hashtbl.mem def_table.table id then Hashtbl.find def_table.table id
   else assert false
+
+let lookup_assoc_fn def_table ty name =
+  match Hashtbl.find_opt def_table.impls ty with
+  | Some tbl -> Hashtbl.find_opt tbl name
+  | None -> None
 
 let print_def_table def_table =
   let f (def_id, def_data) =
@@ -345,7 +374,7 @@ type tcx = {
   def_table : def_table;
   sym_table : sym_table;
   sym_table2 : (string, def_id) Hashtbl.t;
-  mutable units : string list;
+  units : (string, int) Hashtbl.t;
   mutable uuid : int;
 }
 
@@ -386,10 +415,10 @@ let tcx_create sess =
     out_mod;
     tys = common_types ();
     lltys = backend_types sess.target out_mod;
-    def_table = { table = Hashtbl.create 0 };
+    def_table = { table = Hashtbl.create 0; impls = Hashtbl.create 0 };
     sym_table = Hashtbl.create 0;
     sym_table2 = Hashtbl.create 0;
-    units = [];
+    units = Hashtbl.create 0;
     uuid = 0;
   }
 
@@ -406,6 +435,8 @@ let create_def tcx id def_data name =
       create_sym tcx.sym_table id name;
       create_sym tcx.sym_table2 name id
   | None -> ()
+
+let create_impl tcx ty name impl = create_impl tcx.def_table ty name impl
 
 let lookup_def tcx id = lookup_def tcx.def_table id
 
@@ -441,6 +472,10 @@ let rec unwrap_ty tcx ty : ty =
       FnTy
         (List.map (fun ty -> unwrap_ty tcx ty) args, unwrap_ty tcx ty, is_var)
   | Infer _ -> ty
+  | ImplicitSelf { ty; is_ref } ->
+      let ty = Option.get ty in
+      if is_ref then RefTy ty else ty
+  | Err -> Err
 
 let rec get_backend_type tcx' (ty : ty) : lltype =
   let ctx = tcx'.out_mod.llcx in
@@ -474,7 +509,9 @@ let rec get_backend_type tcx' (ty : ty) : lltype =
         lookup_def tcx' def_id
         |> function Ty ty -> ty |> get_backend_type tcx')
     | _ -> Hashtbl.find tcx.structs (render_path path))
-  | Infer _ -> assert false
+  | ImplicitSelf { ty; is_ref } ->
+      if is_ref then tcx.ptr else get_backend_type tcx' @@ Option.get ty
+  | Infer _ | Err -> assert false
 
 let discriminator = function
   | Int _ -> 0L
@@ -488,6 +525,8 @@ let discriminator = function
   | Infer _ -> 8L
   | Ident _ -> 9L
   | Unit -> 10L
+  | ImplicitSelf _ -> 11L
+  | Err -> assert false
 
 let rec encode enc ty =
   let dis = discriminator ty in
@@ -515,18 +554,33 @@ let rec encode enc ty =
           Encoder.emit_u32 e (List.length path.segments);
           List.iter (fun s -> Encoder.emit_str e s) path.segments;
           encode_res e path.res)
-  | Infer _ -> assert false
+  | ImplicitSelf self ->
+      Encoder.emit_with enc dis (fun e ->
+          encode e (Option.get self.ty);
+          Encoder.emit_bool e self.is_ref)
+  | Infer _ | Err -> assert false
 
 let encode_metadata tcx =
   let enc = tcx.sess.enc in
-  Encoder.emit_usize enc @@ List.length tcx.units;
-  List.iter (fun name -> Encoder.emit_str enc name) tcx.units;
+  Encoder.emit_usize enc @@ Hashtbl.length tcx.units;
+  Hashtbl.iter (fun name _ -> Encoder.emit_str enc name) tcx.units;
   Encoder.emit_usize enc @@ Hashtbl.length tcx.def_table.table;
   Hashtbl.iter
     (fun def_id def_data ->
       Encoder.emit_u32 enc def_id.inner;
       def_data |> function Ty ty -> encode enc ty)
     tcx.def_table.table;
+  Encoder.emit_usize enc @@ Hashtbl.length tcx.def_table.impls;
+  Hashtbl.iter
+    (fun ty def_table ->
+      encode enc ty;
+      Encoder.emit_usize enc @@ Hashtbl.length def_table;
+      Hashtbl.iter
+        (fun name def_id ->
+          Encoder.emit_str enc name;
+          Encoder.emit_u32 enc def_id.inner)
+        def_table)
+    tcx.def_table.impls;
   Encoder.emit_usize enc @@ Hashtbl.length tcx.sym_table;
   Hashtbl.iter
     (fun def_id sym ->
@@ -574,6 +628,10 @@ let rec decode dec =
       let res = decode_res dec in
       Ident { segments; res }
   | 10 -> Unit
+  | 11 ->
+      let ty = decode dec in
+      let is_ref = if Decoder.read_u8 dec = 0 then false else true in
+      ImplicitSelf { ty = Some ty; is_ref }
   | _ ->
       printf "%Ld: %d\n" (dis |> Int64.of_int) dec.pos;
       assert false
@@ -581,9 +639,13 @@ let rec decode dec =
 let decode_metadata tcx dec =
   let nunits = Decoder.read_usize dec in
   let units =
-    List.map (fun _ -> Decoder.read_str dec) (List.init nunits (fun x -> x))
+    Seq.filter_map
+      (fun _ ->
+        let str = Decoder.read_str dec in
+        if Hashtbl.mem tcx.units str then None else Some (str, 0))
+      (Seq.init nunits (fun x -> x))
   in
-  tcx.units <- tcx.units @ units;
+  Hashtbl.add_seq tcx.units units;
   let ndef_table_entries = Decoder.read_usize dec in
   List.iter
     (fun _ ->
@@ -591,6 +653,18 @@ let decode_metadata tcx dec =
       let ty = decode dec in
       create_def tcx def_id (Ty ty) None)
     (List.init ndef_table_entries (fun x -> x));
+  let nimpls = Decoder.read_usize dec in
+  List.iter
+    (fun _ ->
+      let ty = decode dec in
+      let nimpl_defs = Decoder.read_usize dec in
+      List.iter
+        (fun _ ->
+          let name = Decoder.read_str dec in
+          let def_id = def_id (Decoder.read_u32 dec) dec.unit_id in
+          create_impl tcx ty name def_id)
+        (List.init nimpl_defs (fun x -> x)))
+    (List.init nimpls (fun x -> x));
   let nsym_table_entries = Decoder.read_usize dec in
   List.iter
     (fun _ ->
@@ -607,6 +681,8 @@ let ty_eq tcx t1 t2 : bool =
     match expect_def tcx path.res Struct with
     | Some ty -> ty = t
     | None -> false)
+  | ImplicitSelf { ty; _ }, t | t, ImplicitSelf { ty; _ } ->
+      Option.get ty = t
   | _ -> t1 = t2
 
 let ty_neq tcx t1 t2 = not @@ ty_eq tcx t1 t2

@@ -8,6 +8,8 @@ let emit_usize enc n = Buffer.add_int64_be enc.buf @@ Int64.of_int n
 
 let emit_u8 enc n = Buffer.add_uint8 enc.buf n
 
+let emit_bool enc b = emit_u8 enc (if b then 1 else 0)
+
 let emit_u32 enc n = Buffer.add_int32_be enc.buf @@ Int32.of_int n
 
 let emit_with (enc : t) (n : int64) (f : t -> unit) =

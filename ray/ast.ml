@@ -40,10 +40,18 @@ and strukt = {
 
 and typ = Struct of strukt
 
+and assoc_item = AssocFn of func
+
+and impl = {
+  impl_ty : ty;
+  impl_items : assoc_item list;
+}
+
 and item =
   | Fn of func * attr_list
   | Type of typ
   | Foreign of func list
+  | Impl of impl
   | Const of constant
   | Mod of {
       name : string;
@@ -134,6 +142,7 @@ and expr_kind =
   | StructExpr of struct_expr
   | Field of expr * ident
   | Cast of expr * ty
+  | MethodCall of expr * string * expr list
 
 and struct_expr = {
   struct_name : path;
@@ -164,8 +173,3 @@ let binary_kind_from_token = function
   | Ampersand2 -> And
   | Pipe2 -> Or
   | _ -> assert false
-
-type lang_item =
-  | Mod of modd
-  | Fn of func
-  | Struct of strukt

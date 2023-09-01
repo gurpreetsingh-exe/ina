@@ -13,6 +13,7 @@ type namespace =
 
 and module_kind =
   | Block
+  | Impl of ty
   | Def of (def_kind * def_id * string)
 
 and modul = {
@@ -53,7 +54,14 @@ module Res = struct
 end
 
 let rec get_root_path modul =
-  let name = function Block -> assert false | Def (_, _, name) -> name in
+  let name = function
+    | Block -> assert false
+    | Impl ty -> (
+      match ty with
+      | Ident path -> List.nth path.segments (List.length path.segments - 1)
+      | _ -> render_ty ty)
+    | Def (_, _, name) -> name
+  in
   match modul.parent with
   | Some parent -> get_root_path parent @ [name modul.mkind]
   | None -> [name modul.mkind]
@@ -101,6 +109,7 @@ let print_scope scope_table =
 let print_mkind = function
   | Block -> "block"
   | Def (_, id, ident) -> sprintf "%s%d" ident id.inner
+  | Impl ty -> sprintf "impl %s" @@ render_ty ty
 
 type t = {
   tcx : tcx;
@@ -113,6 +122,7 @@ type t = {
   disambiguator : disambiguator;
   mutable key : binding_key;
   units : (string, int) Hashtbl.t;
+  mutable impl : ty option;
 }
 
 let create tcx modd =
@@ -133,6 +143,7 @@ let create tcx modd =
     disambiguator = { stack = [0] };
     key = { ident = ""; ns = Value; disambiguator = 0 };
     units = Hashtbl.create 0;
+    impl = None;
   }
 
 let add_mod resolver id modul = Hashtbl.replace resolver.mod_table id modul
@@ -153,8 +164,10 @@ let unit_id resolver name =
 let rec encode_module enc modul =
   (match modul.mkind with
   | Def (_, def_id, name) ->
+      Encoder.emit_usize enc 0;
       Encoder.emit_u32 enc def_id.inner;
       Encoder.emit_str enc name
+  | Impl ty -> Encoder.emit_usize enc 1; encode enc ty
   | _ -> assert false);
   Encoder.emit_usize enc @@ Hashtbl.length modul.resolutions;
   Hashtbl.iter
@@ -169,11 +182,18 @@ let rec encode_module enc modul =
     modul.resolutions
 
 let rec decode_module resolver dec parent =
-  let def_id = def_id (Decoder.read_u32 dec) dec.unit_id in
-  let name = Decoder.read_str dec in
+  let mkind =
+    match Decoder.read_usize dec with
+    | 0 ->
+        let def_id = def_id (Decoder.read_u32 dec) dec.unit_id in
+        let name = Decoder.read_str dec in
+        Def (Mod, def_id, name)
+    | 1 -> Impl (decode dec)
+    | _ -> assert false
+  in
   let modul =
     {
-      mkind = Def (Mod, def_id, name);
+      mkind;
       parent;
       resolutions = Hashtbl.create 0;
       scope_table = Hashtbl.create 0;
@@ -200,7 +220,10 @@ let rec decode_module resolver dec parent =
       let binding = { binding = { kind } } in
       add_name_res modul.resolutions key binding)
     (List.init module_entries (fun x -> x));
-  add_mod resolver def_id modul;
+  (match modul.mkind with
+  | Def (_, def_id, _) -> add_mod resolver def_id modul
+  | Impl _ -> ()
+  | _ -> ());
   modul
 
 module Disambiguator = struct
@@ -348,6 +371,9 @@ let rec resolve resolver root : modul =
         | Some expr -> visit_expr expr key modul
         | None -> ())
     | Call (_, args) -> List.iter (fun e -> visit_expr e key modul) args
+    | MethodCall (expr, _, args) ->
+        visit_expr expr key modul;
+        List.iter (fun e -> visit_expr e key modul) args
     | Field (expr, _) | Cast (expr, _) | Ref expr | Deref expr ->
         visit_expr expr key modul
     | StructExpr { fields; _ } ->
@@ -401,12 +427,13 @@ let rec resolve resolver root : modul =
     let key = { ident = name; ns = Value; disambiguator = 0 } in
     let binding = { binding = { kind = Res res } } in
     add_name_res modul.resolutions key binding;
-    match func.body with
+    (match func.body with
     | Some block ->
         let m = visit_block block key (Some modul) in
         let binding = { binding = { kind = Module m } } in
         add_scope_res modul.scope_table key binding
-    | None -> ()
+    | None -> ());
+    id
   in
   let visit_item (item : item) =
     match item with
@@ -450,7 +477,7 @@ let rec resolve resolver root : modul =
             add_name_res modul.resolutions key binding;
             m.resolved_mod <- Some modd
         | None -> ())
-    | Fn (func, _) -> visit_fn func modul
+    | Fn (func, _) -> ignore (visit_fn func modul)
     | Type (Struct s) ->
         let name = s.ident in
         let id = def_id s.struct_id 0 in
@@ -461,21 +488,56 @@ let rec resolve resolver root : modul =
         let key = { ident = name; ns = Type; disambiguator = 0 } in
         let binding = { binding = { kind = Res res } } in
         add_name_res modul.resolutions key binding
-    | Foreign funcs -> List.iter (fun f -> visit_fn f modul) funcs
+    | Impl { impl_ty; impl_items } -> (
+        let ident =
+          match impl_ty with
+          | Ident path ->
+              List.nth path.segments (List.length path.segments - 1)
+          | _ -> render_ty impl_ty
+        in
+        let f modul' =
+          List.iter
+            (function
+              | AssocFn fn ->
+                  let id = visit_fn fn modul' in
+                  let name = fn.fn_sig.name in
+                  create_impl resolver.tcx impl_ty name id)
+            impl_items
+        in
+        let key = { ident; ns = Type; disambiguator = 1 } in
+        match get_name_res modul.resolutions key with
+        | Some res -> f @@ Res.modul res.binding
+        | None ->
+            let mkind = Impl impl_ty in
+            let modul' =
+              {
+                mkind;
+                parent = Some modul;
+                resolutions = Hashtbl.create 0;
+                scope_table = Hashtbl.create 0;
+              }
+            in
+            let binding = { binding = { kind = Module modul' } } in
+            f modul';
+            add_name_res modul.resolutions key binding)
+    | Foreign funcs -> List.iter (fun f -> ignore (visit_fn f modul)) funcs
     | Unit name ->
         let unit_id = add_unit resolver name in
         let lib_name = "lib" ^ name ^ ".o" in
         let f name =
-          let obj = Object.read_obj name in
-          let metadata =
-            Option.get @@ Object.read_section_by_name obj ".ray\000"
-          in
-          let open Metadata in
-          let dec = Decoder.create metadata unit_id in
-          let modul = decode_module resolver dec None in
-          resolver.extern_units <- resolver.extern_units @ [modul];
-          resolver.tcx.units <- resolver.tcx.units @ [name];
-          decode_metadata resolver.tcx dec
+          match Hashtbl.find_opt resolver.tcx.units name with
+          | Some i when i = 1 -> ()
+          | _ ->
+              let obj = Object.read_obj name in
+              let metadata =
+                Option.get @@ Object.read_section_by_name obj ".ray\000"
+              in
+              let open Metadata in
+              let dec = Decoder.create metadata unit_id in
+              let modul = decode_module resolver dec None in
+              resolver.extern_units <- resolver.extern_units @ [modul];
+              Hashtbl.replace resolver.tcx.units name 1;
+              decode_metadata resolver.tcx dec
         in
         let p =
           Path.join [Filename.dirname resolver.modd.mod_path; lib_name]

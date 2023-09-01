@@ -30,6 +30,7 @@ type token_kind =
   | Else
   | Assert
   | As
+  | Impl
   | Ident
   | Lit of literal
   | Comment of comment_style option
@@ -73,6 +74,7 @@ let display_token_kind = function
   | Else -> "else"
   | Assert -> "assert"
   | As -> "as"
+  | Impl -> "impl"
   | Ident -> "identifier"
   | Lit lit -> display_literal lit
   | Comment (Some kind) -> "comment " ^ display_comment_style kind

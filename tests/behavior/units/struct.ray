@@ -2,7 +2,18 @@
 
 type Unit = {}
 
-fn f1(_: Unit) {}
+impl Unit {
+    fn new() -> Unit {
+        Unit {}
+    }
+}
+
+// fails with assoc fn name "f1"
+impl Unit {
+    fn f2(self) { f1(self, 0); }
+}
+
+fn f1(_: Unit, _: i32) {}
 
 mod StrBuf {
     type t = {
@@ -14,6 +25,6 @@ mod StrBuf {
         t { ptr: 0 as *i8, len: 0 }
     }
 
-    fn len(self: t) -> usize { self.len }
+    fn len(t: t) -> usize { t.len }
 }
 

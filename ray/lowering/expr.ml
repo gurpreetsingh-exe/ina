@@ -163,11 +163,26 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
       let src_ty = Option.get expr.expr_ty in
       match (src_ty, dst_ty) with
       | RefTy _, Ptr _ | Ptr _, FnTy _ | FnTy _, Ptr _ | Ptr _, Ptr _ ->
-          value
+          Inst.value_with_ty value dst_ty
       | Int i1, Int i2 when size_of_int i1 = size_of_int i2 -> value
       | Ptr _, Int _ -> Builder.ptrtoint value dst_ty builder
       | Int _, Ptr _ -> Builder.inttoptr value dst_ty builder
-      | _ -> assert false)
+      | t1, t2 ->
+          Printf.printf "%s - %s\n" (render_ty t1) (render_ty t2);
+          assert false)
+  | MethodCall (expr, name, args) ->
+      let ty = unwrap_ty ctx.tcx @@ Option.get expr.expr_ty in
+      let args = List.map (fun e -> lower e builder ctx) args in
+      let id = Option.get @@ lookup_assoc_fn ctx.tcx.def_table ty name in
+      let ty = lookup_def ctx.tcx id |> function Ty ty -> ty in
+      let self =
+        if ty_is_ref (List.hd @@ ty_get_fn_args ty) then
+          lower_lvalue expr builder ctx
+        else lower expr builder ctx
+      in
+      Builder.call ty
+        (Global (lookup_sym ctx.tcx (Def (id, Struct))))
+        ([self] @ args) builder
 
 and lower_lvalue (expr : expr) (builder : Builder.t) (ctx : Context.t) :
     Inst.value =

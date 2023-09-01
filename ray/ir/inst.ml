@@ -120,6 +120,13 @@ and render_value = function
   | Param (ty, name, _) -> sprintf "%s %%%s" (render_ty ty) name
   | Global name -> sprintf "@%s" name
 
+let value_with_ty value ty =
+  match value with
+  | Const (const, _) -> Const (const, ty)
+  | VReg (kind, i, _) -> VReg (kind, i, ty)
+  | Param (_, name, i) -> Param (ty, name, i)
+  | Global _ | Label _ -> value
+
 let get_ty = function
   | Param (ty, _, _) | Const (_, ty) | VReg (_, _, ty) -> ty
   | _ -> assert false

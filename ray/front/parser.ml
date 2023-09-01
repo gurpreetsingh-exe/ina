@@ -268,24 +268,59 @@ let parse_fn_args pctx : (ty * ident * node_id) list * bool =
   ignore (eat pctx LParen);
   let arg_list = ref [] in
   let is_variadic = ref false in
+  let first_self = ref true in
+  let i = ref 0 in
   while (not pctx.stop) && pctx.curr_tok.kind <> RParen do
-    match pctx.curr_tok.kind with
-    | Ident -> (
+    (match pctx.curr_tok.kind with
+    | Ampersand -> (
+        advance pctx;
+        let ident = parse_ident pctx in
+        assert (ident = "self");
         let arg =
-          let ident = parse_ident pctx in
-          ignore (eat pctx Colon);
-          let ty = parse_ty pctx in
-          (ty, ident, gen_id pctx)
+          (ImplicitSelf { ty = None; is_ref = true }, ident, gen_id pctx)
         in
         arg_list := !arg_list @ [arg];
         match pctx.curr_tok.kind with
         | Comma -> advance pctx
         | RParen -> ()
-        | _ -> assert false)
+        | _ ->
+            print_endline @@ display_span pctx.curr_tok.span;
+            assert false)
+    | Ident -> (
+        let f ident =
+          ignore (eat pctx Colon);
+          let ty = parse_ty pctx in
+          (ty, ident, gen_id pctx)
+        in
+        let arg =
+          let ident = parse_ident pctx in
+          match (!i, !first_self) with
+          | 0, true ->
+              if ident = "self" then (
+                first_self := false;
+                ( ImplicitSelf { ty = None; is_ref = false },
+                  ident,
+                  gen_id pctx ))
+              else f ident
+          | _, true ->
+              if ident = "self" then (
+                print_endline "`self` is only allowed at first position";
+                assert false)
+              else f ident
+          | _, _ -> f ident
+        in
+        arg_list := !arg_list @ [arg];
+        match pctx.curr_tok.kind with
+        | Comma -> advance pctx
+        | RParen -> ()
+        | _ ->
+            print_endline @@ display_span pctx.curr_tok.span;
+            assert false)
     | Dot3 ->
         advance pctx;
         is_variadic := true
-    | _ -> assert false
+    | _ -> assert false);
+    incr i
   done;
   ignore (eat pctx RParen);
   (!arg_list, !is_variadic)
@@ -400,10 +435,18 @@ and parse_precedence pctx min_prec : expr =
     do
       let kind =
         match pctx.curr_tok.kind with
-        | Dot ->
-            advance pctx;
-            let field = parse_ident pctx in
-            Field (!left, field)
+        | Dot -> (
+          match npeek pctx 2 with
+          | [Ident; LParen] ->
+              ignore (eat pctx Dot);
+              let name = parse_ident pctx in
+              let args = parse_call_args pctx in
+              MethodCall (!left, name, args)
+          | [Ident; _] ->
+              ignore (eat pctx Dot);
+              let field = parse_ident pctx in
+              Field (!left, field)
+          | _ -> assert false)
         | _ ->
             let kind = binary_kind_from_token pctx.curr_tok.kind in
             advance pctx;
@@ -663,12 +706,31 @@ let parse_extern pctx attrs : item =
   | Fn -> Fn (parse_fn pctx abi true, attrs)
   | _ -> assert false
 
+let parse_impl pctx : impl =
+  advance pctx;
+  let impl_ty = parse_ty pctx in
+  ignore (eat pctx LBrace);
+  let items = ref [] in
+  while pctx.curr_tok.kind <> RBrace do
+    items :=
+      !items
+      @
+      match pctx.curr_tok.kind with
+      | Fn -> [AssocFn (parse_fn pctx "C" false)]
+      | _ ->
+          ignore (eat pctx RBrace);
+          assert false
+  done;
+  ignore (eat pctx RBrace);
+  { impl_ty; impl_items = !items }
+
 let rec parse_item pctx : item =
   let attrs = parse_outer_attrs pctx in
   match pctx.curr_tok.kind with
   | Fn -> Fn (parse_fn pctx "C" false, attrs)
   | Type -> Type (parse_type pctx)
   | Extern -> parse_extern pctx attrs
+  | Impl -> Impl (parse_impl pctx)
   | Import ->
       advance pctx;
       let import = Ast.Import (parse_path pctx) in

@@ -1,0 +1,14 @@
+// DUMMY
+
+impl i32 {
+    fn typeof(self) {}
+}
+
+impl i64 {
+    fn typeof(self) {}
+}
+
+impl str {
+    fn typeof(self) {}
+}
+

@@ -297,10 +297,20 @@ let gen_item cx (func : Func.t) =
       if fn.name = "main" then cx.main <- Some llfn;
       set_linkage Linkage.External llfn)
     else (
-      (match lookup_function fn.linkage_name llmod with
-      | Some fn -> delete_function fn
-      | None -> ());
-      let llfn = define_function fn.linkage_name fn_ty llmod in
+      let llfn =
+        match lookup_function fn.linkage_name llmod with
+        | Some f ->
+            let fn =
+              define_function
+                (fn.linkage_name ^ string_of_int @@ Hashtbl.hash f)
+                fn_ty llmod
+            in
+            replace_all_uses_with f fn;
+            delete_function f;
+            fn
+        | None -> define_function fn.linkage_name fn_ty llmod
+      in
+      set_value_name fn.linkage_name llfn;
       cx.curr_fn <- Some llfn;
       if fn.name = "main" then cx.main <- Some llfn)
   in
@@ -326,13 +336,13 @@ let emit (cx : codegen_ctx) =
   let open Metadata in
   let tcx = cx.tcx in
   let llmod = tcx.out_mod.inner in
+  let llcx = tcx.out_mod.llcx in
   let output = tcx.sess.options.output in
   let machine = tcx.sess.machine in
-  let content = const_string tcx.out_mod.llcx (tcx_metadata tcx) in
+  let content = const_string llcx (tcx_metadata tcx) in
   let metadata = define_global "__ray_metadata" content llmod in
   set_section ".ray" metadata;
   set_linkage Private metadata;
-  set_visibility Visibility.Hidden metadata;
   match tcx.sess.options.output_type with
   | LlvmIr ->
       let ic = open_out (output ^ ".ll") in
@@ -350,7 +360,9 @@ let emit (cx : codegen_ctx) =
         (output ^ ".s") machine
   | Exe ->
       let objfile = output ^ ".o" in
-      let link_args = " " ^ String.concat " " tcx.units in
+      let link_args =
+        " " ^ String.concat " " (List.of_seq @@ Hashtbl.to_seq_keys tcx.units)
+      in
       TargetMachine.emit_to_file llmod CodeGenFileType.ObjectFile objfile
         machine;
       let command =
