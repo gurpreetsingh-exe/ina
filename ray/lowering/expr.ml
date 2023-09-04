@@ -162,7 +162,8 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
       let value = lower expr builder ctx in
       let src_ty = Option.get expr.expr_ty in
       match (src_ty, dst_ty) with
-      | RefTy _, Ptr _ | Ptr _, FnTy _ | FnTy _, Ptr _ | Ptr _, Ptr _ ->
+      | RefTy _, Ptr _ -> Inst.value_with_ty value dst_ty
+      | Ptr _, FnTy _ | FnTy _, Ptr _ | Ptr _, Ptr _ ->
           Inst.value_with_ty value dst_ty
       | Int i1, Int i2 when size_of_int i1 = size_of_int i2 -> value
       | Ptr _, Int _ -> Builder.ptrtoint value dst_ty builder
