@@ -172,4 +172,6 @@ let binary_kind_from_token = function
   | Pipe -> BitOr
   | Ampersand2 -> And
   | Pipe2 -> Or
+  | LAngle -> Lt
+  | RAngle -> Gt
   | _ -> assert false

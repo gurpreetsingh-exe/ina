@@ -128,7 +128,7 @@ let gen_blocks (cx : codegen_ctx) (blocks : Func.blocks) =
               Printf.sprintf "str%d" (Hashtbl.length cx.global_strings)
             in
             let global_ptr =
-              define_global id (const_string llcx value) llmod
+              define_global id (const_string llcx (value ^ "\000")) llmod
             in
             set_linkage Linkage.Private global_ptr;
             set_unnamed_addr true global_ptr;
@@ -196,12 +196,20 @@ let gen_blocks (cx : codegen_ctx) (blocks : Func.blocks) =
             | Or -> build_or
             | _ ->
                 if is_float then assert false
-                else
+                else (
+                  let signed =
+                    is_signed
+                      (pty |> function Int ty -> ty | _ -> assert false)
+                  in
                   build_icmp
                     (match kind with
                     | Eq -> Icmp.Eq
                     | NotEq -> Icmp.Ne
-                    | _ -> assert false)
+                    | Lt when signed -> Icmp.Slt
+                    | Gt when signed -> Icmp.Sgt
+                    | Lt when not signed -> Icmp.Ult
+                    | Gt when not signed -> Icmp.Ugt
+                    | _ -> assert false))
           in
           Some (op left right "" builder)
       | Br (cond, true_bb, false_bb) ->

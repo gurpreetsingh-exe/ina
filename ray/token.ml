@@ -41,6 +41,8 @@ type token_kind =
   | RBrace
   | LBracket
   | RBracket
+  | LAngle
+  | RAngle
   | Colon
   | Colon2
   | Eq
@@ -86,6 +88,8 @@ let display_token_kind = function
   | RBrace -> "}"
   | LBracket -> "["
   | RBracket -> "]"
+  | LAngle -> "<"
+  | RAngle -> ">"
   | Colon -> ":"
   | Colon2 -> "::"
   | Eq -> "="

@@ -320,7 +320,9 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
             Err)
     | Binary (kind, left, right) ->
         let left, right = (infer infer_ctx left, infer infer_ctx right) in
-        let cmp t1 : ty = match kind with Eq | NotEq -> Bool | _ -> t1 in
+        let cmp t1 : ty =
+          match kind with Eq | NotEq | Lt | Gt -> Bool | _ -> t1
+        in
         cmp
           (compare_types infer_ctx left right
              (fun t0 t1 -> Infer (IntVar { index = min t0.index t1.index }))

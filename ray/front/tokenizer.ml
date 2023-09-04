@@ -55,6 +55,8 @@ let get_token_type c tokenizer : token_kind =
   | ']' -> RBracket
   | '{' -> LBrace
   | '}' -> RBrace
+  | '<' -> LAngle
+  | '>' -> RAngle
   | ':' -> (
     match peek tokenizer with
     | Some ':' -> bump tokenizer; Colon2

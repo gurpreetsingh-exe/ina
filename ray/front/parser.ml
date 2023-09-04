@@ -399,7 +399,7 @@ and prec = function
   | Plus | Minus -> 60
   | Ampersand -> 50
   | Pipe -> 40
-  | EqEq | BangEq -> 30
+  | LAngle | RAngle | EqEq | BangEq -> 30
   | Ampersand2 -> 20
   | Pipe2 -> 10
   | _ -> -1
