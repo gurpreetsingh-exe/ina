@@ -173,6 +173,8 @@ let rec encode_module enc modul =
   Hashtbl.iter
     (fun key nameres ->
       Encoder.emit_str enc key.ident;
+      (* disambiguator for impl and struct *)
+      Encoder.emit_u32 enc key.disambiguator;
       Encoder.emit_u8 enc (match key.ns with Value -> 0 | Type -> 1);
       let kind = nameres.binding.kind in
       let dis = name_binding_kind_to_enum kind in
@@ -203,13 +205,14 @@ let rec decode_module resolver dec parent =
   List.iter
     (fun _ ->
       let ident = Decoder.read_str dec in
+      let disambiguator = Decoder.read_u32 dec in
       let ns =
         match Decoder.read_u8 dec with
         | 0 -> Value
         | 1 -> Type
         | _ -> assert false
       in
-      let key = { ident; ns; disambiguator = 0 } in
+      let key = { ident; ns; disambiguator } in
       let dis = Decoder.read_usize dec in
       let kind =
         match dis with
