@@ -10,6 +10,13 @@ let load (ptr : Inst.value) builder =
   | FnTy _ as ty -> (ptr, ty)
   | _ -> assert false
 
+let lower_lit lit ty =
+  match lit with
+  | LitInt value -> Builder.const_int ty value
+  | LitFloat value -> Builder.const_float ty value
+  | LitStr value -> Builder.const_string ty value
+  | LitBool value -> Builder.const_bool ty value
+
 let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
     Inst.value =
   let ty = Option.get expr.expr_ty in
@@ -50,12 +57,7 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
           Builder.add_inst_with_ty ty
             (Binary (inst_kind, left, right))
             builder)
-  | Lit lit -> (
-    match lit with
-    | LitInt value -> Builder.const_int ty value
-    | LitFloat value -> Builder.const_float ty value
-    | LitStr value -> Builder.const_string ty value
-    | LitBool value -> Builder.const_bool ty value)
+  | Lit lit -> lower_lit lit ty
   | Path path -> (
       let name = render_path path in
       let f _ =
@@ -153,7 +155,7 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
               tys;
             (!index, ty)
         | _ ->
-            print_endline (render_ty ty);
+            print_endline (render_ty sty);
             assert false
       in
       let ptr = Builder.gep ty ptr index builder in
@@ -171,23 +173,17 @@ let rec lower (expr : expr) (builder : Builder.t) (ctx : Context.t) :
       | t1, t2 ->
           Printf.printf "%s - %s\n" (render_ty t1) (render_ty t2);
           assert false)
-  | MethodCall (expr, name, args) ->
-      let ty = unwrap_ty ctx.tcx @@ Option.get expr.expr_ty in
-      let args = List.map (fun e -> lower e builder ctx) args in
-      let id = Option.get @@ lookup_assoc_fn ctx.tcx.def_table ty name in
-      let ty = lookup_def ctx.tcx id |> function Ty ty -> ty in
-      let self =
-        if ty_is_ref (List.hd @@ ty_get_fn_args ty) then
-          lower_lvalue expr builder ctx
-        else lower expr builder ctx
-      in
-      Builder.call ty
-        (Global (lookup_sym ctx.tcx (Def (id, Struct))))
-        ([self] @ args) builder
+  | MethodCall (expr, name, args) -> lower_method expr name args ctx builder
 
 and lower_lvalue (expr : expr) (builder : Builder.t) (ctx : Context.t) :
     Inst.value =
+  let ty = Option.get expr.expr_ty in
   match expr.expr_kind with
+  | Lit lit ->
+      let ptr = Builder.alloca ty builder in
+      let value = lower_lit lit ty in
+      Builder.store value ptr builder;
+      ptr
   | Path path ->
       let ident = render_path path in
       Context.find_local ctx.env ident
@@ -206,9 +202,24 @@ and lower_lvalue (expr : expr) (builder : Builder.t) (ctx : Context.t) :
       in
       Builder.gep ty ptr index builder
   | Deref expr -> lower expr builder ctx
+  | MethodCall (expr, name, args) -> lower_method expr name args ctx builder
   | _ ->
       Printf.printf "%s\n" (Fmt.render_expr expr 0);
       assert false
+
+and lower_method expr name args (ctx : Context.t) builder =
+  let ty = unwrap_ty ctx.tcx @@ Option.get expr.expr_ty in
+  let args = List.map (fun e -> lower e builder ctx) args in
+  let id = Option.get @@ lookup_assoc_fn ctx.tcx.def_table ty name in
+  let ty = lookup_def ctx.tcx id |> function Ty ty -> ty in
+  let self =
+    if ty_is_ref (List.hd @@ ty_get_fn_args ty) then
+      lower_lvalue expr builder ctx
+    else lower expr builder ctx
+  in
+  Builder.call ty
+    (Global (lookup_sym ctx.tcx (Def (id, Struct))))
+    ([self] @ args) builder
 
 and lower_block (block : block) (ctx : Context.t) : Inst.value =
   let tmp = ctx.env in
