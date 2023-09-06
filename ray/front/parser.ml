@@ -610,12 +610,13 @@ and parse_block pctx : block =
     | RBrace -> ()
     | _ -> (
         let stmt = parse_stmt pctx in
+        (match !last_expr with
+        | Some expr ->
+            stmt_list := !stmt_list @ [Stmt expr];
+            last_expr := None
+        | None -> ());
         match stmt with
-        | Expr expr ->
-            (match !last_expr with
-            | Some expr -> stmt_list := !stmt_list @ [Stmt expr]
-            | None -> ());
-            last_expr := Some expr
+        | Expr expr -> last_expr := Some expr
         | stmt -> stmt_list := !stmt_list @ [stmt])
   done;
   ignore (eat pctx RBrace);
