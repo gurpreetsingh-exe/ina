@@ -242,7 +242,9 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
         match (ty, cast_ty) with
         | RefTy t1, Ptr t2 when ty_neq tcx t1 t2 -> assert false
         | Int i1, Int i2 when size_of_int i1 = size_of_int i2 -> ()
-        | RefTy _, Ptr _ | Ptr _, Ptr _ | Ptr _, Int _ | Int _, Ptr _ -> ()
+        | RefTy _, Ptr _ | Ptr _, (Int _ | Ptr _) | (Int _ | FnTy _), Ptr _
+          ->
+            ()
         | t1, t2 ->
             printf "%s - %s\n" (render_ty t1) (render_ty t2);
             assert false)
@@ -279,6 +281,7 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
         | PatIdent _ -> (
             (match binding_ty with
             | Some expected ->
+                binding.binding_ty <- Some (unwrap_ty ty_ctx.tcx expected);
                 if ty_neq tcx expected ty then
                   ty_err_emit ty_ctx.emitter
                     (MismatchTy (expected, ty))

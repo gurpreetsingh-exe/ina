@@ -460,9 +460,6 @@ let rec resolve resolver root : modul =
         in
         match modd with
         | Some modd ->
-            (* let resolver = *)
-            (*   { resolver with modd; modul = Some modul; is_root = false } *)
-            (* in *)
             let tmp_modd = resolver.modd in
             let tmp_modul = resolver.modul in
             let tmp_is_root = resolver.is_root in

@@ -6,22 +6,23 @@ open Errors
 open Diagnostic
 
 let builtin_types =
-  let tbl = Hashtbl.create 0 in
-  Hashtbl.add tbl "i8" Ty.(Int I8);
-  Hashtbl.add tbl "i16" (Int I16);
-  Hashtbl.add tbl "i32" (Int I32);
-  Hashtbl.add tbl "i64" (Int I64);
-  Hashtbl.add tbl "isize" (Int Isize);
-  Hashtbl.add tbl "u8" (Int U8);
-  Hashtbl.add tbl "u16" (Int U16);
-  Hashtbl.add tbl "u32" (Int U32);
-  Hashtbl.add tbl "u64" (Int U64);
-  Hashtbl.add tbl "usize" (Int Usize);
-  Hashtbl.add tbl "f32" (Float F32);
-  Hashtbl.add tbl "f64" (Float F64);
-  Hashtbl.add tbl "bool" Bool;
-  Hashtbl.add tbl "str" Str;
-  tbl
+  [|
+    ("i8", Ty.Int I8);
+    ("i16", Int I16);
+    ("i32", Int I32);
+    ("i64", Int I64);
+    ("isize", Int Isize);
+    ("u8", Int U8);
+    ("u16", Int U16);
+    ("u32", Int U32);
+    ("u64", Int U64);
+    ("usize", Int Usize);
+    ("f32", Float F32);
+    ("f64", Float F64);
+    ("bool", Bool);
+    ("str", Str);
+  |]
+  |> Array.to_seq |> Hashtbl.of_seq
 
 type parse_ctx = {
   tcx : tcx;
@@ -673,13 +674,7 @@ let parse_type pctx : typ =
         | _ -> assert false)
   done;
   ignore (eat pctx RBrace);
-  Struct
-    {
-      ident = name;
-      members = !members;
-      struct_path = None;
-      struct_id = gen_id pctx;
-    }
+  Struct { ident = name; members = !members; struct_id = gen_id pctx }
 
 let parse_extern pctx attrs : item =
   advance pctx;
@@ -782,7 +777,6 @@ and parse_mod pctx : modd =
       mod_name;
       mod_path;
       mod_id = gen_id pctx;
-      imported_mods = Hashtbl.create 0;
     }
   in
   while (not pctx.stop) && pctx.curr_tok.kind <> RBrace do

@@ -9,7 +9,10 @@ open Ty
 
 let open_file (ctx : Sess.t) =
   let name = ctx.options.input in
-  if Sys.file_exists name then (
+  if String.length name = 0 then (
+    fprintf stderr "error: no input files provided\n";
+    exit 1)
+  else if Sys.file_exists name then (
     let ic = open_in name in
     let s = really_input_string ic (in_channel_length ic) in
     if not (String.is_valid_utf_8 s) then (

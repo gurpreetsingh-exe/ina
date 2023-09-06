@@ -471,6 +471,7 @@ and infer_block (infer_ctx : infer_ctx) (block : block) : ty =
          | PatIdent _ -> (
            match binding_ty with
            | Some expected -> (
+               let expected = unwrap_ty infer_ctx.tcx expected in
                add_binding infer_ctx id expected;
                match unify infer_ctx ty expected with
                | Some e ->

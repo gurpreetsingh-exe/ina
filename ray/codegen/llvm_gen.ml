@@ -198,8 +198,11 @@ let gen_blocks (cx : codegen_ctx) (blocks : Func.blocks) =
                 if is_float then assert false
                 else (
                   let signed =
-                    is_signed
-                      (pty |> function Int ty -> ty | _ -> assert false)
+                    pty
+                    |> function
+                    | Int ty -> is_signed ty
+                    | Bool -> true
+                    | _ -> assert false
                   in
                   build_icmp
                     (match kind with
