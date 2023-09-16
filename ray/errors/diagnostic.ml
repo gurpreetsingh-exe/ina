@@ -1,5 +1,5 @@
 open Printf
-open Token
+open Source
 
 let e = "\x1b[0m"
 
@@ -24,8 +24,8 @@ let render_level level =
   sprintf "%s%s%s" (level_to_color level) (display_level level) e
 
 type multi_span = {
-  primary_spans : span list;
-  labels : (span * string * bool) list;
+  primary_spans : Span.t list;
+  labels : (Span.t * string * bool) list;
 }
 
 let primary_span ms = List.hd ms.primary_spans
@@ -36,9 +36,9 @@ let get_max_line_num_len ms : int =
        (List.fold_left
           (fun max_len next -> max next max_len)
           0
-          (List.map (fun { ending = _, _, l, _; _ } -> l) ms.primary_spans)))
+          (List.map (fun Span.{ hi; _ } -> hi) ms.primary_spans)))
 
-type substitution = { parts : (span * string) list }
+type substitution = { parts : (Span.t * string) list }
 
 type sugg = {
   message : string;
@@ -57,9 +57,10 @@ type diagnostic_loc = {
   file : string;
 }
 
-let dg_loc_from_span (span : span) =
-  let file, _, line, col = span.start in
+let loc ((file, line, col, _) : string * int * int * int) =
   { line; col; file }
+
+let dg_loc_from_span (_ : Span.t) = { line = 0; col = 0; file = "<anon>" }
 
 let render_dg_loc loc anon_file =
   if anon_file then

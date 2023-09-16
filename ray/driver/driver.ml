@@ -7,36 +7,13 @@ open Session
 open Utils
 open Ty
 
-let open_file (ctx : Sess.t) =
-  let name = ctx.options.input in
-  if String.length name = 0 then (
-    fprintf stderr "error: no input files provided\n";
-    exit 1)
-  else if Sys.file_exists name then (
-    let ic = open_in name in
-    let s = really_input_string ic (in_channel_length ic) in
-    if not (String.is_valid_utf_8 s) then (
-      fprintf stderr
-        "error: cannot process `%s`, file is not valid UTF-8 string\n" name;
-      exit 1);
-    if Filename.extension name = "" then (
-      fprintf stderr
-        "error: input file `%s` will be overwritten by the executable\n" name;
-      exit 1);
-    close_in ic;
-    s)
-  else (
-    fprintf stderr "error: cannot open `%s`, file doesn't exist\n" name;
-    exit 1)
-
 let () =
   let start = Sys.time () in
   let sess = Sess.create (Args.parse_args ()) in
   let tcx = tcx_create sess in
-  let s = open_file sess in
-  let tokenizer = Tokenizer.tokenize sess.options.input s in
-  let pctx = Parser.parse_ctx_create tcx tokenizer s in
-  let time, modd = Timer.time (fun () -> Parser.parse_mod pctx) in
+  let time, modd =
+    Timer.time (fun () -> Parser.parse_mod_from_file tcx sess.options.input)
+  in
   tcx.sess.options.output <-
     (if Filename.basename modd.mod_path = "lib.ray" then
      Filename.dirname modd.mod_path
@@ -59,7 +36,9 @@ let () =
       sess.timings.resolve <- time;
       let time, _ =
         Timer.time (fun () ->
-            let infer_ctx = Infer.infer_ctx_create pctx.emitter tcx in
+            let infer_ctx =
+              Infer.infer_ctx_create sess.handler.emitter tcx
+            in
             ignore (Infer.infer_begin infer_ctx modd);
             let ty_ctx = Tychk.ty_ctx_create infer_ctx in
             ignore (Tychk.tychk ty_ctx modd))

@@ -2,6 +2,7 @@ open Ast
 open Ty
 open Front
 open Ir
+open Source
 
 let load (ptr : Inst.value) builder =
   let ty = Inst.get_ty ptr in
@@ -279,7 +280,7 @@ and lower_block (block : block) (ctx : Context.t) : Inst.value =
         Builder.jmp (Label join_bb) true_builder;
         Context.block_append ctx false_bb;
         let false_builder = Builder.create ctx.tcx false_bb in
-        let loc = Token.display_span expr.expr_span in
+        let loc = Span.display_span expr.expr_span in
         let msg =
           match string with
           | Some msg -> (

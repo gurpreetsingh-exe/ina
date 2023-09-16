@@ -1,3 +1,5 @@
+open Source
+
 type literal =
   | Int
   | Float
@@ -111,28 +113,27 @@ let display_token_kind = function
   | Dot3 -> "..."
   | Eof -> "eof"
 
-type pos = string * int * int * int
-
-type span = {
-  start : pos;
-  ending : pos;
-}
-
-let display_span span =
-  let { start = file, _, l, c; _ } = span in
-  Printf.sprintf "%s:%d:%d" file l c
+(* let display_span span = *)
+(*   let { start = file, _, l, c; _ } = span in *)
+(*   Printf.sprintf "%s:%d:%d" file l c *)
 
 type token = {
   kind : token_kind;
-  span : span;
+  span : Span.t;
 }
 
 let display_token t s =
-  let { kind; span = { start = _, st, l, c; ending = _, e, _, _ } } = t in
-  Printf.printf "[%3d: %3d] [%3d: %3d] %10s: %10s\n" st e l c
-    (display_token_kind kind)
-    (String.sub s st (e - st))
+  let { kind; span = { lo; hi } } = t in
+  Printf.printf "%10s: %10s\n" (display_token_kind kind) (String.sub s lo hi)
+(* let { kind; span = { start = _, st, l, c; ending = _, e, _, _ } } = t in *)
+(* Printf.printf "[%3d: %3d] [%3d: %3d] %10s: %10s\n" st e l c *)
+(*   (display_token_kind kind) *)
+(*   (String.sub s st (e - st)) *)
 
-let get_token_str t s : string =
-  let { span = { start = _, st, _, _; ending = _, e, _, _ }; _ } = t in
-  String.sub s st (e - st)
+let get_token_str t s =
+  let { span = { lo; hi }; _ } = t in
+  String.sub s lo (hi - lo)
+
+(* let get_token_str t s : string = *)
+(*   let { span = { start = _, st, _, _; ending = _, e, _, _ }; _ } = t in *)
+(*   String.sub s st (e - st) *)

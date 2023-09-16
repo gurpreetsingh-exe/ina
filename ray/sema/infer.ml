@@ -1,9 +1,9 @@
 open Ast
 open Ty
-open Token
 open Front.Fmt
 open Printf
 open Errors
+open Source
 
 type env = { bindings : (int, ty) Hashtbl.t }
 
@@ -90,7 +90,7 @@ let mismatch_ty expected ty span =
       span = { primary_spans = [span]; labels = [(span, msg, true)] };
       children = [];
       sugg = [];
-      loc = Diagnostic.dg_loc_from_span span;
+      loc = Diagnostic.loc __POS__;
     }
 
 let item_not_found item name span =
@@ -105,7 +105,7 @@ let item_not_found item name span =
         };
       children = [];
       sugg = [];
-      loc = Diagnostic.dg_loc_from_span span;
+      loc = Diagnostic.loc __POS__;
     }
 
 let fn_not_found name span = item_not_found "function" name span
@@ -125,7 +125,7 @@ let invalid_deref ty span =
       span = { primary_spans = [span]; labels = [(span, msg, true)] };
       children = [];
       sugg = [];
-      loc = Diagnostic.dg_loc_from_span span;
+      loc = Diagnostic.loc __POS__;
     }
 
 let invalid_call ty span =
@@ -139,7 +139,7 @@ let invalid_call ty span =
       span = { primary_spans = [span]; labels = [(span, msg, true)] };
       children = [];
       sugg = [];
-      loc = Diagnostic.dg_loc_from_span span;
+      loc = Diagnostic.loc __POS__;
     }
 
 let mismatch_args func expected found span =
@@ -155,7 +155,7 @@ let mismatch_args func expected found span =
       span = { primary_spans = [span]; labels = [(span, msg, true)] };
       children = [];
       sugg = [];
-      loc = Diagnostic.dg_loc_from_span span;
+      loc = Diagnostic.loc __POS__;
     }
 
 let assoc_call_as_method name span =
@@ -169,12 +169,12 @@ let assoc_call_as_method name span =
       span = { primary_spans = [span]; labels = [(span, msg, true)] };
       children = [];
       sugg = [];
-      loc = Diagnostic.dg_loc_from_span span;
+      loc = Diagnostic.loc __POS__;
     }
 
 let error = ref 0
 
-let infer_err_emit emitter (ty_err : infer_err) (span : span) =
+let infer_err_emit emitter (ty_err : infer_err) (span : Span.t) =
   incr error;
   match ty_err with
   | MismatchTy (expected, ty) ->

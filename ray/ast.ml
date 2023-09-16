@@ -1,5 +1,6 @@
 open Token
 open Ty
+open Source
 
 type ident = string
 
@@ -63,7 +64,7 @@ and fn_sig = {
   name : ident;
   mutable args : (ty * ident * node_id) list;
   ret_ty : ty option;
-  fn_span : span;
+  fn_span : Span.t;
   is_variadic : bool;
 }
 
@@ -109,7 +110,7 @@ and expr = {
   mutable expr_kind : expr_kind;
   mutable expr_ty : ty option;
   expr_id : node_id;
-  expr_span : span;
+  expr_span : Span.t;
 }
 
 and binary_kind =

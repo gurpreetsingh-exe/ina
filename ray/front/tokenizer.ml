@@ -3,7 +3,7 @@ open Token
 type tokenizer = {
   mutable c : char option;
   src : string ref;
-  mutable pos : pos;
+  mutable pos : int;
   filename : string;
 }
 
@@ -23,25 +23,19 @@ Hashtbl.add keywords "as" As;
 Hashtbl.add keywords "impl" Impl
 
 let mk_tok (tokenizer : tokenizer) (kind : token_kind)
-    (tok : token option ref) (start : pos) =
-  tok := Some { kind; span = { start; ending = tokenizer.pos } }
+    (tok : token option ref) (start : int) =
+  tok := Some { kind; span = { lo = start; hi = tokenizer.pos } }
 
 let bump tokenizer =
-  let filename, id, line, col = tokenizer.pos in
-  if id < String.length !(tokenizer.src) - 1 then (
-    let c = !(tokenizer.src).[id + 1] in
-    tokenizer.pos <-
-      (if c = '\n' then (filename, id + 1, line + 1, 0)
-       else (filename, id + 1, line, col + 1));
+  if tokenizer.pos < String.length !(tokenizer.src) - 1 then (
+    tokenizer.pos <- tokenizer.pos + 1;
+    let c = !(tokenizer.src).[tokenizer.pos] in
     tokenizer.c <- Some c)
-  else (
-    tokenizer.c <- None;
-    tokenizer.pos <- (filename, id + 1, line, col + 1))
+  else tokenizer.c <- None
 
 let peek tokenizer =
-  let _, id, _, _ = tokenizer.pos in
-  if id < String.length !(tokenizer.src) - 1 then
-    Some !(tokenizer.src).[id + 1]
+  if tokenizer.pos < String.length !(tokenizer.src) - 1 then
+    Some !(tokenizer.src).[tokenizer.pos + 1]
   else None
 
 exception Invalid_token
@@ -105,14 +99,6 @@ let get_token_type c tokenizer : token_kind =
   | '\000' -> Eof
   | _ -> raise Invalid_token
 
-let newline_check tokenizer f =
-  let filename, id, line, col = tokenizer.pos in
-  if !(tokenizer.src).[id] = '\n' then (
-    tokenizer.pos <- (filename, id, line - 1, col);
-    f ();
-    tokenizer.pos <- (filename, id, line, col))
-  else f ()
-
 let next tokenizer : token option =
   let tok = ref None in
   try
@@ -134,10 +120,9 @@ let next tokenizer : token option =
               | Some _ | None -> raise I
             done
           with I ->
-            newline_check tokenizer (fun _ ->
-                mk_tok tokenizer
-                  (Lit (if !is_float then Float else Int))
-                  tok start);
+            mk_tok tokenizer
+              (Lit (if !is_float then Float else Int))
+              tok start;
             raise Exit)
       | Some ('a' .. 'z' | 'A' .. 'Z' | '_') -> (
           let start = tokenizer.pos in
@@ -152,15 +137,14 @@ let next tokenizer : token option =
               | Some _ | None -> raise I
             done
           with I ->
-            newline_check tokenizer (fun _ ->
-                mk_tok tokenizer
-                  (match !buf with
-                  | "true" | "false" -> Lit Bool
-                  | _ ->
-                      if Hashtbl.mem keywords !buf then
-                        Hashtbl.find keywords !buf
-                      else Ident)
-                  tok start);
+            mk_tok tokenizer
+              (match !buf with
+              | "true" | "false" -> Lit Bool
+              | _ ->
+                  if Hashtbl.mem keywords !buf then
+                    Hashtbl.find keywords !buf
+                  else Ident)
+              tok start;
             raise Exit)
       | Some '"' -> (
           let start = tokenizer.pos in
@@ -174,8 +158,7 @@ let next tokenizer : token option =
               | None -> raise I
             done
           with I ->
-            newline_check tokenizer (fun _ ->
-                mk_tok tokenizer (Lit String) tok start);
+            mk_tok tokenizer (Lit String) tok start;
             raise Exit)
       | Some c ->
           let start = tokenizer.pos in
@@ -195,8 +178,7 @@ let next tokenizer : token option =
                 mk_tok tokenizer kind tok start)
           | _ ->
               bump tokenizer;
-              newline_check tokenizer (fun _ ->
-                  mk_tok tokenizer kind tok start));
+              mk_tok tokenizer kind tok start);
           raise Exit
       | None ->
           let start = tokenizer.pos in
@@ -207,9 +189,7 @@ let next tokenizer : token option =
   with Exit -> !tok
 
 let tokenize filename source : tokenizer =
-  let tokenizer =
-    { c = None; pos = (filename, -1, 1, 0); src = ref source; filename }
-  in
+  let tokenizer = { c = None; pos = -1; src = ref source; filename } in
   bump tokenizer; tokenizer
 
 let print_all_tokens tokenizer s : tokenizer =

@@ -4,6 +4,9 @@ open Token
 open Tokenizer
 open Errors
 open Diagnostic
+open Session
+open Source
+open Span
 
 let builtin_types =
   [|
@@ -31,12 +34,11 @@ type parse_ctx = {
   mutable curr_tok : token;
   mutable prev_tok : token option;
   mutable stop : bool;
-  emitter : Emitter.t;
 }
 
-let span (start : pos) (pctx : parse_ctx) =
+let span (start : int) (pctx : parse_ctx) =
   match pctx.prev_tok with
-  | Some t -> { start; ending = t.span.ending }
+  | Some t -> Span.{ lo = start; hi = t.span.hi }
   | None -> assert false
 
 let advance pctx =
@@ -82,18 +84,18 @@ let unexpected_token pctx expected t =
     span = { primary_spans = [span]; labels = [(span, msg, true)] };
     children = [];
     sugg = [];
-    loc = Diagnostic.dg_loc_from_span span;
+    loc = Diagnostic.loc __POS__;
   }
 
 let unexpected_type pctx span =
-  Emitter.emit pctx.emitter
+  Sess.emit_err pctx.tcx.sess
     {
       level = Err;
       message = "unexpected type";
       span = { primary_spans = [span]; labels = [] };
       children = [];
       sugg = [];
-      loc = Diagnostic.dg_loc_from_span span;
+      loc = Diagnostic.loc __POS__;
     };
   exit 1
 
@@ -102,7 +104,7 @@ let eat pctx kind =
     let t = pctx.curr_tok in
     advance pctx; t)
   else (
-    Emitter.emit pctx.emitter (unexpected_token pctx kind pctx.curr_tok);
+    Sess.emit_err pctx.tcx.sess (unexpected_token pctx kind pctx.curr_tok);
     exit 1)
 
 let gen_id pctx : node_id = tcx_gen_id pctx.tcx
@@ -117,11 +119,6 @@ let parse_ctx_create tcx tokenizer s =
         curr_tok = t;
         prev_tok = None;
         stop = false;
-        emitter =
-          {
-            ctx = tcx.sess;
-            source = Array.of_list (String.split_on_char '\n' s);
-          };
       }
   | None -> exit 0
 
@@ -142,14 +139,14 @@ let parse_attr pctx : normal_attr =
 
 let parse_outer_attrs pctx : attr list =
   let unexpected_inner_attr () =
-    Emitter.emit pctx.emitter
+    Sess.emit_err pctx.tcx.sess
       {
         level = Err;
         message = "unexpected inner attribute after outer attribute";
         span = { primary_spans = [pctx.curr_tok.span]; labels = [] };
         children = [];
         sugg = [];
-        loc = Diagnostic.dg_loc_from_span pctx.curr_tok.span;
+        loc = Diagnostic.loc __POS__;
       };
     exit 1
   in
@@ -214,7 +211,8 @@ let parse_path pctx : path =
             segment @ parse_path_impl ()
         | _ -> segment)
     | _ ->
-        Emitter.emit pctx.emitter (unexpected_token pctx Ident pctx.curr_tok);
+        Sess.emit_err pctx.tcx.sess
+          (unexpected_token pctx Ident pctx.curr_tok);
         exit 1
   in
   { segments = parse_path_impl (); res = Err }
@@ -327,7 +325,7 @@ let parse_fn_args pctx : (ty * ident * node_id) list * bool =
   (!arg_list, !is_variadic)
 
 let parse_fn_sig pctx : fn_sig =
-  let s = pctx.curr_tok.span.start in
+  let s = pctx.curr_tok.span.lo in
   let ident = parse_ident pctx in
   let args, is_variadic = parse_fn_args pctx in
   let ret_ty = parse_ret_ty pctx in
@@ -343,7 +341,7 @@ let rec parse_expr pctx : expr =
   strip_comments pctx;
   let expr = parse_precedence pctx 0 in
   if pctx.curr_tok.kind = As then (
-    let s = pctx.curr_tok.span.start in
+    let s = pctx.curr_tok.span.lo in
     advance pctx;
     {
       expr_kind = Cast (expr, parse_ty pctx);
@@ -362,7 +360,7 @@ and parse_call_args pctx : expr list =
     | Comma -> advance pctx
     | RParen -> ()
     | _ ->
-        Emitter.emit pctx.emitter
+        Sess.emit_err pctx.tcx.sess
           (unexpected_token pctx RParen pctx.curr_tok)
   done;
   ignore (eat pctx RParen);
@@ -376,7 +374,7 @@ and should_continue_as_prec_expr pctx expr =
   | true, Star, RParen -> true
   | true, Star, _ ->
       let span = expr.expr_span in
-      Emitter.emit pctx.emitter
+      Sess.emit_err pctx.tcx.sess
         {
           level = Err;
           message = "ambiguous expression";
@@ -388,7 +386,7 @@ and should_continue_as_prec_expr pctx expr =
             };
           children = [];
           sugg = [];
-          loc = Diagnostic.dg_loc_from_span span;
+          loc = Diagnostic.loc __POS__;
         };
       false
   | false, _, _ -> true
@@ -406,7 +404,7 @@ and prec = function
   | _ -> -1
 
 and parse_prefix pctx : expr =
-  let s = pctx.curr_tok.span.start in
+  let s = pctx.curr_tok.span.lo in
   let expr_kind =
     match pctx.curr_tok.kind with
     | Star ->
@@ -425,7 +423,7 @@ and parse_prefix pctx : expr =
   }
 
 and parse_precedence pctx min_prec : expr =
-  let s = pctx.curr_tok.span.start in
+  let s = pctx.curr_tok.span.lo in
   let left = ref (parse_prefix pctx) in
   let p = ref (prec pctx.curr_tok.kind) in
   if should_continue_as_prec_expr pctx !left then (
@@ -466,7 +464,7 @@ and parse_precedence pctx min_prec : expr =
   else !left
 
 and parse_primary pctx : expr =
-  let s = pctx.curr_tok.span.start in
+  let s = pctx.curr_tok.span.lo in
   let expr_kind =
     match pctx.curr_tok.kind with
     | Lit lit as kind ->
@@ -784,3 +782,9 @@ and parse_mod pctx : modd =
     modd.items <- modd.items @ [parse_item pctx]
   done;
   modd
+
+let parse_mod_from_file tcx path =
+  let file = Source_map.load_file tcx.sess.source_map path in
+  let tokenizer = Tokenizer.tokenize path file.src in
+  let pctx = parse_ctx_create tcx tokenizer file.src in
+  parse_mod pctx

@@ -1,5 +1,7 @@
 open Llvm_target
 open Metadata
+open Source
+open Errors
 
 type timings = {
   mutable parse : float;
@@ -51,9 +53,14 @@ type t = {
   target : target;
   enc : Encoder.t;
   machine : TargetMachine.t;
+  source_map : Source_map.t;
+  handler : Handler.t;
 }
 
+let emit_err sess err = Handler.emit_err sess.handler err
+
 let create options =
+  let sm = Source_map.create () in
   let target, machine = target () in
   {
     options;
@@ -69,4 +76,6 @@ let create options =
     target;
     enc = Encoder.create ();
     machine;
+    source_map = sm;
+    handler = Handler.create sm options.ui_testing;
   }

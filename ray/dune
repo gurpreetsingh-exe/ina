@@ -1,6 +1,7 @@
 (library
  (name token)
- (modules token))
+ (modules token)
+ (libraries source))
 
 (library
  (name ty)

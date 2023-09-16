@@ -40,7 +40,7 @@ let mismatch_ty expected ty span =
       span = { primary_spans = [span]; labels = [(span, msg, true)] };
       children = [];
       sugg = [];
-      loc = Diagnostic.dg_loc_from_span span;
+      loc = Diagnostic.loc __POS__;
     }
 
 let invalid_binary_expr kind left right span =
@@ -64,7 +64,7 @@ let invalid_binary_expr kind left right span =
       span = { primary_spans = [span]; labels = [(span, msg, true)] };
       children = [];
       sugg = [];
-      loc = Diagnostic.dg_loc_from_span span;
+      loc = Diagnostic.loc __POS__;
     }
 
 let unused_value span =
@@ -76,7 +76,7 @@ let unused_value span =
       span = { primary_spans = [span]; labels = [(span, "", true)] };
       children = [];
       sugg = [];
-      loc = Diagnostic.dg_loc_from_span span;
+      loc = Diagnostic.loc __POS__;
     }
 
 let uninitialized_fields name span =
@@ -88,7 +88,7 @@ let uninitialized_fields name span =
       span = { primary_spans = [span]; labels = [(span, msg, true)] };
       children = [];
       sugg = [];
-      loc = Diagnostic.dg_loc_from_span span;
+      loc = Diagnostic.loc __POS__;
     }
 
 let unknown_field strukt name span =
@@ -100,7 +100,7 @@ let unknown_field strukt name span =
       span = { primary_spans = [span]; labels = [] };
       children = [];
       sugg = [];
-      loc = Diagnostic.dg_loc_from_span span;
+      loc = Diagnostic.loc __POS__;
     }
 
 let no_field_in_prim_ty ty span =
@@ -115,7 +115,7 @@ let no_field_in_prim_ty ty span =
       span = { primary_spans = [span]; labels = [] };
       children = [];
       sugg = [];
-      loc = Diagnostic.dg_loc_from_span span;
+      loc = Diagnostic.loc __POS__;
     }
 
 let method_not_found ty name span =
@@ -131,7 +131,7 @@ let method_not_found ty name span =
       span = { primary_spans = [span]; labels = [] };
       children = [];
       sugg = [];
-      loc = Diagnostic.dg_loc_from_span span;
+      loc = Diagnostic.loc __POS__;
     }
 
 let ty_err_emit emitter ty_err span =
@@ -194,7 +194,7 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
                       };
                     children = [];
                     sugg = [];
-                    loc = Diagnostic.dg_loc_from_span span;
+                    loc = Diagnostic.loc __POS__;
                   })
         | None -> ())
     | Deref expr -> ignore (fexpr expr)

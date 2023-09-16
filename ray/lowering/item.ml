@@ -102,7 +102,7 @@ let rec lower_ast (ctx : Context.t) : Module.t =
         items := !items @ [lower_fn func ctx !mangle]
     | Foreign funcs ->
         items := !items @ List.map (fun f -> lower_fn f ctx false) funcs
-    | Impl { impl_ty; impl_items } ->
+    | Impl { impl_items; _ } ->
         items :=
           !items
           @ List.map
