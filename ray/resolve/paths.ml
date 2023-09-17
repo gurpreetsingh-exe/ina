@@ -1,7 +1,7 @@
-open Printf
 open Ast
 open Resolver
 open Ty
+open Errors
 
 let rec get_root_mod resolver modul : modul =
   match modul.mkind with
@@ -33,7 +33,7 @@ let rec resolve_ident_in_lexical_scope resolver modul ident ns =
       | _ -> print_endline ident; Err)
     | _ -> Err)
 
-let resolve_path_in_modul modul path ns =
+let resolve_path_in_modul resolver modul path ns =
   let segs_len = List.length path in
   let res : res = Err in
   let res = ref res in
@@ -41,10 +41,16 @@ let resolve_path_in_modul modul path ns =
   for i = 0 to segs_len - 1 do
     let ns = if i = segs_len - 1 then ns else Type in
     let ident = List.nth path i in
-    if i <> 0 && ident = "unit" && not !unit_in_path_report then (
-      unit_in_path_report := true;
-      eprintf "error: `unit` can only appear at the start of a path\n";
-      flush stdout)
+    if i <> 0 && ident = "unit" && not !unit_in_path_report then
+      Session.Sess.emit_err resolver.tcx.sess
+        {
+          message = "`unit` can only appear at the start of a path";
+          level = Err;
+          span = { primary_spans = []; labels = [] };
+          children = [];
+          sugg = [];
+          loc = Diagnostic.loc __POS__;
+        }
     else (
       let key = { ident; ns; disambiguator = 0 } in
       match get_name_res !modul.resolutions key with
@@ -66,10 +72,10 @@ let resolve_path resolver (modul : modul) (path : path) ns : res =
       resolve_ident_in_lexical_scope resolver modul (List.hd segs) Value
   | _, _, "unit" ->
       let modul = ref resolver.unit_root in
-      resolve_path_in_modul modul (List.tl segs) ns
+      resolve_path_in_modul resolver modul (List.tl segs) ns
   | _ ->
       let modul = ref (get_root_mod resolver modul) in
-      resolve_path_in_modul modul segs ns
+      resolve_path_in_modul resolver modul segs ns
 
 let resolve_path resolver modul path ns =
   let res = ref @@ resolve_path resolver modul path ns in

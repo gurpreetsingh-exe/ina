@@ -4,6 +4,7 @@ open Front.Fmt
 open Printf
 open Errors
 open Source
+open Session
 
 type env = { bindings : (int, ty) Hashtbl.t }
 
@@ -24,7 +25,6 @@ type infer_ctx = {
   mutable ty_env : env;
   int_unifiction_table : (ty, ty) Hashtbl.t;
   int_ut : (ty_vid, ty option) Unification_table.t;
-  emitter : Emitter.t;
 }
 
 let add_binding (infer_ctx : infer_ctx) id ty =
@@ -32,13 +32,12 @@ let add_binding (infer_ctx : infer_ctx) id ty =
     Hashtbl.replace infer_ctx.ty_env.bindings id ty
   else Hashtbl.add infer_ctx.ty_env.bindings id ty
 
-let infer_ctx_create emitter tcx =
+let infer_ctx_create tcx =
   {
     tcx;
     ty_env = env_create None;
     int_unifiction_table = Hashtbl.create 0;
     int_ut = { values = [||] };
-    emitter;
   }
 
 let equate infer_ctx t0 t1 =
@@ -172,25 +171,24 @@ let assoc_call_as_method name span =
       loc = Diagnostic.loc __POS__;
     }
 
-let error = ref 0
-
-let infer_err_emit emitter (ty_err : infer_err) (span : Span.t) =
-  incr error;
+let infer_err_emit tcx (ty_err : infer_err) (span : Span.t) =
   match ty_err with
   | MismatchTy (expected, ty) ->
       if expected <> Err && ty <> Err then
-        Emitter.emit emitter (mismatch_ty expected ty span)
-  | FnNotFound name -> Emitter.emit emitter (fn_not_found name span)
-  | StructNotFound name -> Emitter.emit emitter (struct_not_found name span)
-  | VarNotFound name -> Emitter.emit emitter (local_var_not_found name span)
+        Sess.emit_err tcx.sess (mismatch_ty expected ty span)
+  | FnNotFound name -> Sess.emit_err tcx.sess (fn_not_found name span)
+  | StructNotFound name ->
+      Sess.emit_err tcx.sess (struct_not_found name span)
+  | VarNotFound name ->
+      Sess.emit_err tcx.sess (local_var_not_found name span)
   | MismatchArgs (func, expected, args) ->
-      Emitter.emit emitter (mismatch_args func expected args span)
+      Sess.emit_err tcx.sess (mismatch_args func expected args span)
   | InvalidDeref ty ->
-      if ty <> Err then Emitter.emit emitter (invalid_deref ty span)
+      if ty <> Err then Sess.emit_err tcx.sess (invalid_deref ty span)
   | InvalidCall ty ->
-      if ty <> Err then Emitter.emit emitter (invalid_call ty span)
+      if ty <> Err then Sess.emit_err tcx.sess (invalid_call ty span)
   | AssocFnAsMethod name ->
-      Emitter.emit emitter (assoc_call_as_method name span)
+      Sess.emit_err tcx.sess (assoc_call_as_method name span)
 
 let print_bindings ty_env =
   Hashtbl.iter
@@ -266,7 +264,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
       let expected = unwrap_ty tcx expected in
       let ty = infer infer_ctx expr in
       match unify infer_ctx ty expected with
-      | Some err -> infer_err_emit infer_ctx.emitter err expr.expr_span
+      | Some err -> infer_err_emit infer_ctx.tcx err expr.expr_span
       | None -> ()
     in
     match func with
@@ -281,14 +279,14 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
           done
         else if expr_len <> ty_len then (
           check_args exprs;
-          infer_err_emit infer_ctx.emitter
+          infer_err_emit infer_ctx.tcx
             (MismatchArgs (name, ty_len, expr_len))
             expr.expr_span)
         else List.iter2 (fun expr ty -> check expr ty) exprs args_ty;
         ret_ty
     | ty ->
         check_args exprs;
-        infer_err_emit infer_ctx.emitter (InvalidCall ty) expr.expr_span;
+        infer_err_emit infer_ctx.tcx (InvalidCall ty) expr.expr_span;
         Err
   in
   let ty =
@@ -303,7 +301,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
     | Path path -> (
         let not_found _ =
           let name = render_path path in
-          infer_err_emit infer_ctx.emitter (VarNotFound name) expr.expr_span;
+          infer_err_emit infer_ctx.tcx (VarNotFound name) expr.expr_span;
           Err
         in
         match find_value infer_ctx path with
@@ -314,7 +312,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
         match find_value infer_ctx path with
         | Some ty -> check_call exprs name ty false
         | None ->
-            infer_err_emit infer_ctx.emitter (FnNotFound name) expr.expr_span;
+            infer_err_emit infer_ctx.tcx (FnNotFound name) expr.expr_span;
             (* infer types for arguments *)
             check_args exprs;
             Err)
@@ -332,7 +330,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
     | If { cond; then_block; else_block } -> (
         let cond_ty = infer infer_ctx cond in
         (match unify infer_ctx cond_ty Bool with
-        | Some err -> infer_err_emit infer_ctx.emitter err cond.expr_span
+        | Some err -> infer_err_emit infer_ctx.tcx err cond.expr_span
         | None -> ());
         let then_ty = infer_block infer_ctx then_block in
         match else_block with
@@ -349,7 +347,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
       match infer infer_ctx expr with
       | Ptr ty | RefTy ty -> ty
       | ty ->
-          infer_err_emit infer_ctx.emitter (InvalidDeref ty) expr.expr_span;
+          infer_err_emit infer_ctx.tcx (InvalidDeref ty) expr.expr_span;
           ty)
     | StructExpr { struct_name; fields } -> (
         let ty = find_value infer_ctx struct_name in
@@ -371,8 +369,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
         | None ->
             let name = render_path struct_name in
             ignore (List.map (fun (_, expr) -> infer infer_ctx expr) fields);
-            infer_err_emit infer_ctx.emitter (StructNotFound name)
-              expr.expr_span;
+            infer_err_emit infer_ctx.tcx (StructNotFound name) expr.expr_span;
             Err)
     | Field (expr, name) ->
         let ty = infer infer_ctx expr in
@@ -396,7 +393,7 @@ let rec infer (infer_ctx : infer_ctx) (expr : expr) : ty =
             let ty = lookup_def tcx id |> function Ty ty -> ty in
             match ty with
             | FnTy (args, ret_ty, _) when List.length args = 0 ->
-                infer_err_emit infer_ctx.emitter (AssocFnAsMethod name)
+                infer_err_emit infer_ctx.tcx (AssocFnAsMethod name)
                   expr.expr_span;
                 ret_ty
             | FnTy _ -> check_call args name ty true
@@ -475,7 +472,7 @@ and infer_block (infer_ctx : infer_ctx) (block : block) : ty =
                add_binding infer_ctx id expected;
                match unify infer_ctx ty expected with
                | Some e ->
-                   infer_err_emit infer_ctx.emitter e binding_expr.expr_span
+                   infer_err_emit infer_ctx.tcx e binding_expr.expr_span
                | None -> ())
            | None -> add_binding infer_ctx id ty));
         Unit
@@ -492,13 +489,13 @@ and infer_block (infer_ctx : infer_ctx) (block : block) : ty =
     | Assert (expr, string) ->
         let ty = infer infer_ctx expr in
         (match unify infer_ctx ty Bool with
-        | Some e -> infer_err_emit infer_ctx.emitter e expr.expr_span
+        | Some e -> infer_err_emit infer_ctx.tcx e expr.expr_span
         | None -> ());
         (match string with
         | Some expr -> (
             let ty = infer infer_ctx expr in
             match unify infer_ctx ty Str with
-            | Some e -> infer_err_emit infer_ctx.emitter e expr.expr_span
+            | Some e -> infer_err_emit infer_ctx.tcx e expr.expr_span
             | None -> ())
         | None -> ());
         Unit
@@ -531,10 +528,12 @@ let rec infer_begin infer_ctx (modd : modd) =
     | Type _ | Import _ | Unit _ -> ()
     | Impl { impl_items; _ } ->
         List.iter (function AssocFn f -> infer_func infer_ctx f) impl_items
-    | Mod { resolved_mod; _ } ->
-        let modd = Option.get resolved_mod in
-        let infer_ctx2 = infer_ctx_create infer_ctx.emitter infer_ctx.tcx in
-        infer_begin infer_ctx2 modd
+    | Mod { resolved_mod; _ } -> (
+      match resolved_mod with
+      | Some modd ->
+          let infer_ctx2 = infer_ctx_create infer_ctx.tcx in
+          infer_begin infer_ctx2 modd
+      | None -> ())
     | Foreign funcs -> List.iter (fun f -> infer_func infer_ctx f) funcs
     | _ -> assert false
   in

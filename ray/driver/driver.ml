@@ -34,17 +34,16 @@ let () =
             modul.resolutions)
       in
       sess.timings.resolve <- time;
+      if sess.handler.err_count <> 0 then exit 1;
       let time, _ =
         Timer.time (fun () ->
-            let infer_ctx =
-              Infer.infer_ctx_create sess.handler.emitter tcx
-            in
+            let infer_ctx = Infer.infer_ctx_create tcx in
             ignore (Infer.infer_begin infer_ctx modd);
             let ty_ctx = Tychk.ty_ctx_create infer_ctx in
             ignore (Tychk.tychk ty_ctx modd))
       in
       sess.timings.sema <- time;
-      if !Infer.error <> 0 || !Tychk.error <> 0 then exit 1;
+      if sess.handler.err_count <> 0 then exit 1;
       let time, modulee =
         Timer.time (fun () ->
             let lowering_ctx = Lowering.Context.create tcx modd in

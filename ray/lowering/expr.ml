@@ -280,7 +280,9 @@ and lower_block (block : block) (ctx : Context.t) : Inst.value =
         Builder.jmp (Label join_bb) true_builder;
         Context.block_append ctx false_bb;
         let false_builder = Builder.create ctx.tcx false_bb in
-        let loc = Span.display_span expr.expr_span in
+        let loc =
+          Source_map.span_to_string ctx.tcx.sess.source_map expr.expr_span.lo
+        in
         let msg =
           match string with
           | Some msg -> (

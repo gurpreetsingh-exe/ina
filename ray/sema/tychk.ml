@@ -3,6 +3,7 @@ open Ty
 open Infer
 open Errors
 open Printf
+open Session
 
 let ty_unwrap (ty : ty option) = Option.value ty ~default:Unit
 
@@ -10,10 +11,7 @@ type env = { bindings : (node_id, ty) Hashtbl.t }
 
 let env_create _ : env = { bindings = Hashtbl.create 0 }
 
-type ty_ctx = {
-  tcx : tcx;
-  emitter : Emitter.t;
-}
+type ty_ctx = { tcx : tcx }
 
 type ty_err =
   | MismatchTy of ty * ty
@@ -134,26 +132,25 @@ let method_not_found ty name span =
       loc = Diagnostic.loc __POS__;
     }
 
-let ty_err_emit emitter ty_err span =
-  incr error;
+let ty_err_emit tcx ty_err span =
   match ty_err with
   | MismatchTy (expected, ty) ->
       if ty <> Err && expected <> Err then
-        Emitter.emit emitter (mismatch_ty expected ty span)
+        Sess.emit_err tcx.sess (mismatch_ty expected ty span)
   | UninitializedFields name ->
-      Emitter.emit emitter (uninitialized_fields name span)
+      Sess.emit_err tcx.sess (uninitialized_fields name span)
   | UnknownField (strukt, name) ->
-      Emitter.emit emitter (unknown_field strukt name span)
+      Sess.emit_err tcx.sess (unknown_field strukt name span)
   | NoFieldInPrimitiveType ty ->
-      if ty <> Err then Emitter.emit emitter (no_field_in_prim_ty ty span)
+      if ty <> Err then Sess.emit_err tcx.sess (no_field_in_prim_ty ty span)
   | InvalidBinaryExpression (kind, left, right) ->
       if left <> Err && right <> Err then
-        Emitter.emit emitter (invalid_binary_expr kind left right span)
+        Sess.emit_err tcx.sess (invalid_binary_expr kind left right span)
   | MethodNotFound (ty, name) ->
-      if ty <> Err then Emitter.emit emitter (method_not_found ty name span)
+      if ty <> Err then
+        Sess.emit_err tcx.sess (method_not_found ty name span)
 
-let ty_ctx_create (infer_ctx : infer_ctx) =
-  { tcx = infer_ctx.tcx; emitter = infer_ctx.emitter }
+let ty_ctx_create (infer_ctx : infer_ctx) = { tcx = infer_ctx.tcx }
 
 let tychk_func (ty_ctx : ty_ctx) (func : func) =
   let { fn_sig = { ret_ty; fn_span; _ }; body; _ } = func in
@@ -163,7 +160,7 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
     | Binary (kind, left, right) ->
         let left, right = (fexpr left, fexpr right) in
         if ty_neq tcx left right then
-          ty_err_emit ty_ctx.emitter
+          ty_err_emit ty_ctx.tcx
             (InvalidBinaryExpression (kind, left, right))
             expr.expr_span
     | Call (_, args) -> ignore (List.map fexpr args)
@@ -181,7 +178,7 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
                   (render_ty ?dbg:(Some false) else_ty)
               in
               incr error;
-              Emitter.emit ty_ctx.emitter
+              Sess.emit_err tcx.sess
                 Diagnostic.
                   {
                     level = Err;
@@ -206,7 +203,7 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
         | Struct (struct_name, tys) ->
             let strukt = Hashtbl.of_seq (List.to_seq tys) in
             if Hashtbl.length strukt <> List.length fields then
-              ty_err_emit ty_ctx.emitter (UninitializedFields struct_name)
+              ty_err_emit ty_ctx.tcx (UninitializedFields struct_name)
                 expr.expr_span;
             List.iter
               (fun (name, expr) ->
@@ -214,11 +211,11 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
                   let ty = Hashtbl.find strukt name in
                   let t = fexpr expr in
                   if ty_neq tcx t ty then
-                    ty_err_emit ty_ctx.emitter
+                    ty_err_emit ty_ctx.tcx
                       (MismatchTy (ty, t))
                       expr.expr_span)
                 else
-                  ty_err_emit ty_ctx.emitter
+                  ty_err_emit ty_ctx.tcx
                     (UnknownField (struct_name, name))
                     expr.expr_span)
               fields
@@ -230,12 +227,11 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
         | Struct (struct_name, tys) ->
             let strukt = Hashtbl.of_seq (List.to_seq tys) in
             if not (Hashtbl.mem strukt name) then
-              ty_err_emit ty_ctx.emitter
+              ty_err_emit ty_ctx.tcx
                 (UnknownField (struct_name, name))
                 expr.expr_span
         | ty ->
-            ty_err_emit ty_ctx.emitter (NoFieldInPrimitiveType ty)
-              expr.expr_span);
+            ty_err_emit ty_ctx.tcx (NoFieldInPrimitiveType ty) expr.expr_span);
         ignore (fexpr expr)
     | Cast (expr, cast_ty) -> (
         let ty = fexpr expr in
@@ -253,9 +249,7 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
         (match lookup_assoc_fn tcx.def_table ty name with
         | Some _ -> ()
         | None ->
-            ty_err_emit ty_ctx.emitter
-              (MethodNotFound (ty, name))
-              expr.expr_span);
+            ty_err_emit ty_ctx.tcx (MethodNotFound (ty, name)) expr.expr_span);
         ignore (List.map fexpr args)
     | Lit _ | Path _ -> ());
     Option.get expr.expr_ty
@@ -268,13 +262,11 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
         let left = fexpr expr1 in
         let right = fexpr expr2 in
         if ty_neq tcx left right then
-          ty_err_emit ty_ctx.emitter
-            (MismatchTy (left, right))
-            expr2.expr_span
+          ty_err_emit ty_ctx.tcx (MismatchTy (left, right)) expr2.expr_span
     | Stmt expr | Expr expr ->
         let ty = fexpr expr in
         if ty <> Unit && ty <> Err then
-          Emitter.emit ty_ctx.emitter (unused_value expr.expr_span)
+          Sess.emit_err tcx.sess (unused_value expr.expr_span)
     | Binding ({ binding_pat; binding_ty; binding_expr; _ } as binding) -> (
         let ty = fexpr binding_expr in
         match binding_pat with
@@ -283,7 +275,7 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
             | Some expected ->
                 binding.binding_ty <- Some (unwrap_ty ty_ctx.tcx expected);
                 if ty_neq tcx expected ty then
-                  ty_err_emit ty_ctx.emitter
+                  ty_err_emit ty_ctx.tcx
                     (MismatchTy (expected, ty))
                     binding_expr.expr_span
             | None -> binding.binding_ty <- Some ty);
@@ -311,14 +303,11 @@ let tychk_func (ty_ctx : ty_ctx) (func : func) =
       | Some expr ->
           let ty = fexpr expr in
           if ty_neq tcx ty ret_ty then
-            ty_err_emit ty_ctx.emitter
-              (MismatchTy (ret_ty, ty))
-              expr.expr_span
+            ty_err_emit ty_ctx.tcx (MismatchTy (ret_ty, ty)) expr.expr_span
       | None -> (
         match ret_ty with
         | Unit -> ()
-        | _ -> ty_err_emit ty_ctx.emitter (MismatchTy (ret_ty, Unit)) fn_span
-        ))
+        | _ -> ty_err_emit ty_ctx.tcx (MismatchTy (ret_ty, Unit)) fn_span))
   | None -> ()
 
 let rec tychk ty_ctx (modd : modd) =
@@ -329,9 +318,8 @@ let rec tychk ty_ctx (modd : modd) =
     | Impl { impl_items; _ } ->
         List.iter (function AssocFn f -> tychk_func ty_ctx f) impl_items
     | Import _ | Type _ | Unit _ -> ()
-    | Mod m ->
-        let modd = Option.get m.resolved_mod in
-        tychk ty_ctx modd
+    | Mod m -> (
+      match m.resolved_mod with Some modd -> tychk ty_ctx modd | None -> ())
     | _ -> assert false
   in
   List.iter f modd.items

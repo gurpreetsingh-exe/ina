@@ -4,6 +4,7 @@ open Ty
 open Utils
 open Front
 open Metadata
+open Errors
 
 let stdlib = "lib"
 
@@ -445,9 +446,15 @@ let rec resolve resolver root : modul =
         let modd =
           if m.inline then m.resolved_mod
           else if not (mod_exists resolver name) then (
-            eprintf "error(%s): module `%s` not found\n"
-              resolver.modd.mod_path name;
-            flush stderr;
+            Session.Sess.emit_err resolver.tcx.sess
+              {
+                message = sprintf "module `%s` not found" name;
+                level = Err;
+                span = { primary_spans = []; labels = [] };
+                children = [];
+                sugg = [];
+                loc = Diagnostic.loc __POS__;
+              };
             None)
           else (
             let path = create_path resolver name in
@@ -545,10 +552,16 @@ let rec resolve resolver root : modul =
         if Sys.file_exists p then f p
         else if Sys.file_exists (Path.join [stdlib; lib_name]) then
           f (Path.join [stdlib; lib_name])
-        else (
-          eprintf "error(%s): unit `%s` not found\n" resolver.modd.mod_path
-            name;
-          flush stderr)
+        else
+          Session.Sess.emit_err resolver.tcx.sess
+            {
+              message = sprintf "unit `%s` not found" name;
+              level = Err;
+              span = { primary_spans = []; labels = [] };
+              children = [];
+              sugg = [];
+              loc = Diagnostic.loc __POS__;
+            }
     | Const _ | Import _ -> ()
   in
   List.iter visit_item resolver.modd.items;

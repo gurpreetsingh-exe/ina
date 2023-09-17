@@ -30,6 +30,8 @@ type multi_span = {
 
 let primary_span ms = List.hd ms.primary_spans
 
+let has_primary_span ms = List.length ms.primary_spans <> 0
+
 let get_max_line_num_len ms : int =
   String.length
     (string_of_int

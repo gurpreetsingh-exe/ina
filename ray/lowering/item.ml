@@ -105,21 +105,21 @@ let rec lower_ast (ctx : Context.t) : Module.t =
     | Impl { impl_items; _ } ->
         items :=
           !items
-          @ List.map
-              (function AssocFn f -> lower_fn f ctx true)
-              impl_items
+          @ List.map (function AssocFn f -> lower_fn f ctx true) impl_items
     | Import _ -> ()
     | Const _ | Type _ | Unit _ | Mod _ -> ()
   in
   List.iter f ctx.modd.items;
   let f (item : item) =
     match item with
-    | Mod m ->
-        let modd = Option.get m.resolved_mod in
-        let tmp = ctx.modd in
-        ctx.modd <- modd;
-        items := !items @ (lower_ast ctx).items;
-        ctx.modd <- tmp
+    | Mod m -> (
+      match m.resolved_mod with
+      | Some modd ->
+          let tmp = ctx.modd in
+          ctx.modd <- modd;
+          items := !items @ (lower_ast ctx).items;
+          ctx.modd <- tmp
+      | None -> ())
     | _ -> ()
   in
   List.iter f ctx.modd.items;

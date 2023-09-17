@@ -125,3 +125,8 @@ let load_file map name =
   else (
     fprintf stderr "error: cannot open `%s`, file doesn't exist\n" name;
     exit 1)
+
+let span_to_string map pos =
+  let file = lookup_file map pos in
+  let line, col = File.lookup_file_pos file pos in
+  sprintf "%s:%d:%d" file.name (line + 1) (col + 1)
