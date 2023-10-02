@@ -1,4 +1,4 @@
-[%%if os = "Unix"]
+(* [%%if os = "Unix"] *)
 
 type raw_section_header = {
   sh_name : int32;
@@ -18,7 +18,7 @@ and obj = {
   raw_shdrs : raw_section_header array;
   string_table : bytes;
 }
-[@@deriving show]
+(* [@@deriving show] *)
 
 let find_raw_shdr obj sh_type : raw_section_header option =
   let shdr = ref None in
@@ -97,12 +97,12 @@ and read_section_by_name obj section_name =
   | Some shdr -> Some (read_section obj shdr)
   | None -> None
 
-[%%elif os = "Win32"]
-
-let read_obj _ = assert false
-
-[%%else]
-
-let read_obj _ = assert false
-
-[%%endif]
+(* [%%elif os = "Win32"] *)
+(**)
+(* let read_obj _ = assert false *)
+(**)
+(* [%%else] *)
+(**)
+(* let read_obj _ = assert false *)
+(**)
+(* [%%endif] *)

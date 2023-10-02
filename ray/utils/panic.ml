@@ -1,6 +1,6 @@
 open Errors
 
-[%%if profile = "dev"]
+(* [%%if profile = "dev"] *)
 
 let display_loc (loc : Printexc.location) =
   Printf.sprintf "%s:%d:%d" loc.filename loc.line_number loc.start_char
@@ -38,8 +38,8 @@ let panic _ctx msg : unit =
   let emitter = Emitter.{ sm = None; ui_testing = false } in
   Emitter.emit emitter dg
 
-[%%else]
-
-let panic _ _ : unit = ()
-
-[%%endif]
+(* [%%else] *)
+(**)
+(* let panic _ _ : unit = () *)
+(**)
+(* [%%endif] *)

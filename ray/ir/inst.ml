@@ -1,8 +1,8 @@
 open Ty
 open Printf
 
-let pp_ty (fmt : Format.formatter) ty : unit =
-  Format.pp_print_string fmt (render_ty ty)
+(* let pp_ty (fmt : Format.formatter) ty : unit = *)
+(*   Format.pp_print_string fmt (render_ty ty) *)
 
 type t = {
   kind : inst_kind;
@@ -71,7 +71,7 @@ and basic_block = {
   mutable bid : int;
   mutable is_entry : bool;
 }
-[@@deriving show]
+(* [@@deriving show] *)
 
 let binary_kind_to_inst = function
   | Ast.Add -> Add

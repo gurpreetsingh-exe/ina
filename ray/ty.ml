@@ -15,7 +15,32 @@ type int_ty =
   | U32
   | U64
   | Usize
-[@@deriving enum]
+(* [@@deriving enum] *)
+
+let int_ty_to_enum = function
+  | I8 -> 0
+  | I16 -> 1
+  | I32 -> 2
+  | I64 -> 3
+  | Isize -> 4
+  | U8 -> 5
+  | U16 -> 6
+  | U32 -> 7
+  | U64 -> 8
+  | Usize -> 9
+
+let int_ty_of_enum = function
+  | 0 -> Some I8
+  | 1 -> Some I16
+  | 2 -> Some I32
+  | 3 -> Some I64
+  | 4 -> Some Isize
+  | 5 -> Some U8
+  | 6 -> Some U16
+  | 7 -> Some U32
+  | 8 -> Some U64
+  | 9 -> Some Usize
+  | _ -> None
 
 let display_int_ty = function
   | I8 -> "i8"
@@ -67,7 +92,11 @@ let is_signed = function I8 | I16 | I32 | I64 | Isize -> true | _ -> false
 type float_ty =
   | F64
   | F32
-[@@deriving enum]
+(* [@@deriving enum] *)
+
+let float_ty_to_enum = function F32 -> 0 | F64 -> 1
+
+let float_ty_of_enum = function 0 -> Some F32 | 1 -> Some F64 | _ -> None
 
 let display_float_ty = function F32 -> "f32" | F64 -> "f64"
 
