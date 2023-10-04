@@ -1,5 +1,6 @@
 (executable
  (public_name ray)
  (name driver)
- (libraries front codegen sema resolve session lowering)
+ ; (libraries front codegen sema resolve session lowering)
+ (libraries front llvm_X86 session utils)
  (modules driver))

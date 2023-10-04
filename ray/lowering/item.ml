@@ -4,24 +4,26 @@ open Ir
 
 let mangle path =
   "_Z"
-  ^ String.concat ""
+  ^ String.concat
+      ""
       (List.map
          (fun seg -> string_of_int (String.length seg) ^ seg)
          path.segments)
+;;
 
 (* let mangle path = render_path path *)
 
-let rec lower_fn (fn : func) (ctx : Context.t) (mangle_name : bool) : Func.t
-    =
+let rec lower_fn (fn : func) (ctx : Context.t) (mangle_name : bool) : Func.t =
   Builder.reset ();
   let {
-    fn_sig = { name; args; ret_ty; is_variadic; _ };
-    body;
-    abi;
-    is_extern;
-    func_path;
-    _;
-  } =
+    fn_sig = { name; args; ret_ty; is_variadic; _ }
+  ; body
+  ; abi
+  ; is_extern
+  ; func_path
+  ; _
+  }
+    =
     fn
   in
   let ret_ty = match ret_ty with Some ty -> ty | None -> Unit in
@@ -32,19 +34,19 @@ let rec lower_fn (fn : func) (ctx : Context.t) (mangle_name : bool) : Func.t
   let fn_ty =
     Func.
       {
-        name;
-        args =
-          List.map (fun (ty, name, _) -> (unwrap_ty ctx.tcx ty, name)) args;
-        params =
+        name
+      ; args =
+          List.map (fun (ty, name, _) -> unwrap_ty ctx.tcx ty, name) args
+      ; params =
           List.mapi
             (fun i (ty, name, _) ->
               Inst.Param (unwrap_ty ctx.tcx ty, name, i))
-            args;
-        ret_ty;
-        is_variadic;
-        abi;
-        is_extern;
-        linkage_name;
+            args
+      ; ret_ty
+      ; is_variadic
+      ; abi
+      ; is_extern
+      ; linkage_name
       }
   in
   match body with
@@ -62,16 +64,17 @@ and lower_fn_body body ctx =
   let ret = Expr.lower_block body ctx in
   let builder = Builder.create ctx.tcx (Option.get ctx.block) in
   match ret with
-  | VReg (inst, _, ty) -> (
-    match (inst.kind, ty) with
-    | Nop, _ -> Builder.ret_unit builder
-    | _, Ptr (Struct _) ->
-        (* HACK: load struct before returning *)
-        let ret = Builder.load ret builder in
-        Builder.ret ret builder
-    | _ -> Builder.ret ret builder)
+  | VReg (inst, _, ty) ->
+      (match inst.kind, ty with
+       | Nop, _ -> Builder.ret_unit builder
+       | _, Ptr (Struct _) ->
+           (* HACK: load struct before returning *)
+           let ret = Builder.load ret builder in
+           Builder.ret ret builder
+       | _ -> Builder.ret ret builder)
   | Const _ | Global _ -> Builder.ret ret builder
   | _ -> Builder.ret_unit builder
+;;
 
 let gen_id (items : Func.t list) =
   let f (item : Func.t) =
@@ -86,6 +89,7 @@ let gen_id (items : Func.t list) =
     | _ -> ()
   in
   List.iter f items
+;;
 
 let rec lower_ast (ctx : Context.t) : Module.t =
   let items = ref [] in
@@ -112,16 +116,17 @@ let rec lower_ast (ctx : Context.t) : Module.t =
   List.iter f ctx.modd.items;
   let f (item : item) =
     match item with
-    | Mod m -> (
-      match m.resolved_mod with
-      | Some modd ->
-          let tmp = ctx.modd in
-          ctx.modd <- modd;
-          items := !items @ (lower_ast ctx).items;
-          ctx.modd <- tmp
-      | None -> ())
+    | Mod m ->
+        (match m.resolved_mod with
+         | Some modd ->
+             let tmp = ctx.modd in
+             ctx.modd <- modd;
+             items := !items @ (lower_ast ctx).items;
+             ctx.modd <- tmp
+         | None -> ())
     | _ -> ()
   in
   List.iter f ctx.modd.items;
   gen_id !items;
   { items = !items }
+;;

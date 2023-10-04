@@ -5,8 +5,8 @@ open Printf
 (*   Format.pp_print_string fmt (render_ty ty) *)
 
 type t = {
-  kind : inst_kind;
-  id : int;
+    kind: inst_kind
+  ; id: int
 }
 
 and binary_kind =
@@ -65,11 +65,11 @@ and const =
   | Struct of value list
 
 and basic_block = {
-  mutable pred : basic_block list;
-  mutable succ : basic_block list;
-  mutable insts : t list;
-  mutable bid : int;
-  mutable is_entry : bool;
+    mutable pred: basic_block list
+  ; mutable succ: basic_block list
+  ; mutable insts: t list
+  ; mutable bid: int
+  ; mutable is_entry: bool
 }
 (* [@@deriving show] *)
 
@@ -86,6 +86,7 @@ let binary_kind_to_inst = function
   | LtEq -> LtEq
   | BitAnd | And -> And
   | BitOr | Or -> Or
+;;
 
 let render_binary = function
   | Add -> "add"
@@ -100,10 +101,12 @@ let render_binary = function
   | LtEq -> "lte"
   | BitAnd | And -> "and"
   | BitOr | Or -> "or"
+;;
 
 let has_value = function
   | Br _ | Jmp _ | Store _ | Ret _ | RetUnit | Nop -> false
   | _ -> true
+;;
 
 let rec render_const = function
   | Int value -> sprintf "%d" value
@@ -119,6 +122,7 @@ and render_value = function
   | Label bb -> sprintf "label %%bb%d" bb.bid
   | Param (ty, name, _) -> sprintf "%s %%%s" (render_ty ty) name
   | Global name -> sprintf "@%s" name
+;;
 
 let value_with_ty value ty =
   match value with
@@ -126,10 +130,12 @@ let value_with_ty value ty =
   | VReg (kind, i, _) -> VReg (kind, i, ty)
   | Param (_, name, i) -> Param (ty, name, i)
   | Global _ | Label _ -> value
+;;
 
 let get_ty = function
   | Param (ty, _, _) | Const (_, ty) | VReg (_, _, ty) -> ty
   | _ -> assert false
+;;
 
 let extract_block = function Label bb -> bb | _ -> assert false
 
@@ -139,14 +145,23 @@ let render_inst inst : string =
   match inst.kind with
   | Alloca ty -> sprintf "alloca %s" (render_ty ty)
   | Binary (kind, left, right) ->
-      sprintf "%s %s, %s" (render_binary kind) (render_value left)
+      sprintf
+        "%s %s, %s"
+        (render_binary kind)
+        (render_value left)
         (render_value right)
   | Br (cond, true_block, false_block) ->
-      sprintf "br %s, %s, %s" (render_value cond) (render_value true_block)
+      sprintf
+        "br %s, %s, %s"
+        (render_value cond)
+        (render_value true_block)
         (render_value false_block)
   | Phi (ty, args) ->
-      sprintf "phi %s, %s" (render_ty ty)
-        (String.concat ", "
+      sprintf
+        "phi %s, %s"
+        (render_ty ty)
+        (String.concat
+           ", "
            (List.map
               (fun (bb, inst) ->
                 sprintf "[%s, %s]" (render_value bb) (render_value inst))
@@ -155,21 +170,27 @@ let render_inst inst : string =
   | Store (src, dst) ->
       sprintf "store %s, %s" (render_value src) (render_value dst)
   | Load ptr ->
-      sprintf "load %s, %s"
+      sprintf
+        "load %s, %s"
         (match get_ty ptr with
-        | Ptr ty -> render_ty ty
-        | RefTy ty -> render_ty ty
-        | _ -> assert false)
+         | Ptr ty -> render_ty ty
+         | RefTy ty -> render_ty ty
+         | _ -> assert false)
         (render_value ptr)
   | Gep (_, value, index) -> sprintf "gep %s, %d" (render_value value) index
   | Call (ty, fn, args) ->
       let ty =
         match ty with FnTy (_, ret_ty, _) -> ret_ty | _ -> assert false
       in
-      sprintf "call %s %s(%s)" (render_ty ty) (render_value fn)
+      sprintf
+        "call %s %s(%s)"
+        (render_ty ty)
+        (render_value fn)
         (String.concat ", " (List.map render_value args))
   | Intrinsic (name, args) ->
-      sprintf "intrinsic %s(%s)" name
+      sprintf
+        "intrinsic %s(%s)"
+        name
         (String.concat ", " (List.map render_value args))
   | PtrToInt (value, ty) ->
       sprintf "ptrtoint %s to %s" (render_value value) (render_ty ty)
@@ -179,3 +200,4 @@ let render_inst inst : string =
   | Trap _ -> "trap"
   | RetUnit -> "ret"
   | Nop -> "nop"
+;;

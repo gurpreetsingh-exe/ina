@@ -1,14 +1,47 @@
 open Token
-open Ty
 open Source
 
 type ident = string
+type path_segment = { ident: ident }
 
-type node_id = int
+type path = {
+    segments: path_segment list
+  ; span: Span.t
+}
+
+type int_ty =
+  | I8
+  | I16
+  | I32
+  | I64
+  | Isize
+  | U8
+  | U16
+  | U32
+  | U64
+  | Usize
+
+type float_ty =
+  | F64
+  | F32
+
+type ty =
+  | Int of int_ty
+  | Float of float_ty
+  | Bool
+  | Str
+  | Ptr of ty
+  | Ref of ty
+  | FnTy of ty list * ty * bool
+  | Path of path
+  | ImplicitSelf
+  | Unit
+  | Err
 
 type attr = {
-  kind : attr_kind;
-  style : attr_style;
+    kind: attr_kind
+  ; style: attr_style
+  ; attr_span: Span.t
 }
 
 and attr_list = attr list
@@ -17,33 +50,33 @@ and attr_kind =
   | Doc of string
   | NormalAttr of normal_attr
 
-and normal_attr = { name : ident }
+and normal_attr = { name: ident }
 
 and attr_style =
   | Outer
   | Inner
 
 type modd = {
-  mutable items : item list;
-  mutable attrs : attr list;
-  mutable mod_name : string;
-  mod_path : string;
-  mod_id : node_id;
+    mutable items: item list
+  ; mutable attrs: attr list
+  ; mutable mod_name: string
+  ; mod_path: string
+  ; mod_span: Span.t
 }
 
 and strukt = {
-  ident : string;
-  mutable members : (ty * string) list;
-  struct_id : node_id;
+    ident: string
+  ; mutable members: (ty * string) list
+  ; struct_span: Span.t
 }
 
 and typ = Struct of strukt
-
 and assoc_item = AssocFn of func
 
 and impl = {
-  impl_ty : ty;
-  impl_items : assoc_item list;
+    impl_ty: ty
+  ; impl_items: assoc_item list
+  ; impl_span: Span.t
 }
 
 and item =
@@ -51,36 +84,35 @@ and item =
   | Type of typ
   | Foreign of func list
   | Impl of impl
-  | Const of constant
   | Mod of {
-      name : string;
-      mutable resolved_mod : modd option;
-      inline : bool;
+        name: string
+      ; mutable resolved_mod: modd option
+      ; inline: bool
     }
   | Unit of string
   | Import of path
 
 and fn_sig = {
-  name : ident;
-  mutable args : (ty * ident * node_id) list;
-  ret_ty : ty option;
-  fn_span : Span.t;
-  is_variadic : bool;
+    name: ident
+  ; mutable args: (ty * ident) list
+  ; ret_ty: ty option
+  ; fn_span: Span.t
+  ; is_variadic: bool
 }
 
 and func = {
-  is_extern : bool;
-  abi : string;
-  fn_sig : fn_sig;
-  body : block option;
-  func_id : node_id;
-  mutable func_path : path option;
+    is_extern: bool
+  ; abi: string
+  ; fn_sig: fn_sig
+  ; body: block option
+  ; mutable func_path: path option
+  ; func_span: Span.t
 }
 
 and block = {
-  block_stmts : stmt list;
-  last_expr : expr option;
-  block_id : node_id;
+    block_stmts: stmt list
+  ; last_expr: expr option
+  ; block_span: Span.t
 }
 
 and stmt =
@@ -91,26 +123,16 @@ and stmt =
   | Assert of expr * expr option
 
 and binding = {
-  binding_pat : pat;
-  mutable binding_ty : ty option;
-  binding_expr : expr;
-  binding_id : node_id;
+    binding_pat: pat
+  ; mutable binding_ty: ty option
+  ; binding_expr: expr
 }
 
 and pat = PatIdent of ident
 
-and constant = {
-  const_name : ident;
-  const_ty : ty;
-  const_expr : expr;
-  const_id : node_id;
-}
-
 and expr = {
-  mutable expr_kind : expr_kind;
-  mutable expr_ty : ty option;
-  expr_id : node_id;
-  expr_span : Span.t;
+    mutable expr_kind: expr_kind
+  ; expr_span: Span.t
 }
 
 and binary_kind =
@@ -144,14 +166,16 @@ and expr_kind =
   | MethodCall of expr * string * expr list
 
 and struct_expr = {
-  struct_name : path;
-  fields : (string * expr) list;
+    struct_name: path
+  ; fields: (string * expr) list
+  ; struct_expr_span: Span.t
 }
 
 and iff = {
-  cond : expr;
-  then_block : block;
-  else_block : expr option;
+    cond: expr
+  ; then_block: block
+  ; else_block: expr option
+  ; if_span: Span.t
 }
 
 and lit =
@@ -174,3 +198,4 @@ let binary_kind_from_token = function
   | LAngle -> Lt
   | RAngle -> Gt
   | _ -> assert false
+;;

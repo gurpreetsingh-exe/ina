@@ -10,6 +10,11 @@ _build/
 library/
 *.ll
 test*.ray
+test*.*
+*.cmi
+*.cma
+*.cmx
+*.cmxa
 *.txt
 *.opam
 *.o

@@ -1,4 +1,5 @@
 (library
+ (enabled_if false)
  (name codegen)
  (libraries
   ir
@@ -11,16 +12,17 @@
   llvm.debuginfo
   llvm_X86)
  (modules llvm_gen intrinsics)
- (foreign_stubs
-  (language c)
-  (names llvm_opt))
- (c_library_flags
-  (-lLLVMPasses
-   -lLLVMCoroutines
-   -lLLVMipo
-   -lLLVMVectorize
-   -lLLVMLinker
-   -lLLVMFrontendOpenMP
-   -lLLVMIRPrinter))
- (flags
-  (-cclib -lcodegen_stubs)))
+ ; (foreign_stubs
+ ;  (language c)
+ ;  (names llvm_opt))
+ ; (c_library_flags
+ ;  (-lLLVMPasses
+ ;   -lLLVMCoroutines
+ ;   -lLLVMipo
+ ;   -lLLVMVectorize
+ ;   -lLLVMLinker
+ ;   -lLLVMFrontendOpenMP
+ ;   -lLLVMIRPrinter))
+ ; (flags
+ ;  (-cclib -lcodegen_stubs))
+ )

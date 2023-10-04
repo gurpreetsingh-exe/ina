@@ -15,3 +15,4 @@ let gen_intrinsic name args builder tcx : llvalue =
       let off = args.(1) in
       build_gep (i8_type ctx) self [|off|] "" builder
   | _ -> assert false
+;;
