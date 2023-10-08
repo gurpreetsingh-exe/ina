@@ -1,7 +1,8 @@
-open Llvm_target
 open Metadata
-open Source
+open Source.Source_map
+open Front.Parser
 open Errors
+open Handler
 
 type timings = {
     mutable parse: float
@@ -28,51 +29,18 @@ let display timings =
     timings.gen_and_link
 ;;
 
-type target = {
-    lltarget: Target.t
-  ; triple: string
-  ; ptr_size: int
-  ; data_layout: DataLayout.t
-}
-
-let target () =
-  let triple = Target.default_triple () in
-  let lltarget = Target.by_triple triple in
-  let machine =
-    TargetMachine.create
-      ~triple
-      ?cpu:(Some "generic")
-      ?features:None
-      ?level:(Some CodeGenOptLevel.Default)
-      ?reloc_mode:(Some RelocMode.PIC)
-      ?code_model:(Some CodeModel.Default)
-      lltarget
-  in
-  let data_layout = TargetMachine.data_layout machine in
-  ( {
-      lltarget
-    ; triple
-    ; ptr_size = DataLayout.pointer_size data_layout
-    ; data_layout
-    }
-  , machine )
-;;
-
 type t = {
     options: Config.t
-  ; timings: timings
-  ; target: target
-  ; enc: Encoder.t
-  ; machine: TargetMachine.t
-  ; source_map: Source_map.t
-  ; handler: Handler.t
+  ; timings: timings (* ; target: target *)
+  ; enc: Encoder.t (* ; machine: TargetMachine.t *)
+  ; parse_sess: parse_sess
 }
 
-let emit_err sess err = Handler.emit_err sess.handler err
+let emit_err sess err = sess.span_diagnostic#emit_diagnostic err
 
 let create options =
-  let sm = new Source_map.t in
-  let target, machine = target () in
+  let sm = new source_map in
+  (* let target, machine = target () in *)
   {
     options
   ; timings =
@@ -84,10 +52,9 @@ let create options =
       ; llvm = 0.
       ; gen_and_link = 0.
       }
-  ; target
-  ; enc = Encoder.create ()
-  ; machine
-  ; source_map = sm
-  ; handler = Handler.create sm options.ui_testing
+      (* ; target *)
+  ; enc = Encoder.create () (* ; machine *)
+  ; parse_sess =
+      { sm; span_diagnostic = new handler (Some sm) options.ui_testing }
   }
 ;;

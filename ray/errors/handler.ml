@@ -1,29 +1,19 @@
-type t = {
-    emitter: Emitter.t
-  ; mutable err_count: int
-}
+open Source.Source_map
+open Structures.Vec
+open Emitter
+open Diagnostic
 
-let create sm ui_testing =
-  { emitter = { sm = Some sm; ui_testing }; err_count = 0 }
-;;
+class handler source_map ui_testing =
+  object
+    val sm : source_map option = source_map
+    val emitter : emitter = new emitter source_map ui_testing
 
-let early () = { emitter = { sm = None; ui_testing = false }; err_count = 0 }
+    method span_err span msg =
+      let messages = new vec in
+      messages#push msg;
+      let primary_spans = new vec in
+      primary_spans#push span;
+      new diagnostic Err messages (new multi_span ~primary_spans ())
 
-let emit_err handle err =
-  handle.err_count <- handle.err_count + 1;
-  Emitter.emit handle.emitter err
-;;
-
-let emit_small_err handle msg =
-  emit_err
-    handle
-    Diagnostic.
-      {
-        message = msg
-      ; level = Err
-      ; span = { primary_spans = []; labels = [] }
-      ; children = []
-      ; sugg = []
-      ; loc = Diagnostic.loc __POS__
-      }
-;;
+    method emit_diagnostic diag = emitter#emit_diagnostic diag
+  end

@@ -1,4 +1,4 @@
-open Printf
+open Structures.Vec
 
 type style =
   | LineCol
@@ -12,53 +12,70 @@ type styled_char = {
   ; mutable style: style
 }
 
-type t = { mutable lines: styled_char array array }
+type styled_string = {
+    mutable text: string
+  ; mutable style: style
+}
 
-let ensure_lines buf line =
-  if line >= Array.length buf.lines
-  then (
-    let tmp = buf.lines in
-    buf.lines <- Array.make (line + 1) [||];
-    Array.blit tmp 0 buf.lines 0 (Array.length tmp))
-;;
+class styled_buffer =
+  object (self)
+    val lines : styled_char vec vec = new vec
 
-let putc (buf : t) (line : int) (col : int) (chr : char) (style : style) =
-  ensure_lines buf line;
-  if col >= Array.length buf.lines.(line)
-  then (
-    let tmp = buf.lines.(line) in
-    buf.lines.(line) <- Array.make (col + 1) { chr = ' '; style = NoStyle };
-    Array.blit tmp 0 buf.lines.(line) 0 (Array.length tmp));
-  buf.lines.(line).(col) <- { chr; style }
-;;
+    method ensure_lines line =
+      if line >= lines#len then lines#resize (line + 1) (new vec)
 
-let puts (buf : t) (line : int) (col : int) (string : string) (style : style)
-  =
-  String.iteri (fun n c -> putc buf line (col + n) c style) string
-;;
+    method putc line col char style =
+      self#ensure_lines line;
+      if col >= (lines#get line)#len
+      then (lines#get line)#resize (col + 1) { chr = ' '; style = NoStyle };
+      (lines#get line)#set col { chr = char; style }
 
-let append (buf : t) ~(line : int) (str : string) (style : style) =
-  if line >= Array.length buf.lines
-  then puts buf line 0 str style
-  else
-    let col = Array.length buf.lines.(line) in
-    puts buf line col str style
-;;
+    method puts line col str style =
+      let n = ref col in
+      String.iter
+        (fun c ->
+          self#putc line !n c style;
+          incr n)
+        str
 
-let render (buf : t) colors =
-  let f chr =
-    if colors
-    then
-      let col =
-        match chr.style with
-        | Level level -> Diagnostic.level_to_color level
-        | Header | LineCol -> "\x1b[1m"
-        | LineNum -> "\x1b[1;34m"
-        | NoStyle -> ""
+    method append line str style =
+      if line >= lines#len
+      then self#puts line 0 str style
+      else
+        let col = (lines#get line)#len in
+        self#puts line col str style
+
+    method prepend line str style =
+      self#ensure_lines line;
+      let l = String.length str in
+      if not (lines#get line)#empty
+      then
+        for _ = 0 to l do
+          (lines#get line)#insert 0 { chr = ' '; style = NoStyle }
+        done;
+      self#puts line 0 str style
+
+    method render =
+      let output = new vec in
+      let styled_vec = ref (new vec) in
+      let process_line line =
+        let curr_style = ref NoStyle in
+        let curr_text = ref String.empty in
+        let process_char (chr : styled_char) =
+          if chr.style <> !curr_style
+          then (
+            if String.length !curr_text <> 0
+            then !styled_vec#push { text = !curr_text; style = !curr_style };
+            curr_style := chr.style;
+            curr_text := String.empty);
+          curr_text := String.concat "" [!curr_text; String.make 1 chr.chr]
+        in
+        line#iter process_char;
+        if String.length !curr_text <> 0
+        then !styled_vec#push { text = !curr_text; style = !curr_style };
+        output#push !styled_vec;
+        styled_vec := new vec
       in
-      sprintf "%s%c\x1b[0m" col chr.chr
-    else sprintf "%c" chr.chr
-  in
-  let g line = String.concat "" (Array.to_list (Array.map f line)) in
-  String.concat "\n" (Array.to_list (Array.map g buf.lines))
-;;
+      lines#iter process_line;
+      output
+  end

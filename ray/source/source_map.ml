@@ -50,7 +50,7 @@ class file (name : string) (src : string) =
       | None -> 0, pos
   end
 
-class t =
+class source_map =
   object (self)
     val source_files : file vec = new vec
     val file_id_to_file : (file_id, file) Hashtbl.t = Hashtbl.create 0

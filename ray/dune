@@ -8,9 +8,9 @@
  (modules ty)
  ; (preprocess
  ;  (pps ppx_deriving.enum))
- (libraries token session llvm metadata))
+ (libraries token session metadata))
 
 (library
  (name ast)
  (modules ast)
- (libraries token ty))
+ (libraries token))

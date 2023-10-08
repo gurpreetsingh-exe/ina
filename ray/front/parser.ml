@@ -1,12 +1,18 @@
 open Ast
-open Ty
 open Token
 open Tokenizer
 open Errors
 open Diagnostic
-open Session
+open Handler
 open Source
+open Source_map
 open Span
+open Structures.Vec
+open Printf
+
+type 'a presult = ('a, diagnostic) result
+
+let ( let* ) res f = match res with Ok v -> f v | Error e -> Error e
 
 let builtin_types =
   [|
@@ -29,401 +35,20 @@ let builtin_types =
   |> Hashtbl.of_seq
 ;;
 
+type parse_sess = {
+    sm: source_map
+  ; span_diagnostic: handler
+}
+
 type parse_ctx = {
-    tcx: tcx
-  ; tokenizer: tokenizer
+    tokenizer: tokenizer
   ; src: string
   ; mutable curr_tok: token
   ; mutable prev_tok: token option
   ; mutable stop: bool
 }
 
-let span (start : int) (pcx : parse_ctx) =
-  match pcx.prev_tok with
-  | Some t -> Span.{ lo = start; hi = t.span.hi }
-  | None -> assert false
-;;
-
-let advance pcx =
-  match next pcx.tokenizer with
-  | Some { kind = Eof; _ } -> pcx.stop <- true
-  | Some t ->
-      pcx.prev_tok <- Some pcx.curr_tok;
-      pcx.curr_tok <- t
-  | None -> assert false
-;;
-
-let peek pcx =
-  let loc, c = pcx.tokenizer.pos, pcx.tokenizer.c in
-  let t =
-    match next pcx.tokenizer with
-    | Some { kind = Eof; _ } | None -> None
-    | Some t -> Some t
-  in
-  pcx.tokenizer.pos <- loc;
-  pcx.tokenizer.c <- c;
-  t
-;;
-
-let rec npeek pcx n =
-  let loc, c = pcx.tokenizer.pos, pcx.tokenizer.c in
-  let t =
-    match next pcx.tokenizer with
-    | Some { kind = Eof; _ } | None -> []
-    | Some t -> if n = 1 then [t.kind] else [t.kind] @ npeek pcx (n - 1)
-  in
-  pcx.tokenizer.pos <- loc;
-  pcx.tokenizer.c <- c;
-  t
-;;
-
-let unexpected_token pcx expected t =
-  let msg =
-    Printf.sprintf
-      "expected `%s`, found `%s`"
-      (display_token_kind expected)
-      (display_token_kind t.kind)
-  in
-  let span = pcx.curr_tok.span in
-  {
-    level = Err
-  ; message = "unexpected token"
-  ; span = { primary_spans = [span]; labels = [span, msg, true] }
-  ; children = []
-  ; sugg = []
-  ; loc = Diagnostic.loc __POS__
-  }
-;;
-
-let unexpected_type pcx span =
-  Sess.emit_err
-    pcx.tcx.sess
-    {
-      level = Err
-    ; message = "unexpected type"
-    ; span = { primary_spans = [span]; labels = [] }
-    ; children = []
-    ; sugg = []
-    ; loc = Diagnostic.loc __POS__
-    };
-  exit 1
-;;
-
-let eat pcx kind =
-  if pcx.curr_tok.kind == kind
-  then (
-    let t = pcx.curr_tok in
-    advance pcx;
-    t)
-  else (
-    Sess.emit_err pcx.tcx.sess (unexpected_token pcx kind pcx.curr_tok);
-    exit 1)
-;;
-
-let parse_ctx_create tcx tokenizer s =
-  match next tokenizer with
-  | Some t ->
-      {
-        tcx
-      ; tokenizer
-      ; src = s
-      ; curr_tok = t
-      ; prev_tok = None
-      ; stop = false
-      }
-  | None -> exit 0
-;;
-
-let strip_comments pcx =
-  let rec impl = function
-    | Comment None ->
-        advance pcx;
-        impl pcx.curr_tok.kind
-    | _ -> ()
-  in
-  impl pcx.curr_tok.kind
-;;
-
-let parse_ident pcx = get_token_str (eat pcx Ident) pcx.src
-
-let parse_attr pcx : normal_attr =
-  ignore (eat pcx LBracket);
-  let ident = parse_ident pcx in
-  ignore (eat pcx RBracket);
-  { name = ident }
-;;
-
-let parse_outer_attrs pcx : attr list =
-  let unexpected_inner_attr () =
-    Sess.emit_err
-      pcx.tcx.sess
-      {
-        level = Err
-      ; message = "unexpected inner attribute after outer attribute"
-      ; span = { primary_spans = [pcx.curr_tok.span]; labels = [] }
-      ; children = []
-      ; sugg = []
-      ; loc = Diagnostic.loc __POS__
-      };
-    exit 1
-  in
-  let s = pcx.curr_tok.span.lo in
-  let rec parse_outer_attrs_impl () =
-    let attr_kind =
-      match pcx.curr_tok.kind with
-      | Bang -> unexpected_inner_attr ()
-      | LBracket -> Some (NormalAttr (parse_attr pcx))
-      | Comment style ->
-          (match style with
-           | Some Outer ->
-               let outer = get_token_str pcx.curr_tok pcx.src in
-               advance pcx;
-               Some (Doc outer)
-           | Some Inner -> unexpected_inner_attr ()
-           | None ->
-               advance pcx;
-               None)
-      | _ -> None
-    in
-    match attr_kind with
-    | Some kind ->
-        [{ kind; style = Outer; attr_span = span s pcx }]
-        @ parse_outer_attrs_impl ()
-    | None -> []
-  in
-  parse_outer_attrs_impl ()
-;;
-
-let parse_inner_attrs pcx : attr list =
-  let s = pcx.curr_tok.span.lo in
-  let rec parse_inner_attrs_impl () =
-    let attr_kind =
-      match pcx.curr_tok.kind with
-      | Bang ->
-          advance pcx;
-          Some (NormalAttr (parse_attr pcx))
-      | Comment style ->
-          (match style with
-           | Some Inner ->
-               let inner = get_token_str pcx.curr_tok pcx.src in
-               advance pcx;
-               Some (Doc inner)
-           | Some Outer -> None
-           | None ->
-               advance pcx;
-               None)
-      | _ -> None
-    in
-    match attr_kind with
-    | Some kind ->
-        [{ kind; style = Inner; attr_span = span s pcx }]
-        @ parse_inner_attrs_impl ()
-    | None -> []
-  in
-  parse_inner_attrs_impl ()
-;;
-
-let parse_path pcx : Ast.path =
-  let s = pcx.curr_tok.span.lo in
-  let rec parse_path_impl () =
-    match pcx.curr_tok.kind with
-    | Ident ->
-        let segment = [{ ident = parse_ident pcx }] in
-        (match pcx.curr_tok.kind with
-         | Colon2 ->
-             advance pcx;
-             segment @ parse_path_impl ()
-         | _ -> segment)
-    | Unit ->
-        let segment = [{ ident = "unit" }] in
-        advance pcx;
-        (match pcx.curr_tok.kind with
-         | Colon2 ->
-             advance pcx;
-             segment @ parse_path_impl ()
-         | _ -> segment)
-    | _ ->
-        Sess.emit_err pcx.tcx.sess (unexpected_token pcx Ident pcx.curr_tok);
-        exit 1
-  in
-  { segments = parse_path_impl (); span = span s pcx }
-;;
-
-let rec parse_ty pcx : Ast.ty =
-  let t = pcx.curr_tok in
-  match t.kind with
-  | Fn ->
-      advance pcx;
-      ignore (eat pcx LParen);
-      let arg_list = ref [] in
-      let is_variadic = ref false in
-      while (not pcx.stop) && pcx.curr_tok.kind <> RParen do
-        match pcx.curr_tok.kind with
-        | Dot3 ->
-            advance pcx;
-            is_variadic := true
-        | _ ->
-            let ty = parse_ty pcx in
-            arg_list := !arg_list @ [ty];
-            (match pcx.curr_tok.kind with
-             | Comma -> advance pcx
-             | RParen -> ()
-             | _ -> assert false)
-      done;
-      ignore (eat pcx RParen);
-      let ret_ty = Option.value ~default:Unit (parse_ret_ty pcx) in
-      FnTy (!arg_list, ret_ty, !is_variadic)
-  | Star ->
-      advance pcx;
-      Ptr (parse_ty pcx)
-  | Ampersand ->
-      advance pcx;
-      Ref (parse_ty pcx)
-  | Ident ->
-      let name = get_token_str pcx.curr_tok pcx.src in
-      if Hashtbl.mem builtin_types name
-      then (
-        advance pcx;
-        Hashtbl.find builtin_types name)
-      else Path (parse_path pcx)
-  | _ -> unexpected_type pcx t.span
-
-and parse_ret_ty pcx : Ast.ty option =
-  match pcx.curr_tok.kind with
-  | Arrow ->
-      advance pcx;
-      Some (parse_ty pcx)
-  | _ -> None
-;;
-
-let parse_fn_args pcx : (Ast.ty * ident) list * bool =
-  assert (pcx.curr_tok.kind == LParen);
-  ignore (eat pcx LParen);
-  let arg_list = ref [] in
-  let is_variadic = ref false in
-  let first_self = ref true in
-  let i = ref 0 in
-  while (not pcx.stop) && pcx.curr_tok.kind <> RParen do
-    (match pcx.curr_tok.kind with
-     | Ampersand ->
-         advance pcx;
-         let ident = parse_ident pcx in
-         assert (ident = "self");
-         let arg = Ast.ImplicitSelf, ident in
-         arg_list := !arg_list @ [arg];
-         (match pcx.curr_tok.kind with
-          | Comma -> advance pcx
-          | RParen -> ()
-          | _ ->
-              print_endline @@ display_span pcx.curr_tok.span;
-              assert false)
-     | Ident ->
-         let f ident =
-           ignore (eat pcx Colon);
-           let ty = parse_ty pcx in
-           ty, ident
-         in
-         let arg =
-           let ident = parse_ident pcx in
-           match !i, !first_self with
-           | 0, true ->
-               if ident = "self"
-               then (
-                 first_self := false;
-                 Ast.ImplicitSelf, ident)
-               else f ident
-           | _, true ->
-               if ident = "self"
-               then (
-                 print_endline "`self` is only allowed at first position";
-                 assert false)
-               else f ident
-           | _, _ -> f ident
-         in
-         arg_list := !arg_list @ [arg];
-         (match pcx.curr_tok.kind with
-          | Comma -> advance pcx
-          | RParen -> ()
-          | _ ->
-              print_endline @@ display_span pcx.curr_tok.span;
-              assert false)
-     | Dot3 ->
-         advance pcx;
-         is_variadic := true
-     | _ -> assert false);
-    incr i
-  done;
-  ignore (eat pcx RParen);
-  !arg_list, !is_variadic
-;;
-
-let parse_fn_sig pcx : fn_sig =
-  let s = pcx.curr_tok.span.lo in
-  let ident = parse_ident pcx in
-  let args, is_variadic = parse_fn_args pcx in
-  let ret_ty = parse_ret_ty pcx in
-  { name = ident; args; ret_ty; fn_span = span s pcx; is_variadic }
-;;
-
-let parse_pat pcx : pat =
-  let kind = pcx.curr_tok.kind in
-  match kind with
-  | Ident -> PatIdent (get_token_str (eat pcx kind) pcx.src)
-  | _ -> assert false
-;;
-
-let rec parse_expr pcx : expr =
-  strip_comments pcx;
-  let expr = parse_precedence pcx 0 in
-  if pcx.curr_tok.kind = As
-  then (
-    let s = pcx.curr_tok.span.lo in
-    advance pcx;
-    { expr_kind = Cast (expr, parse_ty pcx); expr_span = span s pcx })
-  else expr
-
-and parse_call_args pcx : expr list =
-  let args = ref [] in
-  ignore (eat pcx LParen);
-  while (not pcx.stop) && pcx.curr_tok.kind <> RParen do
-    args := !args @ [parse_expr pcx];
-    match pcx.curr_tok.kind with
-    | Comma -> advance pcx
-    | RParen -> ()
-    | _ ->
-        Sess.emit_err pcx.tcx.sess (unexpected_token pcx RParen pcx.curr_tok)
-  done;
-  ignore (eat pcx RParen);
-  !args
-
-and should_continue_as_prec_expr pcx expr =
-  let is_block =
-    match expr.expr_kind with If _ | Block _ -> true | _ -> false
-  in
-  match is_block, pcx.curr_tok.kind, (Option.get pcx.prev_tok).kind with
-  | true, Star, RParen -> true
-  | true, Star, _ ->
-      let span = expr.expr_span in
-      Sess.emit_err
-        pcx.tcx.sess
-        {
-          level = Err
-        ; message = "ambiguous expression"
-        ; span =
-            {
-              primary_spans = [span]
-            ; labels =
-                [span, "try adding parenthesis around expression", true]
-            }
-        ; children = []
-        ; sugg = []
-        ; loc = Diagnostic.loc __POS__
-        };
-      false
-  | false, _, _ -> true
-  | _ -> true
-
-and prec = function
+let prec = function
   | Dot -> 80
   | Star | Slash -> 70
   | Plus | Minus -> 60
@@ -433,398 +58,881 @@ and prec = function
   | Ampersand2 -> 20
   | Pipe2 -> 10
   | _ -> -1
+;;
 
-and parse_prefix pcx : expr =
-  let s = pcx.curr_tok.span.lo in
-  let expr_kind =
-    match pcx.curr_tok.kind with
-    | Star ->
-        advance pcx;
-        Deref (parse_prefix pcx)
-    | Ampersand ->
-        advance pcx;
-        Ref (parse_prefix pcx)
-    | _ -> (parse_primary pcx).expr_kind
+let parse_spanned_with_sep
+    self
+    (beginn : token_kind)
+    (endd : token_kind)
+    (sep : token_kind)
+    (f : unit -> 'a presult)
+    : 'a vec presult
+  =
+  let* _ = self#expect beginn in
+  let items = new vec in
+  let first = ref true in
+  let body () =
+    let* item = f () in
+    items#push item;
+    Ok ()
   in
-  { expr_kind; expr_span = span s pcx }
-
-and parse_precedence pcx min_prec : expr =
-  let s = pcx.curr_tok.span.lo in
-  let left = ref (parse_prefix pcx) in
-  let p = ref (prec pcx.curr_tok.kind) in
-  if should_continue_as_prec_expr pcx !left
-  then (
-    while
-      (p := prec pcx.curr_tok.kind;
-       !p)
-      > min_prec
-    do
-      let kind =
-        match pcx.curr_tok.kind with
-        | Dot ->
-            (match npeek pcx 2 with
-             | [Ident; LParen] ->
-                 ignore (eat pcx Dot);
-                 let name = parse_ident pcx in
-                 let args = parse_call_args pcx in
-                 MethodCall (!left, name, args)
-             | [Ident; _] ->
-                 ignore (eat pcx Dot);
-                 let field = parse_ident pcx in
-                 Field (!left, field)
-             | _ -> assert false)
-        | _ ->
-            let kind = binary_kind_from_token pcx.curr_tok.kind in
-            advance pcx;
-            let right = parse_precedence pcx (!p + 1) in
-            Binary (kind, !left, right)
-      in
-      left := { expr_kind = kind; expr_span = span s pcx }
-    done;
-    !left)
-  else !left
-
-and parse_primary pcx : expr =
-  let s = pcx.curr_tok.span.lo in
-  let expr_kind =
-    match pcx.curr_tok.kind with
-    | Lit lit as kind ->
-        let buf = get_token_str (eat pcx kind) pcx.src in
-        Ast.Lit
-          (match lit with
-           | Int -> LitInt (int_of_string buf)
-           | Float -> LitFloat (float_of_string buf)
-           | Bool -> LitBool (bool_of_string buf)
-           | String ->
-               let s = String.sub buf 1 (String.length buf - 2) in
-               let s = Scanf.unescaped s in
-               LitStr s
-           | lit_kind ->
-               ignore (Printf.printf "%s\n" (display_literal lit_kind));
-               assert false)
-    | If -> If (parse_if pcx)
-    | LBrace -> Block (parse_block pcx)
-    | LParen ->
-        advance pcx;
-        let e = parse_expr pcx in
-        ignore (eat pcx RParen);
-        e.expr_kind
-    | _ -> parse_path_or_call pcx
-  in
-  { expr_kind; expr_span = span s pcx }
-
-and parse_struct_expr pcx =
-  ignore (eat pcx LBrace);
-  let parse_field () : string * expr =
-    let name = parse_ident pcx in
-    ignore (eat pcx Colon);
-    let expr = parse_expr pcx in
-    name, expr
-  in
-  let rec parse_fields () : (string * expr) list =
-    match pcx.curr_tok.kind with
-    | RBrace -> []
-    | Comma ->
-        advance pcx;
-        parse_fields ()
-    | _ ->
-        let field = [parse_field ()] in
-        field @ parse_fields ()
-  in
-  let fields = parse_fields () in
-  ignore (eat pcx RBrace);
-  fields
-
-(* parses else expr when `else` token is already eaten *)
-and parse_else pcx : expr option =
-  match pcx.curr_tok.kind with
-  | If | LBrace -> Some (parse_expr pcx)
-  | _ -> None
-
-and parse_if pcx =
-  (* if T {} *)
-  (* this syntax will parse the `T {}` as a struct expr because the parser
-     needs to prioritize the empty struct expression `T {}` *)
-  let s = pcx.curr_tok.span.lo in
-  advance pcx;
-  let cond = parse_expr pcx in
-  (* here we check if the condition is an empty struct expr and convert it to
-     a path and empty block*)
-  let cond, then_block =
-    match cond.expr_kind with
-    | StructExpr { struct_name; fields; _ } when List.length fields = 0 ->
-        cond.expr_kind <- Path struct_name;
-        ( cond
-        , { block_stmts = []; last_expr = None; block_span = cond.expr_span }
-        )
-    | _ -> cond, parse_block pcx
-  in
-  let else_block =
-    if pcx.curr_tok.kind = Else
-    then (
-      advance pcx;
-      parse_else pcx)
-    else None
-  in
-  { cond; then_block; else_block; if_span = span s pcx }
-
-and parse_path_or_call pcx =
-  let s = pcx.curr_tok.span.lo in
-  let path = parse_path pcx in
-  match pcx.curr_tok.kind with
-  | LParen -> Call (path, parse_call_args pcx)
-  | LBrace ->
-      (match npeek pcx 2 with
-       | Ident :: [Colon] | RBrace :: _ ->
-           StructExpr
-             {
-               struct_name = path
-             ; fields = parse_struct_expr pcx
-             ; struct_expr_span = span s pcx
-             }
-       | _ -> Path path)
-  | _ -> Path path
-
-and parse_let pcx : binding =
-  ignore (eat pcx Let);
-  let binding_create pat ty =
-    ignore (eat pcx Eq);
-    let binding_expr = parse_expr pcx in
-    ignore (eat pcx Semi);
-    { binding_pat = pat; binding_ty = ty; binding_expr }
-  in
-  let pat = parse_pat pcx in
-  match pcx.curr_tok.kind with
-  | Eq -> binding_create pat None
-  | Colon ->
-      advance pcx;
-      binding_create pat (Some (parse_ty pcx))
-  | _ -> assert false
-
-and parse_stmt pcx : stmt =
-  if pcx.curr_tok.kind = Let
-  then Binding (parse_let pcx)
-  else if pcx.curr_tok.kind = Assert
-  then (
-    advance pcx;
-    let expr = parse_expr pcx in
-    let message =
-      if pcx.curr_tok.kind = Comma
+  let rec parse' () =
+    let* _ =
+      if self#token.kind = endd
+      then Ok ()
+      else if !first
       then (
-        advance pcx;
-        Some (parse_expr pcx))
-      else None
+        first := false;
+        let* _ = body () in
+        parse' ())
+      else
+        match self#expect sep with
+        | Ok false ->
+            let* _ = body () in
+            parse' ()
+        | Ok true ->
+            self#emit_err (self#err self#token.span "unexpected delim");
+            Ok ()
+        | Error e ->
+            self#emit_err e;
+            (match f () with
+             | Ok item ->
+                 items#push item;
+                 parse' ()
+             | Error e ->
+                 self#emit_err e;
+                 Ok ())
     in
-    ignore (eat pcx Semi);
-    Assert (expr, message))
-  else
-    let expr = parse_expr pcx in
-    match pcx.curr_tok.kind with
-    | Semi ->
-        advance pcx;
-        Stmt expr
-    | Eq ->
-        advance pcx;
-        let init = parse_expr pcx in
-        ignore (eat pcx Semi);
-        Assign (expr, init)
-    | _ -> Expr expr
-
-and parse_block pcx : block =
-  let s = pcx.curr_tok.span.lo in
-  let stmt_list = ref [] in
-  let last_expr = ref None in
-  ignore (eat pcx LBrace);
-  while (not pcx.stop) && pcx.curr_tok.kind <> RBrace do
-    match pcx.curr_tok.kind with
-    | RBrace -> ()
-    | _ ->
-        let stmt = parse_stmt pcx in
-        (match !last_expr with
-         | Some expr ->
-             stmt_list := !stmt_list @ [Stmt expr];
-             last_expr := None
-         | None -> ());
-        (match stmt with
-         | Expr expr -> last_expr := Some expr
-         | stmt -> stmt_list := !stmt_list @ [stmt])
-  done;
-  ignore (eat pcx RBrace);
-  {
-    block_stmts = !stmt_list
-  ; last_expr = !last_expr
-  ; block_span = span s pcx
-  }
-;;
-
-let parse_fn pcx abi is_extern : func =
-  let s = pcx.curr_tok.span.lo in
-  advance pcx;
-  let sign = parse_fn_sig pcx in
-  if pcx.curr_tok.kind == Semi
-  then (
-    advance pcx;
-    {
-      is_extern
-    ; abi
-    ; fn_sig = sign
-    ; body = None
-    ; func_path = None
-    ; func_span = span s pcx
-    })
-  else
-    let body = parse_block pcx in
-    {
-      is_extern
-    ; abi
-    ; fn_sig = sign
-    ; body = Some body
-    ; func_path = None
-    ; func_span = span s pcx
-    }
-;;
-
-let parse_type pcx : typ =
-  let s = pcx.curr_tok.span.lo in
-  advance pcx;
-  let name = parse_ident pcx in
-  let members = ref [] in
-  ignore (eat pcx Eq);
-  ignore (eat pcx LBrace);
-  while (not pcx.stop) && pcx.curr_tok.kind <> RBrace do
-    match pcx.curr_tok.kind with
-    | RBrace -> ()
-    | _ ->
-        let arg =
-          let ident = parse_ident pcx in
-          ignore (eat pcx Colon);
-          let ty = parse_ty pcx in
-          ty, ident
-        in
-        members := !members @ [arg];
-        (match pcx.curr_tok.kind with
-         | Comma -> advance pcx
-         | RBrace -> ()
-         | _ -> assert false)
-  done;
-  ignore (eat pcx RBrace);
-  Struct { ident = name; members = !members; struct_span = span s pcx }
-;;
-
-let parse_extern pcx attrs : item =
-  advance pcx;
-  let abi =
-    match pcx.curr_tok.kind with
-    | Lit String ->
-        let buf = get_token_str (eat pcx pcx.curr_tok.kind) pcx.src in
-        let s = String.sub buf 1 (String.length buf - 2) in
-        let s = Scanf.unescaped s in
-        s
-    | _ -> "C"
+    Ok ()
   in
-  match pcx.curr_tok.kind with
-  | LBrace ->
-      let f () =
-        advance pcx;
-        let items = ref [] in
-        while pcx.curr_tok.kind <> RBrace do
-          items := !items @ [parse_fn pcx abi true]
-        done;
-        ignore (eat pcx RBrace);
-        !items
+  let* _ = parse' () in
+  assert (self#eat endd);
+  Ok items
+;;
+
+class parser pcx file tokenizer =
+  object (self)
+    val pcx : parse_sess = pcx
+    val file : file = file
+    val mutable token : token = { kind = Eof; span = Span.make 0 0 }
+    val mutable prev_token : token option = None
+    val tokenizer : tokenizer = tokenizer
+    val expected_tokens : token_kind vec = new vec
+    method token = token
+
+    method check kind =
+      let is_present = token.kind = kind in
+      if not is_present then expected_tokens#push kind;
+      is_present
+
+    method eat kind =
+      let is_present = self#check kind in
+      if is_present then self#bump;
+      is_present
+
+    method npeek n =
+      let loc, c = tokenizer.pos, tokenizer.c in
+      let t =
+        match next tokenizer with
+        | Some { kind = Eof; _ } | None -> []
+        | Some t -> if n = 1 then [t.kind] else [t.kind] @ self#npeek (n - 1)
       in
-      Foreign (f ())
-  | Fn -> Fn (parse_fn pcx abi true, attrs)
-  | _ -> assert false
-;;
+      tokenizer.pos <- loc;
+      tokenizer.c <- c;
+      t
 
-let parse_impl pcx : impl =
-  let s = pcx.curr_tok.span.lo in
-  advance pcx;
-  let impl_ty = parse_ty pcx in
-  ignore (eat pcx LBrace);
-  let items = ref [] in
-  while pcx.curr_tok.kind <> RBrace do
-    items :=
-      !items
-      @
-      match pcx.curr_tok.kind with
-      | Fn -> [AssocFn (parse_fn pcx "C" false)]
-      | _ ->
-          ignore (eat pcx RBrace);
-          assert false
-  done;
-  ignore (eat pcx RBrace);
-  { impl_ty; impl_items = !items; impl_span = span s pcx }
-;;
+    method unexpected_try_recover kind =
+      let msg =
+        sprintf
+          "expected `%s` found `%s`"
+          (display_token_kind kind)
+          (display_token_kind token.kind)
+      in
+      let e = self#err token.span msg in
+      self#bump;
+      Error e
 
-let rec parse_item pcx : item =
-  let attrs = parse_outer_attrs pcx in
-  match pcx.curr_tok.kind with
-  | Fn -> Fn (parse_fn pcx "C" false, attrs)
-  | Type -> Type (parse_type pcx)
-  | Extern -> parse_extern pcx attrs
-  | Impl -> Impl (parse_impl pcx)
-  | Import ->
-      advance pcx;
-      let import = Ast.Import (parse_path pcx) in
-      ignore (eat pcx Semi);
-      import
-  | Unit ->
-      advance pcx;
-      let name = parse_ident pcx in
-      ignore (eat pcx Semi);
-      Unit name
-  | Mod ->
-      advance pcx;
-      let name = parse_ident pcx in
-      let modd, inline =
-        pcx.curr_tok.kind |> function
-        | Semi ->
-            ignore (eat pcx Semi);
-            None, false
-        | LBrace ->
-            ignore (eat pcx LBrace);
-            let modd = parse_mod pcx in
-            modd.mod_name <- name;
-            ignore (eat pcx RBrace);
-            Some modd, true
-        | _ ->
-            ignore (eat pcx LBrace);
+    method err span msg =
+      let messages = new vec in
+      messages#push { msg; style = NoStyle };
+      new diagnostic Err messages (multi_span span)
+
+    method emit_err e = pcx.span_diagnostic#emit_diagnostic e
+
+    method expect_one_of edible inedible =
+      if List.mem token.kind edible
+      then (
+        self#bump;
+        Ok false)
+      else if List.mem token.kind inedible
+      then Ok false
+      else Error (self#err token.span "unexpected_token")
+
+    method expect kind =
+      if expected_tokens#empty
+      then
+        if token.kind = kind
+        then (
+          self#bump;
+          Ok false)
+        else self#unexpected_try_recover kind
+      else self#expect_one_of [kind] []
+
+    method bump =
+      (match next tokenizer with
+       | Some t ->
+           prev_token <- Some token;
+           token <- t
+       | None -> ());
+      expected_tokens#clear
+
+    method mk_span start =
+      match prev_token with
+      | Some t -> Span.make start t.span.hi
+      | None -> assert false
+
+    method parse_ident =
+      if token.kind = Ident
+      then (
+        let ident = get_token_str token file#src in
+        self#bump;
+        Ok ident)
+      else Error (self#err token.span "expected ident")
+
+    method parse_attr =
+      let* _ = self#expect LBracket in
+      let* ident = self#parse_ident in
+      let* _ = self#expect RBracket in
+      Ok { name = ident }
+
+    method parse_inner_attrs =
+      let s = token.span.lo in
+      let rec parse_inner_attrs_impl () =
+        let* kind =
+          match token.kind with
+          | Bang ->
+              self#bump;
+              let* attr = self#parse_attr in
+              Ok [NormalAttr attr]
+          | Comment style ->
+              (match style with
+               | Some Inner ->
+                   let inner = get_token_str token file#src in
+                   self#bump;
+                   Ok [Doc inner]
+               | Some Outer -> Ok []
+               | None ->
+                   self#bump;
+                   Ok [])
+          | _ -> Ok []
+        in
+        match kind with
+        | [kind] ->
+            let* attrs = parse_inner_attrs_impl () in
+            Ok ([{ kind; style = Inner; attr_span = self#mk_span s }] @ attrs)
+        | _ -> Ok []
+      in
+      parse_inner_attrs_impl ()
+
+    method parse_outer_attrs =
+      let err = self#err token.span "unexpected inner attribute" in
+      let s = token.span.lo in
+      let rec parse_outer_attrs_impl () =
+        let* kind =
+          match token.kind with
+          | Bang ->
+              pcx.span_diagnostic#emit_diagnostic err;
+              (* recover and parse it as outer attribute *)
+              self#bump;
+              let* attr = self#parse_attr in
+              Ok (Some [NormalAttr attr])
+          | LBracket ->
+              let* attr = self#parse_attr in
+              Ok (Some [NormalAttr attr])
+          | Comment style ->
+              (match style with
+               | Some Outer ->
+                   let outer = get_token_str token file#src in
+                   self#bump;
+                   Ok (Some [Doc outer])
+               | Some Inner ->
+                   pcx.span_diagnostic#emit_diagnostic err;
+                   (* recover and parse it as outer doc comment *)
+                   let outer = get_token_str token file#src in
+                   self#bump;
+                   Ok (Some [Doc outer])
+               | None ->
+                   self#bump;
+                   Ok (Some []))
+          | _ -> Ok None
+        in
+        match kind with
+        | Some [kind] ->
+            let* attrs = parse_outer_attrs_impl () in
+            Ok ([{ kind; style = Outer; attr_span = self#mk_span s }] @ attrs)
+        | Some [] -> parse_outer_attrs_impl ()
+        | None -> Ok []
+        | _ -> Ok []
+      in
+      parse_outer_attrs_impl ()
+
+    method unexpected_token ?(line = __LINE__) kind =
+      let msg =
+        sprintf "%d: unexpected token `%s`" line @@ display_token_kind kind
+      in
+      self#emit_err (self#err token.span msg);
+      exit 1
+
+    method parse_ty =
+      match token.kind with
+      | Fn ->
+          let var_arg = ref false in
+          self#bump;
+          let* args =
+            parse_spanned_with_sep self LParen RParen Comma (fun () ->
+                if token.kind = Dot3 then var_arg := true;
+                self#parse_ty)
+          in
+          let unit_ty : ty = Unit in
+          let* ret_ty = self#parse_ret_ty in
+          let ret_ty = Option.value ~default:unit_ty ret_ty in
+          Ok (FnTy (args, ret_ty, !var_arg))
+      | Ident ->
+          let name = get_token_str token file#src in
+          (match Hashtbl.find_opt builtin_types name with
+           | Some ty ->
+               self#bump;
+               Ok ty
+           | None ->
+               let* path = self#parse_path in
+               let ty : ty = Path path in
+               Ok ty)
+      | Star ->
+          self#bump;
+          let* ty = self#parse_ty in
+          Ok (Ptr ty)
+      | Ampersand ->
+          self#bump;
+          let* ty = self#parse_ty in
+          let ty : ty = Ref ty in
+          Ok ty
+      | Dot3 ->
+          self#bump;
+          Ok CVarArgs
+      | t ->
+          self#unexpected_token t ~line:__LINE__;
+          exit 1
+
+    method parse_fn_args =
+      let i = ref 0 in
+      let var_arg = ref false in
+      let parse_arg () =
+        let* ident = self#parse_ident in
+        let _ = self#eat Colon in
+        let* ty = self#parse_ty in
+        Ok (ty, ident)
+      in
+      let rec maybe_parse_self () =
+        match token.kind with
+        | Ampersand ->
+            self#bump;
+            let* s = maybe_parse_self () in
+            (match s with
+             | ImplicitSelf, "self" ->
+                 let ty : ty = Ref ImplicitSelf in
+                 Ok (ty, "self")
+             | _ -> assert false)
+        | Ident ->
+            let* ident = self#parse_ident in
+            if ident = "self"
+            then Ok (ImplicitSelf, ident)
+            else
+              let* _ = self#expect Colon in
+              let* ty = self#parse_ty in
+              Ok (ty, ident)
+        | t ->
+            self#unexpected_token t ~line:__LINE__;
             exit 1
       in
-      let modd : item = Mod { name; resolved_mod = modd; inline } in
-      modd
-  | kind ->
-      Printf.printf "%s\n" (display_token_kind kind);
-      assert false
+      let parse_arg' () =
+        if !var_arg
+        then self#emit_err (self#err token.span "param after variadic-arg");
+        if self#check Dot3
+        then (
+          self#bump;
+          incr i;
+          var_arg := true;
+          Ok (CVarArgs, ""))
+        else
+          let arg = if !i = 0 then maybe_parse_self () else parse_arg () in
+          incr i;
+          arg
+      in
+      let* args =
+        parse_spanned_with_sep self LParen RParen Comma parse_arg'
+      in
+      Ok (args, !var_arg)
 
-and parse_mod pcx : modd =
-  let s = pcx.curr_tok.span.lo in
-  let mod_attrs = parse_inner_attrs pcx in
-  let mod_path = pcx.tokenizer.filename in
-  let mod_name =
-    match Filename.remove_extension (Filename.basename mod_path) with
-    | "lib" -> Filename.basename (Filename.dirname mod_path)
-    | other -> other
-  in
-  let items = ref [] in
-  while (not pcx.stop) && pcx.curr_tok.kind <> RBrace do
-    strip_comments pcx;
-    items := !items @ [parse_item pcx]
-  done;
-  {
-    items = !items
-  ; attrs = mod_attrs
-  ; mod_name
-  ; mod_path
-  ; mod_span = span s pcx
-  }
-;;
+    method parse_ret_ty =
+      match token.kind with
+      | Arrow ->
+          self#bump;
+          let* ty = self#parse_ty in
+          Ok (Some ty)
+      | _ -> Ok None
 
-let parse_mod_from_file tcx path =
-  let file = tcx.sess.source_map#load_file path in
+    method parse_fn_sig =
+      let s = token.span.lo in
+      let* ident = self#parse_ident in
+      let* args, is_variadic = self#parse_fn_args in
+      let* ret_ty = self#parse_ret_ty in
+      Ok
+        { name = ident; args; ret_ty; fn_span = self#mk_span s; is_variadic }
+
+    method parse_pat =
+      let kind = token.kind in
+      match kind with
+      | Ident ->
+          let* ident = self#parse_ident in
+          Ok (PatIdent ident)
+      | t ->
+          self#unexpected_token t ~line:__LINE__;
+          exit 1
+
+    method parse_let =
+      let* _ = self#expect Let in
+      let binding_create pat ty =
+        let* _ = self#expect Eq in
+        let* binding_expr = self#parse_expr in
+        let* _ = self#expect Semi in
+        Ok { binding_pat = pat; binding_ty = ty; binding_expr }
+      in
+      let* pat = self#parse_pat in
+      match token.kind with
+      | Eq -> binding_create pat None
+      | Colon ->
+          self#bump;
+          let* ty = self#parse_ty in
+          binding_create pat (Some ty)
+      | t ->
+          self#unexpected_token t ~line:__LINE__;
+          exit 1
+
+    method parse_stmt =
+      let* _ = self#parse_outer_attrs in
+      match token.kind with
+      | Let ->
+          let* binding = self#parse_let in
+          Ok (Binding binding)
+      | Assert ->
+          self#bump;
+          let* expr = self#parse_expr in
+          let* message =
+            if token.kind = Comma
+            then (
+              self#bump;
+              let* expr = self#parse_expr in
+              Ok (Some expr))
+            else Ok None
+          in
+          let* _ = self#expect Semi in
+          Ok (Ast.Assert (expr, message))
+      | _ ->
+          let* expr = self#parse_expr in
+          (match token.kind with
+           | Semi ->
+               self#bump;
+               Ok (Stmt expr)
+           | Eq ->
+               self#bump;
+               let* init = self#parse_expr in
+               let* _ = self#expect Semi in
+               Ok (Assign (expr, init))
+           | _ -> Ok (Expr expr))
+
+    method should_continue_as_prec_expr expr =
+      let is_block =
+        match expr.expr_kind with If _ | Block _ -> true | _ -> false
+      in
+      match is_block, token.kind, (Option.get prev_token).kind with
+      | true, Star, RParen -> true
+      | true, Star, _ -> false
+      | false, _, _ -> true
+      | _ -> true
+
+    method parse_primary =
+      let s = token.span.lo in
+      let* expr_kind =
+        match token.kind with
+        | Lit lit ->
+            let buf = get_token_str token file#src in
+            self#bump;
+            Ok
+              (Ast.Lit
+                 (match lit with
+                  | Int -> LitInt (int_of_string buf)
+                  | Float -> LitFloat (float_of_string buf)
+                  | Bool -> LitBool (bool_of_string buf)
+                  | String ->
+                      let s = String.sub buf 1 (String.length buf - 2) in
+                      let s = Scanf.unescaped s in
+                      LitStr s
+                  | lit_kind ->
+                      ignore
+                        (Printf.printf "%s\n" (display_literal lit_kind));
+                      assert false))
+        | If ->
+            let* iff = self#parse_if in
+            Ok (Ast.If iff)
+        | LBrace ->
+            let* block = self#parse_block in
+            Ok (Block block)
+        | LParen ->
+            self#bump;
+            let* e = self#parse_expr in
+            let* _ = self#expect RParen in
+            Ok e.expr_kind
+        | _ -> self#parse_path_or_call
+      in
+      Ok { expr_kind; expr_span = self#mk_span s }
+
+    method parse_struct_expr =
+      let* _ = self#expect LBrace in
+      let parse_field () =
+        let* name = self#parse_ident in
+        let* _ = self#expect Colon in
+        let* expr = self#parse_expr in
+        Ok (name, expr)
+      in
+      let rec parse_fields () =
+        match token.kind with
+        | RBrace -> Ok []
+        | Comma ->
+            self#bump;
+            parse_fields ()
+        | _ ->
+            let* field = parse_field () in
+            let* fields = parse_fields () in
+            Ok ([field] @ fields)
+      in
+      let* fields = parse_fields () in
+      let* _ = self#expect RBrace in
+      Ok fields
+
+    (* parses else expr when `else` token is already eaten *)
+    method parse_else =
+      match token.kind with
+      | If | LBrace ->
+          let* expr = self#parse_expr in
+          Ok (Some expr)
+      | _ -> Ok None
+
+    method parse_if =
+      (* if T {} *)
+      (* this syntax will parse the `T {}` as a struct expr because the parser
+         needs to prioritize the empty struct expression `T {}` *)
+      let s = token.span.lo in
+      self#bump;
+      let* cond = self#parse_expr in
+      (* here we check if the condition is an empty struct expr and convert it to
+         a path and empty block*)
+      let* cond, then_block =
+        match cond.expr_kind with
+        | StructExpr { struct_name; fields; _ } when List.length fields = 0
+          ->
+            cond.expr_kind <- Path struct_name;
+            Ok
+              ( cond
+              , {
+                  block_stmts = []
+                ; last_expr = None
+                ; block_span = cond.expr_span
+                } )
+        | _ ->
+            let* block = self#parse_block in
+            Ok (cond, block)
+      in
+      let* else_block =
+        if token.kind = Else
+        then (
+          self#bump;
+          let* elze = self#parse_else in
+          Ok elze)
+        else Ok None
+      in
+      Ok { cond; then_block; else_block; if_span = self#mk_span s }
+
+    method parse_path =
+      let s = token.span.lo in
+      let rec parse_path_impl () =
+        match token.kind with
+        | Ident ->
+            let* ident = self#parse_ident in
+            let segment = [{ ident }] in
+            (match token.kind with
+             | Colon2 ->
+                 self#bump;
+                 let* rest = parse_path_impl () in
+                 Ok (segment @ rest)
+             | _ -> Ok segment)
+        | Unit ->
+            let segment = [{ ident = "unit" }] in
+            self#bump;
+            (match token.kind with
+             | Colon2 ->
+                 self#bump;
+                 let* rest = parse_path_impl () in
+                 Ok (segment @ rest)
+             | _ -> Ok segment)
+        | _ ->
+            (* Sess.emit_err pcx.tcx.sess (unexpected_token pcx Ident token); *)
+            exit 1
+      in
+      let* segments = parse_path_impl () in
+      Ok { segments; span = self#mk_span s }
+
+    method parse_call_args =
+      let args = ref [] in
+      let* _ = self#expect LParen in
+      while token.kind <> RParen do
+        let f () =
+          let* expr = self#parse_expr in
+          args := !args @ [expr];
+          (match token.kind with
+           | Comma -> self#bump
+           | RParen -> ()
+           | t ->
+               (* Sess.emit_err pcx.tcx.sess (unexpected_token pcx RParen pcx.curr_tok) *)
+               self#unexpected_token t ~line:__LINE__;
+               exit 1);
+          Ok ()
+        in
+        ignore (f ())
+      done;
+      let* _ = self#expect RParen in
+      Ok !args
+
+    method parse_path_or_call =
+      let s = token.span.lo in
+      let* path = self#parse_path in
+      match token.kind with
+      | LParen ->
+          let* args = self#parse_call_args in
+          Ok (Call (path, args))
+      | LBrace ->
+          (match self#npeek 2 with
+           | Ident :: [Colon] | RBrace :: _ ->
+               let* fields = self#parse_struct_expr in
+               Ok
+                 (StructExpr
+                    {
+                      struct_name = path
+                    ; fields
+                    ; struct_expr_span = self#mk_span s
+                    })
+           | _ -> Ok (Path path))
+      | _ -> Ok (Path path)
+
+    method parse_prefix =
+      let s = token.span.lo in
+      let* expr_kind =
+        match token.kind with
+        | Star ->
+            self#bump;
+            let* expr = self#parse_prefix in
+            Ok (Deref expr)
+        | Ampersand ->
+            self#bump;
+            let* expr = self#parse_prefix in
+            Ok (Ref expr)
+        | _ ->
+            let* expr = self#parse_primary in
+            Ok expr.expr_kind
+      in
+      Ok { expr_kind; expr_span = self#mk_span s }
+
+    method parse_precedence min_prec =
+      let s = token.span.lo in
+      let* left = self#parse_prefix in
+      let left = ref left in
+      let p = ref (prec token.kind) in
+      if self#should_continue_as_prec_expr !left
+      then (
+        while
+          (p := prec token.kind;
+           !p)
+          > min_prec
+        do
+          let f () =
+            let* kind =
+              match token.kind with
+              | Dot ->
+                  (match self#npeek 2 with
+                   | [Ident; LParen] ->
+                       let* _ = self#expect Dot in
+                       let* name = self#parse_ident in
+                       let* args = self#parse_call_args in
+                       Ok (MethodCall (!left, name, args))
+                   | [Ident; _] ->
+                       let* _ = self#expect Dot in
+                       let* field = self#parse_ident in
+                       Ok (Field (!left, field))
+                   | t ->
+                       self#unexpected_token (List.hd t) ~line:__LINE__;
+                       exit 1)
+              | _ ->
+                  let kind = binary_kind_from_token token.kind in
+                  self#bump;
+                  let* right = self#parse_precedence (!p + 1) in
+                  Ok (Binary (kind, !left, right))
+            in
+            left := { expr_kind = kind; expr_span = self#mk_span s };
+            Ok ()
+          in
+          ignore (f ())
+        done;
+        Ok !left)
+      else Ok !left
+
+    method parse_expr =
+      let* expr = self#parse_precedence 0 in
+      if token.kind = As
+      then (
+        let s = token.span.lo in
+        self#bump;
+        let* ty = self#parse_ty in
+        Ok { expr_kind = Cast (expr, ty); expr_span = self#mk_span s })
+      else Ok expr
+
+    method parse_block =
+      let s = token.span.lo in
+      let stmt_list = ref [] in
+      let last_expr = ref None in
+      if self#eat LBrace
+      then (
+        while token.kind <> RBrace do
+          match token.kind with
+          | RBrace -> ()
+          | _ ->
+              let f () =
+                let* stmt = self#parse_stmt in
+                (match !last_expr with
+                 | Some expr ->
+                     stmt_list := !stmt_list @ [Stmt expr];
+                     last_expr := None
+                 | None -> ());
+                match stmt with
+                | Expr expr ->
+                    last_expr := Some expr;
+                    Ok ()
+                | stmt ->
+                    stmt_list := !stmt_list @ [stmt];
+                    Ok ()
+              in
+              (match f () with Ok () -> () | Error e -> self#emit_err e)
+        done;
+        ignore (self#eat RBrace);
+        Ok
+          {
+            block_stmts = !stmt_list
+          ; last_expr = !last_expr
+          ; block_span = self#mk_span s
+          })
+      else Error (self#err token.span "expected `{`")
+
+    method parse_fn abi is_extern =
+      let s = token.span.lo in
+      self#bump;
+      let* sign = self#parse_fn_sig in
+      if token.kind == Semi
+      then (
+        self#bump;
+        Ok
+          {
+            is_extern
+          ; abi
+          ; fn_sig = sign
+          ; body = None
+          ; func_path = None
+          ; func_span = self#mk_span s
+          })
+      else
+        let* body = self#parse_block in
+        Ok
+          {
+            is_extern
+          ; abi
+          ; fn_sig = sign
+          ; body = Some body
+          ; func_path = None
+          ; func_span = self#mk_span s
+          }
+
+    method parse_type =
+      let s = token.span.lo in
+      self#bump;
+      let* name = self#parse_ident in
+      let members = ref [] in
+      let* _ = self#expect Eq in
+      let* _ = self#expect LBrace in
+      while token.kind <> RBrace do
+        match token.kind with
+        | RBrace -> ()
+        | _ ->
+            let f () =
+              let* arg =
+                let* ident = self#parse_ident in
+                let* _ = self#expect Colon in
+                let* ty = self#parse_ty in
+                Ok (ty, ident)
+              in
+              members := !members @ [arg];
+              (match token.kind with
+               | Comma -> self#bump
+               | RBrace -> ()
+               | t ->
+                   self#unexpected_token t ~line:__LINE__;
+                   exit 1);
+              Ok ()
+            in
+            (match f () with Ok () -> () | Error e -> self#emit_err e)
+      done;
+      let* _ = self#expect RBrace in
+      Ok
+        (Struct
+           { ident = name; members = !members; struct_span = self#mk_span s })
+
+    method parse_impl =
+      let s = token.span.lo in
+      self#bump;
+      let* impl_ty = self#parse_ty in
+      let* _ = self#expect LBrace in
+      let items = ref [] in
+      while token.kind <> RBrace do
+        let f () =
+          let* item =
+            match token.kind with
+            | Fn ->
+                let* fn = self#parse_fn "C" false in
+                Ok [AssocFn fn]
+            | t ->
+                self#unexpected_token ?line:(Some __LINE__) t;
+                exit 1
+          in
+          items := !items @ item;
+          Ok ()
+        in
+        ignore (f ())
+      done;
+      let* _ = self#expect RBrace in
+      Ok { impl_ty; impl_items = !items; impl_span = self#mk_span s }
+
+    method parse_extern attrs =
+      self#bump;
+      let abi =
+        if self#check (Lit String)
+        then (
+          let buf = get_token_str token file#src in
+          self#bump;
+          let s = String.sub buf 1 (String.length buf - 2) in
+          let s = Scanf.unescaped s in
+          s)
+        else "C"
+      in
+      match token.kind with
+      | LBrace ->
+          let f () =
+            self#bump;
+            let items = new vec in
+            while not @@ self#check RBrace do
+              match self#parse_fn abi true with
+              | Ok fn -> items#push fn
+              | Error e -> self#emit_err e
+            done;
+            let* _ = self#expect RBrace in
+            Ok items
+          in
+          let* items = f () in
+          Ok (Foreign items)
+      | Fn ->
+          let* fn = self#parse_fn abi true in
+          Ok (Ast.Fn (fn, attrs))
+      | _ -> assert false
+
+    method parse_item =
+      let* attrs = self#parse_outer_attrs in
+      match token.kind with
+      | Fn ->
+          let* fn = self#parse_fn "C" false in
+          Ok (Ast.Fn (fn, attrs))
+      | Type ->
+          let* ty = self#parse_type in
+          Ok (Ast.Type ty)
+      | Extern ->
+          let* extern_item = self#parse_extern attrs in
+          Ok extern_item
+      | Impl ->
+          let* impl = self#parse_impl in
+          Ok (Ast.Impl impl)
+      | Unit ->
+          self#bump;
+          let* name = self#parse_ident in
+          let* _ = self#expect Semi in
+          Ok (Ast.Unit name)
+      | Mod ->
+          self#bump;
+          let* name = self#parse_ident in
+          let* modd, inline =
+            token.kind |> function
+            | Semi ->
+                self#bump;
+                Ok (None, false)
+            | LBrace ->
+                self#bump;
+                let* modd = self#parse_mod in
+                modd.mod_name <- name;
+                let* _ = self#expect RBrace in
+                Ok (Some modd, true)
+            | _ -> Error (self#err token.span "unexpected_token")
+          in
+          let modd : item = Mod { name; resolved_mod = modd; inline } in
+          Ok modd
+      | t ->
+          self#unexpected_token t ~line:__LINE__;
+          exit 1
+
+    method parse_mod =
+      let s = token.span.lo in
+      let* mod_attrs = self#parse_inner_attrs in
+      let mod_path = tokenizer.filename in
+      let mod_name =
+        match Filename.remove_extension (Filename.basename mod_path) with
+        | "lib" -> Filename.basename (Filename.dirname mod_path)
+        | other -> other
+      in
+      let items = new vec in
+      while not (self#check Eof || self#check RBrace) do
+        let f () =
+          match self#parse_item with
+          | Ok item -> items#push item
+          | Error e -> pcx.span_diagnostic#emit_diagnostic e
+        in
+        f ()
+      done;
+      Ok
+        {
+          items
+        ; attrs = mod_attrs
+        ; mod_name
+        ; mod_path
+        ; mod_span = self#mk_span s
+        }
+  end
+
+let parse_mod_from_file pcx path =
+  let file = pcx.sm#load_file path in
   let tokenizer = Tokenizer.tokenize path file#src in
-  let pcx = parse_ctx_create tcx tokenizer file#src in
-  parse_mod pcx
+  let parser = new parser pcx file tokenizer in
+  parser#bump;
+  parser#parse_mod
 ;;

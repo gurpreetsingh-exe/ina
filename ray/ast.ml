@@ -1,5 +1,7 @@
 open Token
 open Source
+open Structures
+open Structures.Vec
 
 type ident = string
 type path_segment = { ident: ident }
@@ -32,10 +34,11 @@ type ty =
   | Str
   | Ptr of ty
   | Ref of ty
-  | FnTy of ty list * ty * bool
+  | FnTy of ty vec * ty * bool
   | Path of path
   | ImplicitSelf
   | Unit
+  | CVarArgs
   | Err
 
 type attr = {
@@ -57,7 +60,7 @@ and attr_style =
   | Inner
 
 type modd = {
-    mutable items: item list
+    mutable items: item vec
   ; mutable attrs: attr list
   ; mutable mod_name: string
   ; mod_path: string
@@ -82,7 +85,7 @@ and impl = {
 and item =
   | Fn of func * attr_list
   | Type of typ
-  | Foreign of func list
+  | Foreign of func vec
   | Impl of impl
   | Mod of {
         name: string
@@ -90,11 +93,10 @@ and item =
       ; inline: bool
     }
   | Unit of string
-  | Import of path
 
 and fn_sig = {
     name: ident
-  ; mutable args: (ty * ident) list
+  ; mutable args: (ty * ident) vec
   ; ret_ty: ty option
   ; fn_span: Span.t
   ; is_variadic: bool

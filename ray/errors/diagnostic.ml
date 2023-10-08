@@ -1,5 +1,6 @@
 open Printf
 open Source
+open Structures.Vec
 
 let e = "\x1b[0m"
 
@@ -26,59 +27,54 @@ let render_level level =
   sprintf "%s%s%s" (level_to_color level) (display_level level) e
 ;;
 
-type multi_span = {
-    primary_spans: Span.t list
-  ; labels: (Span.t * string * bool) list
+type style =
+  | MainHeaderMsg
+  | HeaderMsg
+  | LineAndColumn
+  | LineNumber
+  | Quotation
+  | UnderlinePrimary
+  | UnderlineSecondary
+  | LabelPrimary
+  | LabelSecondary
+  | NoStyle
+  | Level
+  | Highlight
+  | Addition
+  | Removal
+
+type message = {
+    style: style
+  ; msg: string
 }
 
-let primary_span ms = List.hd ms.primary_spans
-let has_primary_span ms = List.length ms.primary_spans <> 0
+class multi_span ?(primary_spans = new vec) ?(labels = new vec) () =
+  object (self)
+    val primary_spans : Span.t vec = primary_spans
+    val span_labels : (Span.t * message) vec = labels
+    method dummy = primary_spans#all (fun s -> s.lo = 0 && s.hi = 0)
+    method has_primary_span = not self#dummy
+    method primary_span = primary_spans#first
 
-let get_max_line_num_len ms : int =
-  String.length
-    (string_of_int
-       (List.fold_left
-          (fun max_len next -> max next max_len)
-          0
-          (List.map (fun Span.{ hi; _ } -> hi) ms.primary_spans)))
+    method has_span_labels =
+      span_labels#any (fun (s, _) -> s.lo = 0 && s.hi = 0)
+  end
+
+let multi_span span =
+  let primary_spans = new vec in
+  primary_spans#push span;
+  let ms = new multi_span ~primary_spans () in
+  ms
 ;;
 
-type substitution = { parts: (Span.t * string) list }
+class diagnostic level message multi_span =
+  object
+    val level : level = level
+    val message : message vec = message
+    val span : multi_span = multi_span
 
-type sugg = {
-    message: string
-  ; sub: substitution list
-}
-
-type sub_diagnostic = {
-    level: level
-  ; message: string
-  ; span: multi_span
-}
-
-type diagnostic_loc = {
-    line: int
-  ; col: int
-  ; file: string
-}
-
-let loc ((file, line, col, _) : string * int * int * int) =
-  { line; col; file }
-;;
-
-let dg_loc_from_span (_ : Span.t) = { line = 0; col = 0; file = "<anon>" }
-
-let render_dg_loc loc anon_file =
-  if anon_file
-  then sprintf "%s:%d:%d" (Filename.basename loc.file) loc.line loc.col
-  else sprintf "%s:%d:%d" loc.file loc.line loc.col
-;;
-
-type t = {
-    level: level
-  ; message: string
-  ; span: multi_span
-  ; children: sub_diagnostic list
-  ; sugg: sugg list
-  ; loc: diagnostic_loc
-}
+    (* getters *)
+    method level = level
+    method message = message
+    method span = span
+  end

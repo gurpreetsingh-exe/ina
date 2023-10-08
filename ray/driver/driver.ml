@@ -2,35 +2,27 @@ open Printf
 open Front
 open Session
 open Utils
-open Ty
-open Llvm
-open Llvm_X86
-
-external x86AsmPrinterInit : unit -> unit = "LLVMInitializeX86AsmPrinter"
-
-let () =
-  initialize ();
-  x86AsmPrinterInit ();
-  enable_pretty_stacktrace ()
-;;
 
 let () =
   let start = Sys.time () in
   let sess = Sess.create (Args.parse_args ()) in
-  let tcx = tcx_create sess in
-  let time, modd =
-    Timer.time (fun () -> Parser.parse_mod_from_file tcx sess.options.input)
+  let time, res =
+    Timer.time (fun () ->
+        Parser.parse_mod_from_file sess.parse_sess sess.options.input)
   in
-  tcx.sess.options.output <-
-    (if Filename.basename modd.mod_path = "lib.ray"
-     then Filename.dirname modd.mod_path
-     else Path.join [Filename.dirname modd.mod_path; modd.mod_name]);
-  sess.timings.parse <- time;
-  (match sess.options.command with Build -> () | Fmt -> () | _ -> ());
-  let time = (Sys.time () -. start) *. 1000. in
-  if sess.options.display_time
-  then printf "  total: %f ms\n%s" time (Sess.display sess.timings);
-  exit 0
+  match res with
+  | Ok modd ->
+      sess.options.output <-
+        (if Filename.basename modd.mod_path = "lib.ray"
+         then Filename.dirname modd.mod_path
+         else Path.join [Filename.dirname modd.mod_path; modd.mod_name]);
+      sess.timings.parse <- time;
+      (match sess.options.command with Build -> () | Fmt -> () | _ -> ());
+      let time = (Sys.time () -. start) *. 1000. in
+      if sess.options.display_time
+      then printf "  total: %f ms\n%s" time (Sess.display sess.timings);
+      exit 0
+  | Error e -> sess.parse_sess.span_diagnostic#emit_diagnostic e
 ;;
 
 (*
