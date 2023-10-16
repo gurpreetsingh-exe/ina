@@ -7,7 +7,7 @@ type ident = string
 type path_segment = { ident: ident }
 
 type path = {
-    segments: path_segment list
+    segments: path_segment vec
   ; span: Span.t
 }
 
@@ -47,7 +47,7 @@ type attr = {
   ; attr_span: Span.t
 }
 
-and attr_list = attr list
+and attr_vec = attr vec
 
 and attr_kind =
   | Doc of string
@@ -61,7 +61,7 @@ and attr_style =
 
 type modd = {
     mutable items: item vec
-  ; mutable attrs: attr list
+  ; mutable attrs: attr vec
   ; mutable mod_name: string
   ; mod_path: string
   ; mod_span: Span.t
@@ -69,7 +69,7 @@ type modd = {
 
 and strukt = {
     ident: string
-  ; mutable members: (ty * string) list
+  ; mutable members: (ty * string) vec
   ; struct_span: Span.t
 }
 
@@ -78,12 +78,12 @@ and assoc_item = AssocFn of func
 
 and impl = {
     impl_ty: ty
-  ; impl_items: assoc_item list
+  ; impl_items: assoc_item vec
   ; impl_span: Span.t
 }
 
 and item =
-  | Fn of func * attr_list
+  | Fn of func * attr_vec
   | Type of typ
   | Foreign of func vec
   | Impl of impl
@@ -112,7 +112,7 @@ and func = {
 }
 
 and block = {
-    block_stmts: stmt list
+    block_stmts: stmt vec
   ; last_expr: expr option
   ; block_span: Span.t
 }
@@ -156,7 +156,7 @@ and binary_kind =
 and expr_kind =
   | Lit of lit
   | Path of path
-  | Call of path * expr list
+  | Call of expr * expr vec
   | Binary of binary_kind * expr * expr
   | If of iff
   | Block of block
@@ -165,11 +165,11 @@ and expr_kind =
   | StructExpr of struct_expr
   | Field of expr * ident
   | Cast of expr * ty
-  | MethodCall of expr * string * expr list
+  | MethodCall of expr * string * expr vec
 
 and struct_expr = {
     struct_name: path
-  ; fields: (string * expr) list
+  ; fields: (string * expr) vec
   ; struct_expr_span: Span.t
 }
 

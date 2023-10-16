@@ -32,6 +32,10 @@ class ['a] vec =
       match Array.length inner with 0 -> None | i -> Some inner.(i - 1)
 
     method iter f = Array.iter f inner
+    method iteri f = Array.iteri f inner
+
+    method join sep f =
+      Array.to_list inner |> List.map f |> String.concat sep
 
     method partition_point f =
       let left = ref 0 in

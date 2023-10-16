@@ -77,33 +77,19 @@ let parse_spanned_with_sep
     Ok ()
   in
   let rec parse' () =
-    let* _ =
-      if self#token.kind = endd
-      then Ok ()
-      else if !first
-      then (
-        first := false;
+    match self#check endd with
+    | true -> Ok ()
+    | _ when self#check sep && not !first ->
+        self#bump;
+        Ok ()
+    | false ->
+        if !first then first := false;
         let* _ = body () in
-        parse' ())
-      else
-        match self#expect sep with
-        | Ok false ->
-            let* _ = body () in
-            parse' ()
-        | Ok true ->
-            self#emit_err (self#err self#token.span "unexpected delim");
-            Ok ()
-        | Error e ->
-            self#emit_err e;
-            (match f () with
-             | Ok item ->
-                 items#push item;
-                 parse' ()
-             | Error e ->
-                 self#emit_err e;
-                 Ok ())
-    in
-    Ok ()
+        (match self#check sep with
+         | true ->
+             self#bump;
+             parse' ()
+         | false -> Ok ())
   in
   let* _ = parse' () in
   assert (self#eat endd);
@@ -129,6 +115,8 @@ class parser pcx file tokenizer =
       let is_present = self#check kind in
       if is_present then self#bump;
       is_present
+
+    method eat_if_present kind = if self#check kind then self#bump
 
     method npeek n =
       let loc, c = tokenizer.pos, tokenizer.c in
@@ -207,6 +195,7 @@ class parser pcx file tokenizer =
 
     method parse_inner_attrs =
       let s = token.span.lo in
+      let attrs = new vec in
       let rec parse_inner_attrs_impl () =
         let* kind =
           match token.kind with
@@ -228,15 +217,18 @@ class parser pcx file tokenizer =
         in
         match kind with
         | [kind] ->
-            let* attrs = parse_inner_attrs_impl () in
-            Ok ([{ kind; style = Inner; attr_span = self#mk_span s }] @ attrs)
-        | _ -> Ok []
+            attrs#push { kind; style = Inner; attr_span = self#mk_span s };
+            let* _ = parse_inner_attrs_impl () in
+            Ok ()
+        | _ -> Ok ()
       in
-      parse_inner_attrs_impl ()
+      let* _ = parse_inner_attrs_impl () in
+      Ok attrs
 
     method parse_outer_attrs =
       let err = self#err token.span "unexpected inner attribute" in
       let s = token.span.lo in
+      let attrs = new vec in
       let rec parse_outer_attrs_impl () =
         let* kind =
           match token.kind with
@@ -268,13 +260,15 @@ class parser pcx file tokenizer =
         in
         match kind with
         | Some [kind] ->
-            let* attrs = parse_outer_attrs_impl () in
-            Ok ([{ kind; style = Outer; attr_span = self#mk_span s }] @ attrs)
+            attrs#push { kind; style = Outer; attr_span = self#mk_span s };
+            let* _ = parse_outer_attrs_impl () in
+            Ok ()
         | Some [] -> parse_outer_attrs_impl ()
-        | None -> Ok []
-        | _ -> Ok []
+        | None -> Ok ()
+        | _ -> Ok ()
       in
-      parse_outer_attrs_impl ()
+      let* _ = parse_outer_attrs_impl () in
+      Ok attrs
 
     method unexpected_token ?(line = __LINE__) kind =
       let msg =
@@ -497,27 +491,13 @@ class parser pcx file tokenizer =
       Ok { expr_kind; expr_span = self#mk_span s }
 
     method parse_struct_expr =
-      let* _ = self#expect LBrace in
       let parse_field () =
         let* name = self#parse_ident in
         let* _ = self#expect Colon in
         let* expr = self#parse_expr in
         Ok (name, expr)
       in
-      let rec parse_fields () =
-        match token.kind with
-        | RBrace -> Ok []
-        | Comma ->
-            self#bump;
-            parse_fields ()
-        | _ ->
-            let* field = parse_field () in
-            let* fields = parse_fields () in
-            Ok ([field] @ fields)
-      in
-      let* fields = parse_fields () in
-      let* _ = self#expect RBrace in
-      Ok fields
+      parse_spanned_with_sep self LBrace RBrace Comma parse_field
 
     (* parses else expr when `else` token is already eaten *)
     method parse_else =
@@ -538,13 +518,12 @@ class parser pcx file tokenizer =
          a path and empty block*)
       let* cond, then_block =
         match cond.expr_kind with
-        | StructExpr { struct_name; fields; _ } when List.length fields = 0
-          ->
+        | StructExpr { struct_name; fields; _ } when fields#empty ->
             cond.expr_kind <- Path struct_name;
             Ok
               ( cond
               , {
-                  block_stmts = []
+                  block_stmts = new vec
                 ; last_expr = None
                 ; block_span = cond.expr_span
                 } )
@@ -564,53 +543,39 @@ class parser pcx file tokenizer =
 
     method parse_path =
       let s = token.span.lo in
+      let segments = new vec in
       let rec parse_path_impl () =
         match token.kind with
         | Ident ->
             let* ident = self#parse_ident in
-            let segment = [{ ident }] in
+            let segment = { ident } in
+            segments#push segment;
             (match token.kind with
              | Colon2 ->
                  self#bump;
-                 let* rest = parse_path_impl () in
-                 Ok (segment @ rest)
-             | _ -> Ok segment)
+                 let* _ = parse_path_impl () in
+                 Ok ()
+             | _ -> Ok ())
         | Unit ->
-            let segment = [{ ident = "unit" }] in
+            let segment = { ident = "unit" } in
+            segments#push segment;
             self#bump;
             (match token.kind with
              | Colon2 ->
                  self#bump;
-                 let* rest = parse_path_impl () in
-                 Ok (segment @ rest)
-             | _ -> Ok segment)
+                 let* _ = parse_path_impl () in
+                 Ok ()
+             | _ -> Ok ())
         | _ ->
             (* Sess.emit_err pcx.tcx.sess (unexpected_token pcx Ident token); *)
             exit 1
       in
-      let* segments = parse_path_impl () in
+      let* _ = parse_path_impl () in
       Ok { segments; span = self#mk_span s }
 
     method parse_call_args =
-      let args = ref [] in
-      let* _ = self#expect LParen in
-      while token.kind <> RParen do
-        let f () =
-          let* expr = self#parse_expr in
-          args := !args @ [expr];
-          (match token.kind with
-           | Comma -> self#bump
-           | RParen -> ()
-           | t ->
-               (* Sess.emit_err pcx.tcx.sess (unexpected_token pcx RParen pcx.curr_tok) *)
-               self#unexpected_token t ~line:__LINE__;
-               exit 1);
-          Ok ()
-        in
-        ignore (f ())
-      done;
-      let* _ = self#expect RParen in
-      Ok !args
+      parse_spanned_with_sep self LParen RParen Comma (fun () ->
+          self#parse_expr)
 
     method parse_path_or_call =
       let s = token.span.lo in
@@ -618,6 +583,7 @@ class parser pcx file tokenizer =
       match token.kind with
       | LParen ->
           let* args = self#parse_call_args in
+          let path = { expr_kind = Path path; expr_span = self#mk_span s } in
           Ok (Call (path, args))
       | LBrace ->
           (match self#npeek 2 with
@@ -706,7 +672,7 @@ class parser pcx file tokenizer =
 
     method parse_block =
       let s = token.span.lo in
-      let stmt_list = ref [] in
+      let stmts = new vec in
       let last_expr = ref None in
       if self#eat LBrace
       then (
@@ -718,7 +684,7 @@ class parser pcx file tokenizer =
                 let* stmt = self#parse_stmt in
                 (match !last_expr with
                  | Some expr ->
-                     stmt_list := !stmt_list @ [Stmt expr];
+                     stmts#push (Stmt expr);
                      last_expr := None
                  | None -> ());
                 match stmt with
@@ -726,7 +692,7 @@ class parser pcx file tokenizer =
                     last_expr := Some expr;
                     Ok ()
                 | stmt ->
-                    stmt_list := !stmt_list @ [stmt];
+                    stmts#push stmt;
                     Ok ()
               in
               (match f () with Ok () -> () | Error e -> self#emit_err e)
@@ -734,7 +700,7 @@ class parser pcx file tokenizer =
         ignore (self#eat RBrace);
         Ok
           {
-            block_stmts = !stmt_list
+            block_stmts = stmts
           ; last_expr = !last_expr
           ; block_span = self#mk_span s
           })
@@ -772,60 +738,44 @@ class parser pcx file tokenizer =
       let s = token.span.lo in
       self#bump;
       let* name = self#parse_ident in
-      let members = ref [] in
       let* _ = self#expect Eq in
-      let* _ = self#expect LBrace in
-      while token.kind <> RBrace do
-        match token.kind with
-        | RBrace -> ()
-        | _ ->
-            let f () =
-              let* arg =
-                let* ident = self#parse_ident in
-                let* _ = self#expect Colon in
-                let* ty = self#parse_ty in
-                Ok (ty, ident)
-              in
-              members := !members @ [arg];
-              (match token.kind with
-               | Comma -> self#bump
-               | RBrace -> ()
-               | t ->
-                   self#unexpected_token t ~line:__LINE__;
-                   exit 1);
-              Ok ()
-            in
-            (match f () with Ok () -> () | Error e -> self#emit_err e)
-      done;
-      let* _ = self#expect RBrace in
+      let parse_field () =
+        let* ident = self#parse_ident in
+        let* _ = self#expect Colon in
+        let* ty = self#parse_ty in
+        Ok (ty, ident)
+      in
+      let* fields =
+        parse_spanned_with_sep self LBrace RBrace Comma parse_field
+      in
       Ok
         (Struct
-           { ident = name; members = !members; struct_span = self#mk_span s })
+           { ident = name; members = fields; struct_span = self#mk_span s })
 
     method parse_impl =
       let s = token.span.lo in
       self#bump;
       let* impl_ty = self#parse_ty in
       let* _ = self#expect LBrace in
-      let items = ref [] in
+      let items = new vec in
       while token.kind <> RBrace do
         let f () =
           let* item =
             match token.kind with
             | Fn ->
                 let* fn = self#parse_fn "C" false in
-                Ok [AssocFn fn]
+                Ok (AssocFn fn)
             | t ->
                 self#unexpected_token ?line:(Some __LINE__) t;
                 exit 1
           in
-          items := !items @ item;
+          items#push item;
           Ok ()
         in
         ignore (f ())
       done;
       let* _ = self#expect RBrace in
-      Ok { impl_ty; impl_items = !items; impl_span = self#mk_span s }
+      Ok { impl_ty; impl_items = items; impl_span = self#mk_span s }
 
     method parse_extern attrs =
       self#bump;
