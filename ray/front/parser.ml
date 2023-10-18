@@ -278,6 +278,7 @@ class parser pcx file tokenizer =
       exit 1
 
     method parse_ty =
+      let s = token.span.lo in
       match token.kind with
       | Fn ->
           let var_arg = ref false in
@@ -287,32 +288,31 @@ class parser pcx file tokenizer =
                 if token.kind = Dot3 then var_arg := true;
                 self#parse_ty)
           in
-          let unit_ty : ty = Unit in
+          let unit_ty : ty = { kind = Unit; span = { lo = 0; hi = 0 } } in
           let* ret_ty = self#parse_ret_ty in
           let ret_ty = Option.value ~default:unit_ty ret_ty in
-          Ok (FnTy (args, ret_ty, !var_arg))
+          Ok (mk_ty (FnTy (args, ret_ty, !var_arg)) (self#mk_span s))
       | Ident ->
           let name = get_token_str token file#src in
           (match Hashtbl.find_opt builtin_types name with
            | Some ty ->
                self#bump;
-               Ok ty
+               Ok (mk_ty ty @@ self#mk_span s)
            | None ->
                let* path = self#parse_path in
-               let ty : ty = Path path in
-               Ok ty)
+               let ty : ty_kind = Path path in
+               Ok (mk_ty ty @@ self#mk_span s))
       | Star ->
           self#bump;
           let* ty = self#parse_ty in
-          Ok (Ptr ty)
+          Ok (mk_ty (Ptr ty) @@ self#mk_span s)
       | Ampersand ->
           self#bump;
           let* ty = self#parse_ty in
-          let ty : ty = Ref ty in
-          Ok ty
+          Ok (mk_ty (Ref ty) @@ self#mk_span s)
       | Dot3 ->
           self#bump;
-          Ok CVarArgs
+          Ok (mk_ty CVarArgs @@ self#mk_span s)
       | t ->
           self#unexpected_token t ~line:__LINE__;
           exit 1
@@ -329,17 +329,19 @@ class parser pcx file tokenizer =
       let rec maybe_parse_self () =
         match token.kind with
         | Ampersand ->
+            let s = token.span.lo in
             self#bump;
-            let* s = maybe_parse_self () in
-            (match s with
-             | ImplicitSelf, "self" ->
-                 let ty : ty = Ref ImplicitSelf in
-                 Ok (ty, "self")
+            let* self_ = maybe_parse_self () in
+            (match self_ with
+             | ty, "self" when is_self ty ->
+                 let ty : ty_kind = Ref ty in
+                 Ok (mk_ty ty @@ self#mk_span s, "self")
              | _ -> assert false)
         | Ident ->
+            let s = token.span.lo in
             let* ident = self#parse_ident in
             if ident = "self"
-            then Ok (ImplicitSelf, ident)
+            then Ok (mk_ty ImplicitSelf @@ self#mk_span s, ident)
             else
               let* _ = self#expect Colon in
               let* ty = self#parse_ty in
@@ -353,10 +355,11 @@ class parser pcx file tokenizer =
         then self#emit_err (self#err token.span "param after variadic-arg");
         if self#check Dot3
         then (
+          let s = token.span.lo in
           self#bump;
           incr i;
           var_arg := true;
-          Ok (CVarArgs, ""))
+          Ok (mk_ty CVarArgs @@ self#mk_span s, ""))
         else
           let arg = if !i = 0 then maybe_parse_self () else parse_arg () in
           incr i;

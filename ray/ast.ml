@@ -27,7 +27,7 @@ type float_ty =
   | F64
   | F32
 
-type ty =
+type ty_kind =
   | Int of int_ty
   | Float of float_ty
   | Bool
@@ -40,6 +40,14 @@ type ty =
   | Unit
   | CVarArgs
   | Err
+
+and ty = {
+    kind: ty_kind
+  ; span: Span.t
+}
+
+let mk_ty kind span = { kind; span }
+let is_self ty = match ty.kind with ImplicitSelf -> true | _ -> false
 
 type attr = {
     kind: attr_kind
