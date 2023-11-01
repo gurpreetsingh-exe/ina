@@ -1,14 +1,15 @@
 open Token
 open Source
-open Structures
 open Structures.Vec
 
+type node_id = int
 type ident = string
 type path_segment = { ident: ident }
 
 type path = {
     segments: path_segment vec
   ; span: Span.t
+  ; path_id: node_id
 }
 
 type int_ty =
@@ -44,15 +45,17 @@ type ty_kind =
 and ty = {
     kind: ty_kind
   ; span: Span.t
+  ; ty_id: node_id
 }
 
-let mk_ty kind span = { kind; span }
+let mk_ty kind span ty_id = { kind; span; ty_id }
 let is_self ty = match ty.kind with ImplicitSelf -> true | _ -> false
 
 type attr = {
     kind: attr_kind
   ; style: attr_style
   ; attr_span: Span.t
+  ; attr_id: node_id
 }
 
 and attr_vec = attr vec
@@ -73,12 +76,14 @@ type modd = {
   ; mutable mod_name: string
   ; mod_path: string
   ; mod_span: Span.t
+  ; mod_id: node_id
 }
 
 and strukt = {
     ident: string
   ; mutable members: (ty * string) vec
   ; struct_span: Span.t
+  ; struct_id: node_id
 }
 
 and typ = Struct of strukt
@@ -88,6 +93,7 @@ and impl = {
     impl_ty: ty
   ; impl_items: assoc_item vec
   ; impl_span: Span.t
+  ; impl_id: node_id
 }
 
 and item =
@@ -108,6 +114,7 @@ and fn_sig = {
   ; ret_ty: ty option
   ; fn_span: Span.t
   ; is_variadic: bool
+  ; fn_sig_id: node_id
 }
 
 and func = {
@@ -117,12 +124,14 @@ and func = {
   ; body: block option
   ; mutable func_path: path option
   ; func_span: Span.t
+  ; func_id: node_id
 }
 
 and block = {
     block_stmts: stmt vec
   ; last_expr: expr option
   ; block_span: Span.t
+  ; block_id: node_id
 }
 
 and stmt =
@@ -136,6 +145,7 @@ and binding = {
     binding_pat: pat
   ; mutable binding_ty: ty option
   ; binding_expr: expr
+  ; binding_id: node_id
 }
 
 and pat = PatIdent of ident
@@ -143,6 +153,7 @@ and pat = PatIdent of ident
 and expr = {
     mutable expr_kind: expr_kind
   ; expr_span: Span.t
+  ; expr_id: node_id
 }
 
 and binary_kind =
@@ -179,6 +190,7 @@ and struct_expr = {
     struct_name: path
   ; fields: (string * expr) vec
   ; struct_expr_span: Span.t
+  ; struct_expr_id: node_id
 }
 
 and iff = {
@@ -186,6 +198,7 @@ and iff = {
   ; then_block: block
   ; else_block: expr option
   ; if_span: Span.t
+  ; if_id: node_id
 }
 
 and lit =

@@ -40,14 +40,6 @@ type parse_sess = {
   ; span_diagnostic: handler
 }
 
-type parse_ctx = {
-    tokenizer: tokenizer
-  ; src: string
-  ; mutable curr_tok: token
-  ; mutable prev_tok: token option
-  ; mutable stop: bool
-}
-
 let prec = function
   | Dot -> 80
   | Star | Slash -> 70
@@ -61,14 +53,14 @@ let prec = function
 ;;
 
 let parse_spanned_with_sep
-    self
+    parser
     (beginn : token_kind)
     (endd : token_kind)
     (sep : token_kind)
     (f : unit -> 'a presult)
     : 'a vec presult
   =
-  let* _ = self#expect beginn in
+  let* _ = parser#expect beginn in
   let items = new vec in
   let first = ref true in
   let body () =
@@ -77,22 +69,22 @@ let parse_spanned_with_sep
     Ok ()
   in
   let rec parse' () =
-    match self#check endd with
+    match parser#check endd with
     | true -> Ok ()
-    | _ when self#check sep && not !first ->
-        self#bump;
+    | _ when parser#check sep && not !first ->
+        parser#bump;
         Ok ()
     | false ->
         if !first then first := false;
         let* _ = body () in
-        (match self#check sep with
+        (match parser#check sep with
          | true ->
-             self#bump;
+             parser#bump;
              parse' ()
          | false -> Ok ())
   in
   let* _ = parse' () in
-  assert (self#eat endd);
+  assert (parser#eat endd);
   Ok items
 ;;
 
@@ -104,6 +96,7 @@ class parser pcx file tokenizer =
     val mutable prev_token : token option = None
     val tokenizer : tokenizer = tokenizer
     val expected_tokens : token_kind vec = new vec
+    val mutable node_id : node_id = 0
     method token = token
 
     method check kind =
@@ -179,6 +172,11 @@ class parser pcx file tokenizer =
       | Some t -> Span.make start t.span.hi
       | None -> assert false
 
+    method id =
+      let i = node_id in
+      node_id <- node_id + 1;
+      i
+
     method parse_ident =
       if token.kind = Ident
       then (
@@ -217,7 +215,13 @@ class parser pcx file tokenizer =
         in
         match kind with
         | [kind] ->
-            attrs#push { kind; style = Inner; attr_span = self#mk_span s };
+            attrs#push
+              {
+                kind
+              ; style = Inner
+              ; attr_span = self#mk_span s
+              ; attr_id = self#id
+              };
             let* _ = parse_inner_attrs_impl () in
             Ok ()
         | _ -> Ok ()
@@ -260,7 +264,13 @@ class parser pcx file tokenizer =
         in
         match kind with
         | Some [kind] ->
-            attrs#push { kind; style = Outer; attr_span = self#mk_span s };
+            attrs#push
+              {
+                kind
+              ; style = Outer
+              ; attr_span = self#mk_span s
+              ; attr_id = self#id
+              };
             let* _ = parse_outer_attrs_impl () in
             Ok ()
         | Some [] -> parse_outer_attrs_impl ()
@@ -288,31 +298,33 @@ class parser pcx file tokenizer =
                 if token.kind = Dot3 then var_arg := true;
                 self#parse_ty)
           in
-          let unit_ty : ty = { kind = Unit; span = { lo = 0; hi = 0 } } in
+          let unit_ty : ty =
+            { kind = Unit; span = { lo = 0; hi = 0 }; ty_id = self#id }
+          in
           let* ret_ty = self#parse_ret_ty in
           let ret_ty = Option.value ~default:unit_ty ret_ty in
-          Ok (mk_ty (FnTy (args, ret_ty, !var_arg)) (self#mk_span s))
+          Ok (mk_ty (FnTy (args, ret_ty, !var_arg)) (self#mk_span s) self#id)
       | Ident ->
           let name = get_token_str token file#src in
           (match Hashtbl.find_opt builtin_types name with
            | Some ty ->
                self#bump;
-               Ok (mk_ty ty @@ self#mk_span s)
+               Ok (mk_ty ty (self#mk_span s) self#id)
            | None ->
                let* path = self#parse_path in
                let ty : ty_kind = Path path in
-               Ok (mk_ty ty @@ self#mk_span s))
+               Ok (mk_ty ty (self#mk_span s) self#id))
       | Star ->
           self#bump;
           let* ty = self#parse_ty in
-          Ok (mk_ty (Ptr ty) @@ self#mk_span s)
+          Ok (mk_ty (Ptr ty) (self#mk_span s) self#id)
       | Ampersand ->
           self#bump;
           let* ty = self#parse_ty in
-          Ok (mk_ty (Ref ty) @@ self#mk_span s)
+          Ok (mk_ty (Ref ty) (self#mk_span s) self#id)
       | Dot3 ->
           self#bump;
-          Ok (mk_ty CVarArgs @@ self#mk_span s)
+          Ok (mk_ty CVarArgs (self#mk_span s) self#id)
       | t ->
           self#unexpected_token t ~line:__LINE__;
           exit 1
@@ -335,13 +347,13 @@ class parser pcx file tokenizer =
             (match self_ with
              | ty, "self" when is_self ty ->
                  let ty : ty_kind = Ref ty in
-                 Ok (mk_ty ty @@ self#mk_span s, "self")
+                 Ok (mk_ty ty (self#mk_span s) self#id, "self")
              | _ -> assert false)
         | Ident ->
             let s = token.span.lo in
             let* ident = self#parse_ident in
             if ident = "self"
-            then Ok (mk_ty ImplicitSelf @@ self#mk_span s, ident)
+            then Ok (mk_ty ImplicitSelf (self#mk_span s) self#id, ident)
             else
               let* _ = self#expect Colon in
               let* ty = self#parse_ty in
@@ -359,7 +371,7 @@ class parser pcx file tokenizer =
           self#bump;
           incr i;
           var_arg := true;
-          Ok (mk_ty CVarArgs @@ self#mk_span s, ""))
+          Ok (mk_ty CVarArgs (self#mk_span s) self#id, ""))
         else
           let arg = if !i = 0 then maybe_parse_self () else parse_arg () in
           incr i;
@@ -384,7 +396,14 @@ class parser pcx file tokenizer =
       let* args, is_variadic = self#parse_fn_args in
       let* ret_ty = self#parse_ret_ty in
       Ok
-        { name = ident; args; ret_ty; fn_span = self#mk_span s; is_variadic }
+        {
+          name = ident
+        ; args
+        ; ret_ty
+        ; fn_span = self#mk_span s
+        ; is_variadic
+        ; fn_sig_id = self#id
+        }
 
     method parse_pat =
       let kind = token.kind in
@@ -402,7 +421,13 @@ class parser pcx file tokenizer =
         let* _ = self#expect Eq in
         let* binding_expr = self#parse_expr in
         let* _ = self#expect Semi in
-        Ok { binding_pat = pat; binding_ty = ty; binding_expr }
+        Ok
+          {
+            binding_pat = pat
+          ; binding_ty = ty
+          ; binding_expr
+          ; binding_id = self#id
+          }
       in
       let* pat = self#parse_pat in
       match token.kind with
@@ -491,7 +516,7 @@ class parser pcx file tokenizer =
             Ok e.expr_kind
         | _ -> self#parse_path_or_call
       in
-      Ok { expr_kind; expr_span = self#mk_span s }
+      Ok { expr_kind; expr_span = self#mk_span s; expr_id = self#id }
 
     method parse_struct_expr =
       let parse_field () =
@@ -529,6 +554,7 @@ class parser pcx file tokenizer =
                   block_stmts = new vec
                 ; last_expr = None
                 ; block_span = cond.expr_span
+                ; block_id = self#id
                 } )
         | _ ->
             let* block = self#parse_block in
@@ -542,7 +568,14 @@ class parser pcx file tokenizer =
           Ok elze)
         else Ok None
       in
-      Ok { cond; then_block; else_block; if_span = self#mk_span s }
+      Ok
+        {
+          cond
+        ; then_block
+        ; else_block
+        ; if_span = self#mk_span s
+        ; if_id = self#id
+        }
 
     method parse_path =
       let s = token.span.lo in
@@ -574,7 +607,7 @@ class parser pcx file tokenizer =
             exit 1
       in
       let* _ = parse_path_impl () in
-      Ok { segments; span = self#mk_span s }
+      Ok { segments; span = self#mk_span s; path_id = self#id }
 
     method parse_call_args =
       parse_spanned_with_sep self LParen RParen Comma (fun () ->
@@ -586,7 +619,13 @@ class parser pcx file tokenizer =
       match token.kind with
       | LParen ->
           let* args = self#parse_call_args in
-          let path = { expr_kind = Path path; expr_span = self#mk_span s } in
+          let path =
+            {
+              expr_kind = Path path
+            ; expr_span = self#mk_span s
+            ; expr_id = self#id
+            }
+          in
           Ok (Call (path, args))
       | LBrace ->
           (match self#npeek 2 with
@@ -598,6 +637,7 @@ class parser pcx file tokenizer =
                       struct_name = path
                     ; fields
                     ; struct_expr_span = self#mk_span s
+                    ; struct_expr_id = self#id
                     })
            | _ -> Ok (Path path))
       | _ -> Ok (Path path)
@@ -618,7 +658,7 @@ class parser pcx file tokenizer =
             let* expr = self#parse_primary in
             Ok expr.expr_kind
       in
-      Ok { expr_kind; expr_span = self#mk_span s }
+      Ok { expr_kind; expr_span = self#mk_span s; expr_id = self#id }
 
     method parse_precedence min_prec =
       let s = token.span.lo in
@@ -655,7 +695,12 @@ class parser pcx file tokenizer =
                   let* right = self#parse_precedence (!p + 1) in
                   Ok (Binary (kind, !left, right))
             in
-            left := { expr_kind = kind; expr_span = self#mk_span s };
+            left :=
+              {
+                expr_kind = kind
+              ; expr_span = self#mk_span s
+              ; expr_id = self#id
+              };
             Ok ()
           in
           ignore (f ())
@@ -670,7 +715,12 @@ class parser pcx file tokenizer =
         let s = token.span.lo in
         self#bump;
         let* ty = self#parse_ty in
-        Ok { expr_kind = Cast (expr, ty); expr_span = self#mk_span s })
+        Ok
+          {
+            expr_kind = Cast (expr, ty)
+          ; expr_span = self#mk_span s
+          ; expr_id = self#id
+          })
       else Ok expr
 
     method parse_block =
@@ -706,6 +756,7 @@ class parser pcx file tokenizer =
             block_stmts = stmts
           ; last_expr = !last_expr
           ; block_span = self#mk_span s
+          ; block_id = self#id
           })
       else Error (self#err token.span "expected `{`")
 
@@ -724,6 +775,7 @@ class parser pcx file tokenizer =
           ; body = None
           ; func_path = None
           ; func_span = self#mk_span s
+          ; func_id = self#id
           })
       else
         let* body = self#parse_block in
@@ -735,6 +787,7 @@ class parser pcx file tokenizer =
           ; body = Some body
           ; func_path = None
           ; func_span = self#mk_span s
+          ; func_id = self#id
           }
 
     method parse_type =
@@ -753,7 +806,12 @@ class parser pcx file tokenizer =
       in
       Ok
         (Struct
-           { ident = name; members = fields; struct_span = self#mk_span s })
+           {
+             ident = name
+           ; members = fields
+           ; struct_span = self#mk_span s
+           ; struct_id = self#id
+           })
 
     method parse_impl =
       let s = token.span.lo in
@@ -778,7 +836,13 @@ class parser pcx file tokenizer =
         ignore (f ())
       done;
       let* _ = self#expect RBrace in
-      Ok { impl_ty; impl_items = items; impl_span = self#mk_span s }
+      Ok
+        {
+          impl_ty
+        ; impl_items = items
+        ; impl_span = self#mk_span s
+        ; impl_id = self#id
+        }
 
     method parse_extern attrs =
       self#bump;
@@ -879,6 +943,7 @@ class parser pcx file tokenizer =
         ; mod_name
         ; mod_path
         ; mod_span = self#mk_span s
+        ; mod_id = self#id
         }
   end
 
