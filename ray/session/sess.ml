@@ -55,6 +55,10 @@ let create options =
       (* ; target *)
   ; enc = Encoder.create () (* ; machine *)
   ; parse_sess =
-      { sm; span_diagnostic = new handler (Some sm) options.ui_testing }
+      {
+        sm
+      ; span_diagnostic = new handler (Some sm) options.ui_testing
+      ; node_id = Random.int 0xffffff
+      }
   }
 ;;

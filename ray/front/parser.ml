@@ -38,6 +38,7 @@ let builtin_types =
 type parse_sess = {
     sm: source_map
   ; span_diagnostic: handler
+  ; mutable node_id: node_id
 }
 
 let prec = function
@@ -96,7 +97,6 @@ class parser pcx file tokenizer =
     val mutable prev_token : token option = None
     val tokenizer : tokenizer = tokenizer
     val expected_tokens : token_kind vec = new vec
-    val mutable node_id : node_id = 0
     method token = token
 
     method check kind =
@@ -173,8 +173,8 @@ class parser pcx file tokenizer =
       | None -> assert false
 
     method id =
-      let i = node_id in
-      node_id <- node_id + 1;
+      let i = pcx.node_id in
+      pcx.node_id <- pcx.node_id + 1;
       i
 
     method parse_ident =
@@ -416,6 +416,7 @@ class parser pcx file tokenizer =
           exit 1
 
     method parse_let =
+      let s = token.span.lo in
       let* _ = self#expect Let in
       let binding_create pat ty =
         let* _ = self#expect Eq in
@@ -427,6 +428,7 @@ class parser pcx file tokenizer =
           ; binding_ty = ty
           ; binding_expr
           ; binding_id = self#id
+          ; binding_span = self#mk_span s
           }
       in
       let* pat = self#parse_pat in

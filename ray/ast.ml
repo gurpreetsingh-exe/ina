@@ -146,6 +146,7 @@ and binding = {
   ; mutable binding_ty: ty option
   ; binding_expr: expr
   ; binding_id: node_id
+  ; binding_span: Span.t
 }
 
 and pat = PatIdent of ident

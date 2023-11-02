@@ -1,4 +1,5 @@
 open Ast
+open Source.Span
 open Format
 
 let out = ref String.empty
@@ -9,28 +10,39 @@ let green ?(bold = true) s =
 ;;
 
 let red s = "\x1b[31m" ^ s ^ "\x1b[0m"
+let pink s = "\x1b[35m" ^ s ^ "\x1b[0m"
 let blue s = "\x1b[1;34m" ^ s ^ "\x1b[0m"
 let cyan s = "\x1b[1;36m" ^ s ^ "\x1b[0m"
-let l () = out += "└─"
-let t () = out += "├─"
-let id prefix i = out += (green prefix ^ " " ^ red @@ sprintf "[0x%X]" i)
+
+let id prefix i span =
+  out
+  += sprintf
+       "%s %s %s"
+       (green prefix)
+       (red @@ sprintf "[0x%x]" i)
+       (pink @@ sprintf "<%d:%d>" span.lo span.hi)
+;;
+
 let q s = "'" ^ s ^ "'"
+let t = green "├─"
+let bar = green "│ "
+let l = green "└─"
 
 let render_children ?(prefix = "") ?(skip_last = false) items f =
   let nitems = items#len in
   let g i item =
     let last = i = nitems - 1 in
     out += prefix;
-    out += if last && not skip_last then "└─" else "├─";
-    f item (prefix ^ if last && not skip_last then "  " else "│ ")
+    out += if last && not skip_last then l else t;
+    f item (prefix ^ if last && not skip_last then "  " else bar)
   in
   items#iteri g
 ;;
 
-let render_child ?(prefix = "") last item (f : 'a -> string -> unit) =
+let render_child ?(prefix = "") last item f =
   out += prefix;
-  out += if last then "└─" else "├─";
-  f item (prefix ^ if last then "  " else "│ ")
+  out += if last then l else t;
+  f item (prefix ^ if last then "  " else bar)
 ;;
 
 let display_int_ty = function
@@ -78,6 +90,7 @@ and render_fn_sig fnsig =
     let arg =
       match ty.kind with
       | CVarArgs -> "..."
+      | _ when name = "self" -> render_ty ty
       | _ -> sprintf "%s: %s" name (render_ty ty)
     in
     out += (arg ^ if last then "" else ", ")
@@ -99,11 +112,12 @@ and render_stmt stmt prefix =
        | Some msg -> render_child ?prefix:(Some prefix) true msg render_expr
        | None -> ())
   | Assign (left, right) ->
-      out += green "Assign\n";
+      out += green "Assignment\n";
       render_child ?prefix:(Some prefix) false left render_expr;
       render_child ?prefix:(Some prefix) true right render_expr
-  | Binding { binding_pat; binding_ty; binding_expr; binding_id } ->
-      id "Binding" binding_id;
+  | Binding
+      { binding_pat; binding_ty; binding_expr; binding_id; binding_span } ->
+      id "Binding" binding_id binding_span;
       out += " ";
       (match binding_pat with PatIdent ident -> out += (cyan @@ q ident));
       (match binding_ty with
@@ -152,12 +166,12 @@ and render_expr expr prefix =
             | LitBool value -> sprintf "BoolLit '%b'" value);
       out += "\n"
   | Path path ->
-      id "Path" path.path_id;
+      id "Path" path.path_id path.span;
       out += " ";
       out += render_path_ path;
       out += "\n"
   | Call (expr, args) ->
-      id "Call" expr.expr_id;
+      id "Call" expr.expr_id expr.expr_span;
       let empty_args = args#empty in
       if empty_args then out += " no_args";
       out += "\n";
@@ -165,9 +179,9 @@ and render_expr expr prefix =
       if not empty_args
       then
         render_children ?prefix:(Some prefix) args (fun f -> render_expr f)
-  | If { cond; then_block; else_block; if_id; _ } ->
+  | If { cond; then_block; else_block; if_id; if_span } ->
       let has_else = Option.is_some else_block in
-      id "If" if_id;
+      id "If" if_id if_span;
       out += if has_else then " has_else" else " no_else";
       out += "\n";
       render_child ?prefix:(Some prefix) false cond render_expr;
@@ -184,7 +198,7 @@ and render_expr expr prefix =
           (Option.get else_block)
           render_expr
   | Binary (kind, left, right) ->
-      id "Binary" expr.expr_id;
+      id "Binary" expr.expr_id expr.expr_span;
       out += " ";
       out += (green ?bold:(Some false) @@ q @@ render_binary_kind kind);
       out += "\n";
@@ -197,9 +211,9 @@ and render_expr expr prefix =
   | Ref expr ->
       out += green "Ref\n";
       render_child ?prefix:(Some prefix) true expr render_expr
-  | StructExpr { struct_name; fields; struct_expr_id; _ } ->
+  | StructExpr { struct_name; fields; struct_expr_id; struct_expr_span } ->
       let has_fields = not fields#empty in
-      id "StructExpr" struct_expr_id;
+      id "StructExpr" struct_expr_id struct_expr_span;
       out += " ";
       out += render_path_ struct_name;
       if not has_fields then out += " empty";
@@ -221,8 +235,9 @@ and render_expr expr prefix =
       out += "\n";
       render_child ?prefix:(Some prefix) true expr render_expr
   | MethodCall (expr, name, args) ->
-      id "MethodCall" expr.expr_id;
+      id "MethodCall" expr.expr_id expr.expr_span;
       let empty_args = args#empty in
+      out += " ";
       out += (cyan @@ q name);
       if empty_args then out += " no_args";
       out += "\n";
@@ -232,7 +247,7 @@ and render_expr expr prefix =
         render_children ?prefix:(Some prefix) args (fun f -> render_expr f)
 
 and render_block block prefix =
-  id "Block" block.block_id;
+  id "Block" block.block_id block.block_span;
   out += "\n";
   let has_last = Option.is_some block.last_expr in
   render_children
@@ -245,7 +260,7 @@ and render_block block prefix =
   | None -> ()
 
 and render_fn fn prefix =
-  id "Fn" fn.func_id;
+  id "Function" fn.func_id fn.func_span;
   out += " ";
   render_fn_sig fn.fn_sig;
   out += "\n";
@@ -254,7 +269,8 @@ and render_fn fn prefix =
   | None -> ()
 
 and render_struct strukt prefix =
-  id "Struct" strukt.struct_id;
+  id "Struct" strukt.struct_id strukt.struct_span;
+  out += " ";
   out += (green ?bold:(Some false) @@ q strukt.ident ^ "\n");
   let render_field (ty, name) _ =
     out += (cyan @@ q name);
@@ -267,7 +283,7 @@ and render_struct strukt prefix =
 and render_type ty = match ty with Struct strukt -> render_struct strukt
 
 and render_impl impl prefix =
-  id "Impl" impl.impl_id;
+  id "Extension" impl.impl_id impl.impl_span;
   out += " ";
   out += (green ?bold:(Some false) @@ q @@ render_ty impl.impl_ty);
   out += "\n";
@@ -283,12 +299,22 @@ and render_item item prefix =
       out += "\n"
   | Type typ -> render_type typ prefix
   | Impl impl -> render_impl impl prefix
-  | _ -> out += "not implemented\n"
-;;
+  | Mod modd ->
+      out += green (if modd.inline then "InlineModule " else "Module ");
+      out += (cyan @@ q modd.name);
+      out += "\n";
+      (match modd.resolved_mod with
+       | Some modd ->
+           render_child ?prefix:(Some prefix) true modd render_module
+       | None -> ())
+  | Foreign fns ->
+      out += green "ExternBlock\n";
+      render_children ?prefix:(Some prefix) fns render_fn
 
-let render_module m =
-  id "Mod" m.mod_id;
+and render_module m prefix =
+  id "Module" m.mod_id m.mod_span;
+  if m.items#empty then out += " empty";
+  out += sprintf " %s" m.mod_name;
   out += "\n";
-  render_children m.items render_item;
-  out += "\n"
+  render_children ?prefix:(Some prefix) m.items render_item
 ;;
