@@ -85,7 +85,7 @@ and render_fn_sig fnsig =
   out += "\x1b[32m";
   out += " 'fn(";
   let nargs = fnsig.args#len in
-  let f i ((ty, name) : ty * string) =
+  let f i { ty; arg = name; _ } =
     let last = i = nargs - 1 in
     let arg =
       match ty.kind with

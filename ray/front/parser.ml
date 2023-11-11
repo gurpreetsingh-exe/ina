@@ -333,10 +333,10 @@ class parser pcx file tokenizer =
       let i = ref 0 in
       let var_arg = ref false in
       let parse_arg () =
-        let* ident = self#parse_ident in
+        let* arg = self#parse_ident in
         let _ = self#eat Colon in
         let* ty = self#parse_ty in
-        Ok (ty, ident)
+        Ok { ty; arg; arg_id = self#id }
       in
       let rec maybe_parse_self () =
         match token.kind with
@@ -345,19 +345,30 @@ class parser pcx file tokenizer =
             self#bump;
             let* self_ = maybe_parse_self () in
             (match self_ with
-             | ty, "self" when is_self ty ->
+             | { ty; arg = "self"; _ } when is_self ty ->
                  let ty : ty_kind = Ref ty in
-                 Ok (mk_ty ty (self#mk_span s) self#id, "self")
+                 Ok
+                   {
+                     ty = mk_ty ty (self#mk_span s) self#id
+                   ; arg = "self"
+                   ; arg_id = self#id
+                   }
              | _ -> assert false)
         | Ident ->
             let s = token.span.lo in
-            let* ident = self#parse_ident in
-            if ident = "self"
-            then Ok (mk_ty ImplicitSelf (self#mk_span s) self#id, ident)
+            let* arg = self#parse_ident in
+            if arg = "self"
+            then
+              Ok
+                {
+                  ty = mk_ty ImplicitSelf (self#mk_span s) self#id
+                ; arg
+                ; arg_id = self#id
+                }
             else
               let* _ = self#expect Colon in
               let* ty = self#parse_ty in
-              Ok (ty, ident)
+              Ok { ty; arg; arg_id = self#id }
         | t ->
             self#unexpected_token t ~line:__LINE__;
             exit 1
@@ -371,7 +382,12 @@ class parser pcx file tokenizer =
           self#bump;
           incr i;
           var_arg := true;
-          Ok (mk_ty CVarArgs (self#mk_span s) self#id, ""))
+          Ok
+            {
+              ty = mk_ty CVarArgs (self#mk_span s) self#id
+            ; arg = ""
+            ; arg_id = self#id
+            })
         else
           let arg = if !i = 0 then maybe_parse_self () else parse_arg () in
           incr i;

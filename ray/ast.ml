@@ -112,9 +112,15 @@ and item =
     }
   | Unit of string
 
+and arg = {
+    ty: ty
+  ; arg: ident
+  ; arg_id: node_id
+}
+
 and fn_sig = {
     name: ident
-  ; mutable args: (ty * ident) vec
+  ; mutable args: arg vec
   ; ret_ty: ty option
   ; fn_span: Span.t
   ; is_variadic: bool

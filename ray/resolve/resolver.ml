@@ -11,17 +11,20 @@ open Utils.Printer
 let pcmp (a : 'a) (b : 'a) = Obj.magic a = Obj.magic b
 
 let dbg fmt =
-  let loc () =
-    let stack = Printexc.get_callstack 2 in
-    let entries = Printexc.raw_backtrace_entries stack in
-    let slots =
-      Option.get (Printexc.backtrace_slots_of_raw_entry entries.(1))
+  if false
+  then (
+    let loc () =
+      let stack = Printexc.get_callstack 2 in
+      let entries = Printexc.raw_backtrace_entries stack in
+      let slots =
+        Option.get (Printexc.backtrace_slots_of_raw_entry entries.(1))
+      in
+      let loc = Option.get (Printexc.Slot.location slots.(0)) in
+      fprintf stdout "%s:%d:%d: " loc.filename loc.line_number loc.start_char
     in
-    let loc = Option.get (Printexc.Slot.location slots.(0)) in
-    fprintf stdout "%s:%d:%d: " loc.filename loc.line_number loc.start_char
-  in
-  loc ();
-  fprintf stdout fmt
+    loc ();
+    fprintf stdout fmt)
+  else fprintf (open_out Filename.null) fmt
 ;;
 
 type prim_ty =
@@ -33,7 +36,7 @@ type prim_ty =
 and res =
   | Def of (def_id * def_kind)
   | PrimTy of prim_ty
-  | Local of int
+  | Local of node_id
   | Err
 
 type namespace =
@@ -189,6 +192,11 @@ class resolver sess modd =
     method unit_root = unit_root
     method init modul = unit_root <- modul
 
+    method shadow modul ident ns binding =
+      let key = { ident; ns; disambiguator = 0 } in
+      self#set_binding_parent_module binding modul;
+      ignore (modul.resolutions#insert key binding)
+
     method define parent ident ns name_binding =
       let key = { ident; ns; disambiguator = 0 } in
       match self#try_define parent key name_binding with
@@ -258,26 +266,20 @@ class resolver sess modd =
 
     method resolve_path_in_modul modul (segs : path_segment vec) ns =
       let segs_len = segs#len in
-      let res : res = Err in
-      let res = ref res in
       let unit_in_path_report = ref false in
-      for i = 0 to segs_len - 1 do
+      let rec f i modul =
         let ns = if i = segs_len - 1 then ns else Type in
         let seg = segs#get i in
         if i <> 0 && seg.ident = "unit" && not !unit_in_path_report
-        then Printf.printf "`unit` can only appear at the start of a path"
+        then Err
         else
           let key = { ident = seg.ident; ns; disambiguator = 0 } in
-          match !modul.resolutions#get key with
+          match modul.resolutions#get key with
           | Some r ->
-              (match r with
-               | Res r -> res := r
-               | Module modul' -> modul := modul')
-          | None ->
-              (* TODO: return Err here *)
-              ()
-      done;
-      !res
+              (match r with Res r -> r | Module modul -> f (i + 1) modul)
+          | None -> Err
+      in
+      f 0 modul
 
     method resolve_path (modul : modul) (path : path) ns : res =
       let segs = path.segments in
@@ -293,11 +295,10 @@ class resolver sess modd =
       | Value, 1, _ ->
           self#resolve_ident_in_lexical_scope modul (segs#get 0).ident Value
       | _, _, "unit" ->
-          let modul = ref unit_root in
           segs#pop_front;
-          self#resolve_path_in_modul modul segs ns
+          self#resolve_path_in_modul unit_root segs ns
       | _ ->
-          let modul = ref (self#get_root_mod modul) in
+          let modul = self#get_root_mod modul in
           self#resolve_path_in_modul modul segs ns
 
     method resolve_path_extern modul path ns =
@@ -383,20 +384,18 @@ class resolver sess modd =
                  in
                  Sess.emit_err sess.parse_sess err
              | _ -> ());
+            print_endline @@ print_res resolved;
             (match res#insert path.path_id resolved with
              | Some _ -> assert false
              | None -> ())
         | If { cond; then_block; else_block; _ } ->
             visit_expr cond modul;
-            (* TODO: lookup scope id from block_id *)
-            visit_block then_block modul;
+            visit_block then_block;
             (match else_block with
              | Some expr -> visit_expr expr modul
              | None -> ())
         | Ref expr | Deref expr -> visit_expr expr modul
-        | Block block ->
-            (* TODO: lookup scope id from block_id *)
-            visit_block block modul
+        | Block block -> visit_block block
         | Lit _ -> ()
         | StructExpr { struct_name; fields; _ } ->
             let resolved = self#resolve_path modul struct_name (Some Type) in
@@ -412,7 +411,8 @@ class resolver sess modd =
         | MethodCall (expr, _, args) ->
             visit_expr expr modul;
             args#iter (fun expr -> visit_expr expr modul)
-      and visit_block body (modul : modul) =
+      and visit_block body =
+        let modul = mod_table#unsafe_get (def_id body.block_id 0) in
         body.block_stmts#iter (fun stmt ->
             match stmt with
             | Stmt expr | Expr expr -> visit_expr expr modul
@@ -430,13 +430,9 @@ class resolver sess modd =
         | Some expr -> visit_expr expr modul
         | None -> ()
       in
-      let visit_fn (func : func) (modul : modul) =
-        func.fn_sig.args#iter (fun (ty, _) -> resolve_ty ty);
-        match func.body with
-        | Some body ->
-            let m = modul in
-            visit_block body m
-        | None -> ()
+      let visit_fn (func : func) =
+        func.fn_sig.args#iter (fun { ty; _ } -> resolve_ty ty);
+        match func.body with Some body -> visit_block body | None -> ()
       in
       let visit_item (item : item) =
         match item with
@@ -447,11 +443,11 @@ class resolver sess modd =
                  let modul = mod_table#unsafe_get id in
                  self#resolve_paths modul modd
              | None -> ())
-        | Fn (func, _) -> visit_fn func modul
+        | Fn (func, _) -> visit_fn func
         | Type (Struct _) -> assert false
-        | Foreign fns -> fns#iter (fun f -> visit_fn f modul)
+        | Foreign fns -> fns#iter (fun f -> visit_fn f)
         | Impl { impl_items; _ } ->
-            impl_items#iter (function AssocFn fn -> visit_fn fn modul)
+            impl_items#iter (function AssocFn fn -> visit_fn fn)
         | Unit _ -> ()
       in
       modd.items#iter visit_item
