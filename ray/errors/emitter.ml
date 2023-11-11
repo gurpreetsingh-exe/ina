@@ -89,5 +89,5 @@ class emitter sm ui_testing =
               in
               fprintf stderr "%s%s%s" col part.text e);
           fprintf stderr "\n";
-          flush stdout)
+          flush stderr)
   end

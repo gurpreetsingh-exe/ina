@@ -2,6 +2,7 @@ open Printf
 open Front
 open Session
 open Utils
+open Resolve
 
 let () =
   let start = Sys.time () in
@@ -17,7 +18,21 @@ let () =
          then Filename.dirname modd.mod_path
          else Path.join [Filename.dirname modd.mod_path; modd.mod_name]);
       sess.timings.parse <- time;
-      (match sess.options.command with Build -> () | Fmt -> () | _ -> ());
+      (match sess.options.command with
+       | Build ->
+           let resolver = new Resolver.resolver sess modd in
+           let visitor = new Module_graph.visitor resolver modd None in
+           visitor#visit_mod;
+           resolver#init visitor#modul;
+           let printer = new Printer.printer in
+           Resolver.print_modul "" printer visitor#modul;
+           printer#print;
+           resolver#resolve
+       | Fmt ->
+           let open Ast_printer in
+           render_module modd "";
+           Format.print_string !out
+       | _ -> ());
       let time = (Sys.time () -. start) *. 1000. in
       if sess.options.display_time
       then printf "  total: %f ms\n%s" time (Sess.display sess.timings);

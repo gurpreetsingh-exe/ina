@@ -11,10 +11,17 @@ class ['a] vec =
     method all f = Array.for_all f inner
     method any f = Array.exists f inner
 
+    method pop_front =
+      let _, tl = self#split 1 in
+      inner <- tl
+
     method private split i =
-      let left = Array.sub inner 0 i
-      and right = Array.sub inner (i + 1) (Array.length inner - 1) in
-      left, right
+      if i = 0
+      then [||], inner
+      else
+        let left = Array.sub inner 0 i
+        and right = Array.sub inner i (Array.length inner - i) in
+        left, right
 
     method insert i v =
       let left, right = self#split i in

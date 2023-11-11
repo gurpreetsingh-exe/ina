@@ -585,8 +585,9 @@ class parser pcx file tokenizer =
       let rec parse_path_impl () =
         match token.kind with
         | Ident ->
+            let s = token.span.lo in
             let* ident = self#parse_ident in
-            let segment = { ident } in
+            let segment = { ident; span = self#mk_span s } in
             segments#push segment;
             (match token.kind with
              | Colon2 ->
@@ -595,7 +596,7 @@ class parser pcx file tokenizer =
                  Ok ()
              | _ -> Ok ())
         | Unit ->
-            let segment = { ident = "unit" } in
+            let segment = { ident = "unit"; span = self#mk_span s } in
             segments#push segment;
             self#bump;
             (match token.kind with

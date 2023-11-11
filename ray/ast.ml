@@ -4,7 +4,11 @@ open Structures.Vec
 
 type node_id = int
 type ident = string
-type path_segment = { ident: ident }
+
+type path_segment = {
+    ident: ident
+  ; span: Span.t
+}
 
 type path = {
     segments: path_segment vec

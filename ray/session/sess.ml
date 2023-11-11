@@ -31,8 +31,8 @@ let display timings =
 
 type t = {
     options: Config.t
-  ; timings: timings (* ; target: target *)
-  ; enc: Encoder.t (* ; machine: TargetMachine.t *)
+  ; timings: timings
+  ; enc: Encoder.t
   ; parse_sess: parse_sess
 }
 
@@ -40,7 +40,6 @@ let emit_err sess err = sess.span_diagnostic#emit_diagnostic err
 
 let create options =
   let sm = new source_map in
-  (* let target, machine = target () in *)
   {
     options
   ; timings =
@@ -52,8 +51,7 @@ let create options =
       ; llvm = 0.
       ; gen_and_link = 0.
       }
-      (* ; target *)
-  ; enc = Encoder.create () (* ; machine *)
+  ; enc = Encoder.create ()
   ; parse_sess =
       {
         sm

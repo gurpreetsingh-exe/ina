@@ -1,5 +1,4 @@
 (library
- (enabled_if false)
  (name resolve)
- (libraries ast front sema errors metadata utils)
- (modules paths resolver))
+ (libraries ast ty middle front errors metadata utils)
+ (modules module_graph resolver))

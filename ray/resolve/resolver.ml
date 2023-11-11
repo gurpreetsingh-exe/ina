@@ -1,12 +1,40 @@
 open Printf
 open Ast
-open Ty
-open Utils
-open Front
-open Metadata
-open Errors
+open Session
+open Structures.Vec
+open Structures.Hashmap
+open Middle.Ctx
+open Middle.Ty
+open Middle.Def_id
+open Utils.Printer
 
-let stdlib = "lib"
+let pcmp (a : 'a) (b : 'a) = Obj.magic a = Obj.magic b
+
+let dbg fmt =
+  let loc () =
+    let stack = Printexc.get_callstack 2 in
+    let entries = Printexc.raw_backtrace_entries stack in
+    let slots =
+      Option.get (Printexc.backtrace_slots_of_raw_entry entries.(1))
+    in
+    let loc = Option.get (Printexc.Slot.location slots.(0)) in
+    fprintf stdout "%s:%d:%d: " loc.filename loc.line_number loc.start_char
+  in
+  loc ();
+  fprintf stdout fmt
+;;
+
+type prim_ty =
+  | Int of int_ty
+  | Float of float_ty
+  | Bool
+  | Str
+
+and res =
+  | Def of (def_id * def_kind)
+  | PrimTy of prim_ty
+  | Local of int
+  | Err
 
 type namespace =
   | Type
@@ -14,21 +42,17 @@ type namespace =
 
 and module_kind =
   | Block
-  | Impl of ty
   | Def of (def_kind * def_id * string)
 
 and modul = {
     mkind: module_kind
   ; parent: modul option
   ; resolutions: resolutions
-  ; scope_table: (binding_key, name_resolution) Hashtbl.t
 }
 
-and name_binding_kind =
+and name_resolution =
   | Res of res
   | Module of modul
-
-and disambiguator = { mutable stack: int list }
 
 and binding_key = {
     ident: string
@@ -36,584 +60,399 @@ and binding_key = {
   ; disambiguator: int
 }
 
-and name_binding = { kind: name_binding_kind (* vis : vis *) }
-and name_resolution = { binding: name_binding }
-and resolutions = (binding_key, name_resolution) Hashtbl.t
+and resolutions = (binding_key, name_resolution) hashmap
+
+type 'a nodemap = (node_id, 'a) hashmap
+
+let res_to_def_kind : res -> string = function
+  | Def (_, def_kind) -> print_def_kind def_kind
+  | _ -> assert false
+;;
+
+let get_def_kind binding =
+  match binding with Res res -> res_to_def_kind res | Module _ -> "module"
+;;
 
 let name_binding_kind_to_enum = function Res _ -> 0L | Module _ -> 1L
+let render_ns = function Type -> "type" | Value -> "value"
 
-module Res = struct
-  type t = res
+let print_prim_ty : prim_ty -> string = function
+  | Int _ -> "int"
+  | Float _ -> "float"
+  | Bool -> "bool"
+  | Str -> "str"
+;;
 
-  let modul binding : modul =
-    match binding.kind with Res _ -> assert false | Module m -> m
-  ;;
+let print_res : res -> string = function
+  | Def (id, kind) ->
+      sprintf "(%s~%s)" (print_def_kind kind) (print_def_id id)
+  | PrimTy ty -> print_prim_ty ty
+  | Local id -> "local#" ^ string_of_int id
+  | Err -> "err"
+;;
 
-  let res binding : res =
-    match binding.kind with Res res -> res | Module _ -> assert false
-  ;;
-end
+let module_res modul =
+  match modul.mkind with
+  | Def (kind, def_id, _) ->
+      let res : res = Def (def_id, kind) in
+      Some res
+  | _ -> None
+;;
+
+let binding_res binding =
+  match binding with Res res -> res | Module m -> Option.get (module_res m)
+;;
 
 let rec get_root_path modul =
-  let name = function
-    | Block -> assert false
-    | Impl ty ->
-        (match ty with
-         | Ident path ->
-             List.nth path.segments (List.length path.segments - 1)
-         | _ -> render_ty ty)
-    | Def (_, _, name) -> name
-  in
+  let name = function Block -> assert false | Def (_, _, name) -> name in
   match modul.parent with
   | Some parent -> get_root_path parent @ [name modul.mkind]
   | None -> [name modul.mkind]
 ;;
 
-let add_name_res resolutions key res = Hashtbl.replace resolutions key res
-
-let get_name_res (resolutions : resolutions) (key : binding_key) =
-  if Hashtbl.mem resolutions key
-  then Some (Hashtbl.find resolutions key)
-  else None
-;;
-
-let print_binding_key key =
-  (* let ns = function Type -> "type" | Value -> "value" in *)
-  sprintf "%s.%d" key.ident key.disambiguator
-;;
-
-let rec print_nameres (res : name_resolution) (depth : int) =
-  print_name_binding res.binding depth
-
-and print_name_binding name_binding depth =
-  match name_binding.kind with
-  | Res res -> print_res res
-  | Module modul -> "\n" ^ print_resolutions modul.resolutions (depth + 1)
-
-and print_resolutions (res : resolutions) (depth : int) =
-  let indent = String.make (depth * 2) ' ' in
-  let print_pair (key, res) =
-    sprintf
-      "%s%s: %s"
-      indent
-      (print_binding_key key)
-      (print_nameres res depth)
-  in
-  Hashtbl.to_seq res
-  |> Array.of_seq
-  |> Array.map print_pair
-  |> Array.to_list
-  |> String.concat "\n"
-;;
-
-let print_resolutions res = print_endline (print_resolutions res 0)
-
-let print_scope scope_table =
-  let print_scope' _ =
-    let print_pair (key, res) =
-      sprintf "%s: %s" (print_binding_key key) (print_nameres res 0)
-    in
-    Hashtbl.to_seq scope_table
-    |> Array.of_seq
-    |> Array.map print_pair
-    |> Array.to_list
-    |> String.concat "\n"
-  in
-  print_endline (print_scope' ())
-;;
+let print_binding_key key = sprintf "%s" key.ident
 
 let print_mkind = function
   | Block -> "block"
-  | Def (_, id, ident) -> sprintf "%s%d" ident id.inner
-  | Impl ty -> sprintf "impl %s" @@ render_ty ty
+  | Def (kind, id, ident) ->
+      sprintf "%s [%s] <%s>" ident (print_def_kind kind) (print_def_id id)
 ;;
 
-type t = {
-    tcx: tcx
-  ; mutable modd: modd
-  ; mutable modul: modul option
-  ; mutable unit_root: modul
-  ; mod_table: (def_id, modul) Hashtbl.t
-  ; mutable extern_units: modul list
-  ; mutable is_root: bool
-  ; disambiguator: disambiguator
-  ; mutable key: binding_key
-  ; units: (string, int) Hashtbl.t
-  ; mutable impl: ty option
-}
+let rec print_nameres prefix printer nameres =
+  match nameres with
+  | Res res ->
+      printer#append (green ?bold:(Some false) @@ q @@ print_res res);
+      printer#append "\n"
+  | Module modul -> print_modul prefix printer modul
 
-let create tcx modd =
-  {
-    tcx
-  ; modd
-  ; modul = None
-  ; unit_root =
-      {
-        mkind = Block
-      ; parent = None
-      ; resolutions = Hashtbl.create 0
-      ; scope_table = Hashtbl.create 0
-      }
-  ; mod_table = Hashtbl.create 0
-  ; extern_units = []
-  ; is_root = true
-  ; disambiguator = { stack = [0] }
-  ; key = { ident = ""; ns = Value; disambiguator = 0 }
-  ; units = Hashtbl.create 0
-  ; impl = None
-  }
+and print_resolution prefix printer res =
+  render_children ?prefix:(Some prefix) printer res (fun (k, v) prefix ->
+      match v with
+      | Res _ ->
+          printer#append @@ print_binding_key k;
+          printer#append " ";
+          (* render_child ?prefix:(Some prefix) printer true v (fun v prefix -> *)
+          print_nameres prefix printer v
+      | _ -> print_nameres prefix printer v)
+(* render_child ?prefix:(Some prefix) printer true res (fun s prefix -> *)
+(*     printer#append "defs\n"; *)
+(*     render_children ?prefix:(Some prefix) printer s (fun (k, v) prefix -> *)
+(*         printer#append @@ print_binding_key k; *)
+(*         printer#append "\n"; *)
+(*         render_child ?prefix:(Some prefix) printer true v (fun v prefix -> *)
+(*             print_nameres prefix printer v))) *)
+
+and print_modul prefix printer modul =
+  printer#append
+  @@ print_mkind modul.mkind
+  ^ " "
+  ^ (match modul.parent with
+     | Some m -> green ?bold:(Some false) @@ q @@ print_mkind m.mkind
+     | None -> "'no parent'")
+  ^ "\n";
+  print_resolution prefix printer modul.resolutions
 ;;
 
-let add_mod resolver id modul = Hashtbl.replace resolver.mod_table id modul
+class disambiguator =
+  object
+    val mutable stack : int list = []
+    method create = List.hd stack
 
-let add_unit resolver name =
-  match Hashtbl.find_opt resolver.units name with
-  | None ->
-      let id = Hashtbl.length resolver.units + 1 in
-      Hashtbl.add resolver.units name id;
-      id
-  | Some id -> id
-;;
+    method inc =
+      stack <- (match stack with dg :: rest -> [dg + 1] @ rest | [] -> [0])
 
-let unit_id resolver name =
-  match Hashtbl.find_opt resolver.units name with
-  | Some id -> id
-  | None -> add_unit resolver name
-;;
+    method dec =
+      stack <- (match stack with dg :: rest -> [dg - 1] @ rest | [] -> [0])
 
-let rec encode_module enc modul =
-  (match modul.mkind with
-   | Def (_, def_id, name) ->
-       Encoder.emit_usize enc 0;
-       Encoder.emit_u32 enc def_id.inner;
-       Encoder.emit_str enc name
-   | Impl ty ->
-       Encoder.emit_usize enc 1;
-       encode enc ty
-   | _ -> assert false);
-  Encoder.emit_usize enc @@ Hashtbl.length modul.resolutions;
-  Hashtbl.iter
-    (fun key nameres ->
-      Encoder.emit_str enc key.ident;
-      (* disambiguator for impl and struct *)
-      Encoder.emit_u32 enc key.disambiguator;
-      Encoder.emit_u8 enc (match key.ns with Value -> 0 | Type -> 1);
-      let kind = nameres.binding.kind in
-      let dis = name_binding_kind_to_enum kind in
-      match kind with
-      | Res res -> Encoder.emit_with enc dis (fun e -> encode_res e res)
-      | Module m -> Encoder.emit_with enc dis (fun e -> encode_module e m))
-    modul.resolutions
-;;
+    method push = stack <- [0] @ stack
+    method pop = stack <- (match stack with _ :: rest -> rest | [] -> [0])
+  end
 
-let rec decode_module resolver dec parent =
-  let mkind =
-    match Decoder.read_usize dec with
-    | 0 ->
-        let def_id = def_id (Decoder.read_u32 dec) dec.unit_id in
-        let name = Decoder.read_str dec in
-        Def (Mod, def_id, name)
-    | 1 -> Impl (decode dec)
-    | _ -> assert false
-  in
-  let modul =
-    {
-      mkind
-    ; parent
-    ; resolutions = Hashtbl.create 0
-    ; scope_table = Hashtbl.create 0
-    }
-  in
-  let module_entries = Decoder.read_usize dec in
-  List.iter
-    (fun _ ->
-      let ident = Decoder.read_str dec in
-      let disambiguator = Decoder.read_u32 dec in
-      let ns =
-        match Decoder.read_u8 dec with
-        | 0 -> Value
-        | 1 -> Type
-        | _ -> assert false
-      in
-      let key = { ident; ns; disambiguator } in
-      let dis = Decoder.read_usize dec in
-      let kind =
-        match dis with
-        | 0 -> Res (decode_res dec)
-        | 1 -> Module (decode_module resolver dec (Some modul))
-        | _ -> assert false
-      in
-      let binding = { binding = { kind } } in
-      add_name_res modul.resolutions key binding)
-    (List.init module_entries (fun x -> x));
-  (match modul.mkind with
-   | Def (_, def_id, _) -> add_mod resolver def_id modul
-   | Impl _ -> ()
-   | _ -> ());
-  modul
-;;
+class resolver sess modd =
+  object (self)
+    val tcx : tcx = new tcx
+    val sess : Sess.t = sess
+    val modd : modd = modd
+    val mod_table : (def_id, modul) hashmap = new hashmap
+    val res : res nodemap = new hashmap
+    method mod_table = mod_table
 
-module Disambiguator = struct
-  let create disambiguator = List.hd disambiguator.stack
+    val binding_parent_module : (name_resolution, modul) hashmap =
+      new hashmap
 
-  let inc disambiguator =
-    disambiguator.stack <-
-      (match disambiguator.stack with
-       | dg :: rest -> [dg + 1] @ rest
-       | [] -> [0])
-  ;;
+    val disambiguator = new disambiguator
+    val block_map : (binding_key, name_resolution) hashmap = new hashmap
 
-  let dec disambiguator =
-    disambiguator.stack <-
-      (match disambiguator.stack with
-       | dg :: rest -> [dg - 1] @ rest
-       | [] -> [0])
-  ;;
+    val mutable unit_root : modul =
+      { mkind = Block; parent = None; resolutions = new hashmap }
 
-  let push disambiguator = disambiguator.stack <- [0] @ disambiguator.stack
+    method unit_root = unit_root
+    method init modul = unit_root <- modul
 
-  let pop disambiguator =
-    disambiguator.stack <-
-      (match disambiguator.stack with _ :: rest -> rest | [] -> [0])
-  ;;
-end
+    method define parent ident ns name_binding =
+      let key = { ident; ns; disambiguator = 0 } in
+      match self#try_define parent key name_binding with
+      | Ok () -> ()
+      | Error e -> sess.parse_sess.span_diagnostic#emit_diagnostic e
 
-let key resolver =
-  let key = resolver.key in
-  { key with disambiguator = Disambiguator.create resolver.disambiguator }
-;;
+    method set_binding_parent_module binding modul =
+      match binding_parent_module#insert binding modul with
+      | Some old_modul -> if not @@ pcmp old_modul modul then assert false
+      | None -> ()
 
-let add_scope_res scope_table res binding =
-  Hashtbl.replace scope_table res binding
-;;
+    method resolutions modul = modul.resolutions
 
-let find_scope_res scope_table key =
-  let binding = Hashtbl.find scope_table key in
-  Res.modul binding.binding
-;;
+    method resolution modul key =
+      let res = self#resolutions modul in
+      match res#get key with Some nameres -> nameres | None -> assert false
 
-(* TODO: check for modules in subfolder *)
-(* foo.ray:
+    method try_define modul key binding =
+      self#set_binding_parent_module binding modul;
+      match modul.resolutions#insert key binding with
+      | Some old_binding ->
+          if not @@ pcmp old_binding binding
+          then Error (self#redefinition_error key binding)
+          else Ok ()
+      | None -> Ok ()
 
-   ``` mod bar; ```
+    method redefinition_error key binding =
+      let kind = get_def_kind binding in
+      printf "%s `%s` is already defined\n" kind key.ident;
+      assert false
 
-   foo/bar.ray:
+    method get_root_mod modul : modul =
+      match modul.mkind with
+      | Def (kind, id, _) ->
+          assert (kind = Mod);
+          Option.get @@ mod_table#get id
+      | Block ->
+          (match modul.parent with
+           | Some m -> self#get_root_mod m
+           | _ -> assert false)
 
-   ``` /// some stuff ```
+    method resolve_ident_in_lexical_scope modul ident ns =
+      let key = { ident; ns; disambiguator = 0 } in
+      dbg
+        "resolve_ident_in_lexical_scope(module = %s, ident = %s, ns = %s)\n"
+        (print_mkind modul.mkind)
+        ident
+        (match ns with Type -> "type" | Value -> "value");
+      match modul.resolutions#get key with
+      | Some r ->
+          (match r with
+           | Res r -> r
+           | Module modul ->
+               (* recursive function *)
+               self#resolve_ident_in_lexical_scope
+                 (self#get_root_mod modul)
+                 ident
+                 ns)
+      | None ->
+          (match modul.parent with
+           | Some modul' ->
+               (match modul.mkind with
+                | Block ->
+                    self#resolve_ident_in_lexical_scope modul' ident ns
+                | _ -> Err)
+           | _ -> Err)
 
-   this doesn't work currently *)
-let rec mod_exists resolver name =
-  let f path =
-    if Sys.file_exists (path ^ ".ray")
-    then true
-    else if Sys.file_exists path
-    then true
-    else if Filename.extension name <> ".ray"
-    then mod_exists resolver (name ^ ".ray")
-    else false
-  in
-  f
-    (if resolver.is_root
-     then Path.join [Filename.dirname resolver.modd.mod_path; name]
-     else
-       Path.join
-         [
-           Filename.dirname resolver.modd.mod_path
-         ; resolver.modd.mod_name
-         ; name
-         ])
-;;
-
-let create_path resolver name =
-  let f name =
-    if Sys.file_exists (name ^ ".ray")
-    then name ^ ".ray"
-    else if Sys.file_exists name
-    then
-      if Sys.is_directory name
-      then Path.join [name; "lib.ray"]
-      else name ^ ".ray"
-    else
-      let path = Path.join [Filename.dirname resolver.modd.mod_path; name] in
-      let f path =
-        if Sys.is_directory path then Path.join [path; "lib.ray"] else path
-      in
-      let path =
-        if Sys.file_exists (path ^ ".ray")
-        then f (path ^ ".ray")
-        else if Sys.file_exists path
-        then f path
-        else raise Not_found
-      in
-      path
-  in
-  f
-    (if resolver.is_root
-     then Path.join [Filename.dirname resolver.modd.mod_path; name]
-     else
-       Path.join
-         [
-           Filename.dirname resolver.modd.mod_path
-         ; resolver.modd.mod_name
-         ; name
-         ])
-;;
-
-let fn_ty func =
-  let { fn_sig = { args; ret_ty; is_variadic; _ }; _ } = func in
-  let ret_ty = Option.value ret_ty ~default:Unit in
-  FnTy (List.map (fun (ty, _, _) -> ty) args, ret_ty, is_variadic)
-;;
-
-let struct_ty (strukt : strukt) path =
-  let name = render_path path in
-  Struct (name, List.map (fun (ty, field) -> field, ty) strukt.members)
-;;
-
-let rec resolve resolver root : modul =
-  let id = def_id resolver.modd.mod_id 0 in
-  let mkind = Def (Mod, id, resolver.modd.mod_name) in
-  let modul =
-    {
-      mkind
-    ; parent = resolver.modul
-    ; resolutions = Hashtbl.create 0
-    ; scope_table = Hashtbl.create 0
-    }
-  in
-  if root then resolver.unit_root <- modul;
-  add_mod resolver id modul;
-  let rec visit_expr (expr : expr) (key : binding_key) (modul : modul) =
-    match expr.expr_kind with
-    | Binary (_, left, right) ->
-        visit_expr left key modul;
-        visit_expr right key modul
-    | Block block ->
-        let key =
-          {
-            key with
-            disambiguator = Disambiguator.create resolver.disambiguator
-          }
-        in
-        Disambiguator.inc resolver.disambiguator;
-        let m = visit_block block key (Some modul) in
-        let binding = { binding = { kind = Module m } } in
-        add_name_res modul.resolutions key binding
-    | If { cond; then_block; else_block } ->
-        visit_expr cond key modul;
-        let key =
-          {
-            key with
-            disambiguator = Disambiguator.create resolver.disambiguator
-          }
-        in
-        Disambiguator.inc resolver.disambiguator;
-        let m = visit_block then_block key (Some modul) in
-        let binding = { binding = { kind = Module m } } in
-        add_name_res modul.resolutions key binding;
-        (match else_block with
-         | Some expr -> visit_expr expr key modul
-         | None -> ())
-    | Call (_, args) -> List.iter (fun e -> visit_expr e key modul) args
-    | MethodCall (expr, _, args) ->
-        visit_expr expr key modul;
-        List.iter (fun e -> visit_expr e key modul) args
-    | Field (expr, _) | Cast (expr, _) | Ref expr | Deref expr ->
-        visit_expr expr key modul
-    | StructExpr { fields; _ } ->
-        List.iter (fun (_, e) -> visit_expr e key modul) fields
-    | Lit _ | Path _ -> ()
-  and visit_block (block : block) (key : binding_key) (parent : modul option)
-      : modul
-    =
-    Disambiguator.push resolver.disambiguator;
-    let modul =
-      {
-        mkind = Block
-      ; parent
-      ; resolutions = Hashtbl.create 0
-      ; scope_table = Hashtbl.create 0
-      }
-    in
-    let visit_stmt stmt =
-      match stmt with
-      | Binding { binding_expr; _ } -> visit_expr binding_expr key modul
-      | Stmt e | Expr e | Assert (e, _) -> visit_expr e key modul
-      | Assign (e1, e2) ->
-          visit_expr e1 key modul;
-          visit_expr e2 key modul
-    in
-    List.iter visit_stmt block.block_stmts;
-    (match block.last_expr with
-     | Some expr -> visit_expr expr key modul
-     | None -> ());
-    Disambiguator.pop resolver.disambiguator;
-    modul
-  in
-  let visit_fn func modul =
-    let name = func.fn_sig.name in
-    let segments =
-      if func.is_extern then [name] else get_root_path modul @ [name]
-    in
-    let mangled_name =
-      if func.is_extern
-      then name
-      else
-        "_Z"
-        ^ String.concat
-            ""
-            (List.map
-               (fun seg -> string_of_int (String.length seg) ^ seg)
-               segments)
-    in
-    let id = def_id func.func_id 0 in
-    let res : res =
-      Def (id, if func.abi = "intrinsic" then Intrinsic else Fn)
-    in
-    let path = { segments; res } in
-    func.func_path <- Some path;
-    create_def resolver.tcx id (Ty (fn_ty func)) (Some mangled_name);
-    let key = { ident = name; ns = Value; disambiguator = 0 } in
-    let binding = { binding = { kind = Res res } } in
-    add_name_res modul.resolutions key binding;
-    (match func.body with
-     | Some block ->
-         let m = visit_block block key (Some modul) in
-         let binding = { binding = { kind = Module m } } in
-         add_scope_res modul.scope_table key binding
-     | None -> ());
-    id
-  in
-  let visit_item (item : item) =
-    match item with
-    | Mod m ->
-        let name = m.name in
-        let modd =
-          if m.inline
-          then m.resolved_mod
-          else if not (mod_exists resolver name)
-          then (
-            Session.Sess.emit_err
-              resolver.tcx.sess
-              {
-                message = sprintf "module `%s` not found" name
-              ; level = Err
-              ; span = { primary_spans = []; labels = [] }
-              ; children = []
-              ; sugg = []
-              ; loc = Diagnostic.loc __POS__
-              };
-            None)
-          else
-            let path = create_path resolver name in
-            let ic = open_in path in
-            let src = really_input_string ic (in_channel_length ic) in
-            close_in ic;
-            let tokenizer = Tokenizer.tokenize path src in
-            let pctx = Parser.parse_ctx_create resolver.tcx tokenizer src in
-            Some (Parser.parse_mod pctx)
-        in
-        (match modd with
-         | Some modd ->
-             let tmp_modd = resolver.modd in
-             let tmp_modul = resolver.modul in
-             let tmp_is_root = resolver.is_root in
-             resolver.modd <- modd;
-             resolver.modul <- Some modul;
-             resolver.is_root <- false;
-             let modul' = resolve resolver false in
-             resolver.modd <- tmp_modd;
-             resolver.modul <- tmp_modul;
-             resolver.is_root <- tmp_is_root;
-             let key =
-               { ident = modd.mod_name; ns = Type; disambiguator = 0 }
-             in
-             let binding = { binding = { kind = Module modul' } } in
-             add_name_res modul.resolutions key binding;
-             m.resolved_mod <- Some modd
-         | None -> ())
-    | Fn (func, _) -> ignore (visit_fn func modul)
-    | Type (Struct s) ->
-        let name = s.ident in
-        let id = def_id s.struct_id 0 in
-        let segments = get_root_path modul @ [name] in
-        let res : res = Def (id, Struct) in
-        let path = { segments; res } in
-        create_def resolver.tcx id (Ty (struct_ty s path)) None;
-        let key = { ident = name; ns = Type; disambiguator = 0 } in
-        let binding = { binding = { kind = Res res } } in
-        add_name_res modul.resolutions key binding
-    | Impl { impl_ty; impl_items } ->
-        let ident =
-          match impl_ty with
-          | Ident path ->
-              List.nth path.segments (List.length path.segments - 1)
-          | _ -> render_ty impl_ty
-        in
-        let f modul' =
-          List.iter
-            (function
-             | AssocFn fn ->
-                 let id = visit_fn fn modul' in
-                 let name = fn.fn_sig.name in
-                 create_impl resolver.tcx impl_ty name id)
-            impl_items
-        in
-        let key = { ident; ns = Type; disambiguator = 1 } in
-        (match get_name_res modul.resolutions key with
-         | Some res -> f @@ Res.modul res.binding
-         | None ->
-             let mkind = Impl impl_ty in
-             let modul' =
-               {
-                 mkind
-               ; parent = Some modul
-               ; resolutions = Hashtbl.create 0
-               ; scope_table = Hashtbl.create 0
-               }
-             in
-             let binding = { binding = { kind = Module modul' } } in
-             f modul';
-             add_name_res modul.resolutions key binding)
-    | Foreign funcs -> List.iter (fun f -> ignore (visit_fn f modul)) funcs
-    | Unit name ->
-        let unit_id = add_unit resolver name in
-        let lib_name = "lib" ^ name ^ ".o" in
-        let f name =
-          match Hashtbl.find_opt resolver.tcx.units name with
-          | Some i when i = 1 -> ()
-          | _ ->
-              let obj = Object.read_obj name in
-              let metadata =
-                Option.get @@ Object.read_section_by_name obj ".ray\000"
-              in
-              let open Metadata in
-              let dec = Decoder.create metadata unit_id in
-              let modul = decode_module resolver dec None in
-              resolver.extern_units <- resolver.extern_units @ [modul];
-              Hashtbl.replace resolver.tcx.units name 1;
-              decode_metadata resolver.tcx dec
-        in
-        let p =
-          Path.join [Filename.dirname resolver.modd.mod_path; lib_name]
-        in
-        if Sys.file_exists p
-        then f p
-        else if Sys.file_exists (Path.join [stdlib; lib_name])
-        then f (Path.join [stdlib; lib_name])
+    method resolve_path_in_modul modul (segs : path_segment vec) ns =
+      let segs_len = segs#len in
+      let res : res = Err in
+      let res = ref res in
+      let unit_in_path_report = ref false in
+      for i = 0 to segs_len - 1 do
+        let ns = if i = segs_len - 1 then ns else Type in
+        let seg = segs#get i in
+        if i <> 0 && seg.ident = "unit" && not !unit_in_path_report
+        then Printf.printf "`unit` can only appear at the start of a path"
         else
-          Session.Sess.emit_err
-            resolver.tcx.sess
-            {
-              message = sprintf "unit `%s` not found" name
-            ; level = Err
-            ; span = { primary_spans = []; labels = [] }
-            ; children = []
-            ; sugg = []
-            ; loc = Diagnostic.loc __POS__
-            }
-    | Const _ | Import _ -> ()
-  in
-  List.iter visit_item resolver.modd.items;
-  modul
-;;
+          let key = { ident = seg.ident; ns; disambiguator = 0 } in
+          match !modul.resolutions#get key with
+          | Some r ->
+              (match r with
+               | Res r -> res := r
+               | Module modul' -> modul := modul')
+          | None ->
+              (* TODO: return Err here *)
+              ()
+      done;
+      !res
+
+    method resolve_path (modul : modul) (path : path) ns : res =
+      let segs = path.segments in
+      let segs_len = segs#len in
+      let ns = Option.value ~default:Type ns in
+      dbg
+        "resolve_path(module = %s, path = %s, ns = %s)\n"
+        (print_mkind modul.mkind)
+        (segs#join "::" (fun seg -> seg.ident))
+        (match ns with Type -> "type" | Value -> "value");
+      match ns, segs_len, (segs#get 0).ident with
+      | Value, 1, "unit" -> Err
+      | Value, 1, _ ->
+          self#resolve_ident_in_lexical_scope modul (segs#get 0).ident Value
+      | _, _, "unit" ->
+          let modul = ref unit_root in
+          segs#pop_front;
+          self#resolve_path_in_modul modul segs ns
+      | _ ->
+          let modul = ref (self#get_root_mod modul) in
+          self#resolve_path_in_modul modul segs ns
+
+    method resolve_path_extern modul path ns =
+      let res = ref @@ self#resolve_path modul path ns in
+      (match !res with
+       | Err ->
+           assert false
+           (* let i = ref 0 in *)
+           (* while !i < List.length resolver.extern_units && !res = Err do *)
+           (*   let modul = List.nth resolver.extern_units !i in *)
+           (*   (* TODO: not gonna work when `using` is introduced *) *)
+           (*   let name = *)
+           (*     match modul.mkind with *)
+           (*     | Def (_, _, name) -> name *)
+           (*     | Block -> assert false *)
+           (*   in *)
+           (*   if List.hd path.segments = name *)
+           (*   then res := resolve_path resolver modul path ns; *)
+           (*   incr i *)
+           (* done *)
+       | _ -> ());
+      !res
+
+    method resolve =
+      dbg "resolve()\n";
+      self#resolve_paths unit_root modd
+
+    method resolve_paths (modul : modul) (modd : modd) : unit =
+      dbg "resolve_paths(module = %s)\n" (print_mkind modul.mkind);
+      let rec resolve_ty (ty : Ast.ty) =
+        match ty.kind with
+        | FnTy (args, ty, _) ->
+            args#iter (fun ty -> resolve_ty ty);
+            resolve_ty ty
+        | Path path ->
+            let resolved = self#resolve_path modul path (Some Type) in
+            (match resolved with Err -> assert false | _ -> ());
+            (match res#insert path.path_id resolved with
+             | Some _ -> assert false
+             | None -> ())
+        | Ref ty | Ptr ty -> resolve_ty ty
+        | ImplicitSelf | Int _ | Float _ | Bool | Str | Unit -> ()
+        | _ ->
+            print_endline (render_ty ty);
+            assert false
+      in
+      let rec visit_expr expr (modul : modul) =
+        match expr.expr_kind with
+        | Call (path, exprs) ->
+            visit_expr path modul;
+            (* let res = self#resolve_path modul path (Some Value) in *)
+            (* let name = *)
+            (*   List.nth path.segments (List.length path.segments - 1) *)
+            (* in *)
+            (* path.res <- *)
+            (*   (match res with *)
+            (*    | Def (id, Struct) -> *)
+            (*        let ty = *)
+            (*          lookup_def resolver.tcx id |> function Ty ty -> ty *)
+            (*        in *)
+            (*        (match lookup_assoc_fn resolver.tcx.def_table ty name with *)
+            (*         | Some id -> Def (id, Fn) *)
+            (*         | None -> assert false) *)
+            (*    | _ -> res); *)
+            exprs#iter (fun expr -> visit_expr expr modul)
+        | Binary (_, left, right) ->
+            visit_expr left modul;
+            visit_expr right modul
+        | Path path ->
+            let resolved = self#resolve_path modul path (Some Value) in
+            (match resolved with
+             | Err ->
+                 let err =
+                   sess.parse_sess.span_diagnostic#span_err
+                     path.span
+                     {
+                       msg =
+                         sprintf
+                           "cannot find `%s` in this scope"
+                           (path.segments#join "::" (fun s -> s.ident))
+                     ; style = NoStyle
+                     }
+                 in
+                 Sess.emit_err sess.parse_sess err
+             | _ -> ());
+            (match res#insert path.path_id resolved with
+             | Some _ -> assert false
+             | None -> ())
+        | If { cond; then_block; else_block; _ } ->
+            visit_expr cond modul;
+            (* TODO: lookup scope id from block_id *)
+            visit_block then_block modul;
+            (match else_block with
+             | Some expr -> visit_expr expr modul
+             | None -> ())
+        | Ref expr | Deref expr -> visit_expr expr modul
+        | Block block ->
+            (* TODO: lookup scope id from block_id *)
+            visit_block block modul
+        | Lit _ -> ()
+        | StructExpr { struct_name; fields; _ } ->
+            let resolved = self#resolve_path modul struct_name (Some Type) in
+            (match resolved with Err -> assert false | _ -> ());
+            (match res#insert struct_name.path_id resolved with
+             | Some _ -> assert false
+             | None -> ());
+            fields#iter (fun (_, expr) -> visit_expr expr modul)
+        | Field (expr, _) -> visit_expr expr modul
+        | Cast (expr, ty) ->
+            visit_expr expr modul;
+            resolve_ty ty
+        | MethodCall (expr, _, args) ->
+            visit_expr expr modul;
+            args#iter (fun expr -> visit_expr expr modul)
+      and visit_block body (modul : modul) =
+        body.block_stmts#iter (fun stmt ->
+            match stmt with
+            | Stmt expr | Expr expr -> visit_expr expr modul
+            | Binding { binding_pat; binding_expr = expr; binding_ty; _ } ->
+                (match binding_ty with
+                 | Some ty -> resolve_ty ty
+                 | None -> ());
+                binding_pat |> ( function
+                | PatIdent _ -> visit_expr expr modul )
+            | Assert (expr, _) -> visit_expr expr modul
+            | Assign (expr1, expr2) ->
+                visit_expr expr1 modul;
+                visit_expr expr2 modul);
+        match body.last_expr with
+        | Some expr -> visit_expr expr modul
+        | None -> ()
+      in
+      let visit_fn (func : func) (modul : modul) =
+        func.fn_sig.args#iter (fun (ty, _) -> resolve_ty ty);
+        match func.body with
+        | Some body ->
+            let m = modul in
+            visit_block body m
+        | None -> ()
+      in
+      let visit_item (item : item) =
+        match item with
+        | Mod { resolved_mod; _ } ->
+            (match resolved_mod with
+             | Some modd ->
+                 let id = def_id modd.mod_id 0 in
+                 let modul = mod_table#unsafe_get id in
+                 self#resolve_paths modul modd
+             | None -> ())
+        | Fn (func, _) -> visit_fn func modul
+        | Type (Struct _) -> assert false
+        | Foreign fns -> fns#iter (fun f -> visit_fn f modul)
+        | Impl { impl_items; _ } ->
+            impl_items#iter (function AssocFn fn -> visit_fn fn modul)
+        | Unit _ -> ()
+      in
+      modd.items#iter visit_item
+  end

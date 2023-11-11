@@ -8,4 +8,4 @@
  ;   --
  ;   -cookie
  ;   "ppx_optcomp.env=env ~profile:(Defined \"%{profile}\") ~os:(Defined \"%{os_type}\")"))
- (modules timer path panic object))
+ (modules printer timer path panic object))
