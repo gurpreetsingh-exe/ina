@@ -18,16 +18,10 @@ class file (name : string) (src : string) =
     val src = src
     val lines = get_lines
     val mutable start_pos = 0
-
-    (* getters *)
     method name = name
     method src = src
     method start_pos = start_pos
-
-    (* setters*)
     method set_start_pos pos = start_pos <- pos
-
-    (* public methods *)
     method relative_pos pos = pos - start_pos
     method end_pos = String.length src + start_pos
 

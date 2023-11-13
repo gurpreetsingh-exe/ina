@@ -3,10 +3,13 @@ open Front
 open Session
 open Utils
 open Resolve
+open Middle.Ctx
+open Sema
 
 let () =
   let start = Sys.time () in
   let sess = Sess.create (Args.parse_args ()) in
+  let tcx = new tcx sess in
   let time, res =
     Timer.time (fun () ->
         Parser.parse_mod_from_file sess.parse_sess sess.options.input)
@@ -20,14 +23,18 @@ let () =
       sess.timings.parse <- time;
       (match sess.options.command with
        | Build ->
-           let resolver = new Resolver.resolver sess modd in
+           let resolver = new Resolver.resolver tcx modd in
            let visitor = new Module_graph.visitor resolver modd None in
            visitor#visit_mod;
            resolver#init visitor#modul;
-           let printer = new Printer.printer in
-           Resolver.print_modul "" printer visitor#modul;
-           printer#print;
-           resolver#resolve
+           (* let printer = new Printer.printer in *)
+           (* Resolver.print_modul "" printer visitor#modul; *)
+           (* printer#print; *)
+           resolver#resolve;
+           (new Late.type_lowering resolver modd)#lower;
+           let infcx = Infer.infer_ctx_create tcx in
+           let cx = Tychk.create infcx in
+           Tychk.tychk cx modd
        | Fmt ->
            let open Ast_printer in
            render_module modd "";

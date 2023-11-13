@@ -1,4 +1,4 @@
-open Ty
+open Middle.Ty
 open Printf
 
 type ('a, 'b) var_value = {

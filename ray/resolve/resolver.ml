@@ -7,37 +7,10 @@ open Middle.Ctx
 open Middle.Ty
 open Middle.Def_id
 open Utils.Printer
+open Utils.Panic
+open Errors
 
 let pcmp (a : 'a) (b : 'a) = Obj.magic a = Obj.magic b
-
-let dbg fmt =
-  if false
-  then (
-    let loc () =
-      let stack = Printexc.get_callstack 2 in
-      let entries = Printexc.raw_backtrace_entries stack in
-      let slots =
-        Option.get (Printexc.backtrace_slots_of_raw_entry entries.(1))
-      in
-      let loc = Option.get (Printexc.Slot.location slots.(0)) in
-      fprintf stdout "%s:%d:%d: " loc.filename loc.line_number loc.start_char
-    in
-    loc ();
-    fprintf stdout fmt)
-  else fprintf (open_out Filename.null) fmt
-;;
-
-type prim_ty =
-  | Int of int_ty
-  | Float of float_ty
-  | Bool
-  | Str
-
-and res =
-  | Def of (def_id * def_kind)
-  | PrimTy of prim_ty
-  | Local of node_id
-  | Err
 
 type namespace =
   | Type
@@ -74,6 +47,11 @@ let res_to_def_kind : res -> string = function
 
 let get_def_kind binding =
   match binding with Res res -> res_to_def_kind res | Module _ -> "module"
+;;
+
+let binding_to_def_id : name_resolution -> def_id = function
+  | Res (Def (id, _)) | Module { mkind = Def (_, id, _); _ } -> id
+  | _ -> assert false
 ;;
 
 let name_binding_kind_to_enum = function Res _ -> 0L | Module _ -> 1L
@@ -134,16 +112,8 @@ and print_resolution prefix printer res =
       | Res _ ->
           printer#append @@ print_binding_key k;
           printer#append " ";
-          (* render_child ?prefix:(Some prefix) printer true v (fun v prefix -> *)
           print_nameres prefix printer v
       | _ -> print_nameres prefix printer v)
-(* render_child ?prefix:(Some prefix) printer true res (fun s prefix -> *)
-(*     printer#append "defs\n"; *)
-(*     render_children ?prefix:(Some prefix) printer s (fun (k, v) prefix -> *)
-(*         printer#append @@ print_binding_key k; *)
-(*         printer#append "\n"; *)
-(*         render_child ?prefix:(Some prefix) printer true v (fun v prefix -> *)
-(*             print_nameres prefix printer v))) *)
 
 and print_modul prefix printer modul =
   printer#append
@@ -171,14 +141,16 @@ class disambiguator =
     method pop = stack <- (match stack with _ :: rest -> rest | [] -> [0])
   end
 
-class resolver sess modd =
+class resolver tcx modd =
   object (self)
-    val tcx : tcx = new tcx
-    val sess : Sess.t = sess
+    val tcx : tcx = tcx
     val modd : modd = modd
     val mod_table : (def_id, modul) hashmap = new hashmap
     val res : res nodemap = new hashmap
+    method res = res
     method mod_table = mod_table
+    method tcx = tcx
+    method sess = tcx#sess
 
     val binding_parent_module : (name_resolution, modul) hashmap =
       new hashmap
@@ -201,7 +173,7 @@ class resolver sess modd =
       let key = { ident; ns; disambiguator = 0 } in
       match self#try_define parent key name_binding with
       | Ok () -> ()
-      | Error e -> sess.parse_sess.span_diagnostic#emit_diagnostic e
+      | Error e -> self#sess.parse_sess.span_diagnostic#emit_diagnostic e
 
     method set_binding_parent_module binding modul =
       match binding_parent_module#insert binding modul with
@@ -219,14 +191,18 @@ class resolver sess modd =
       match modul.resolutions#insert key binding with
       | Some old_binding ->
           if not @@ pcmp old_binding binding
-          then Error (self#redefinition_error key binding)
+          then Error (self#redefinition_error key binding old_binding)
           else Ok ()
       | None -> Ok ()
 
-    method redefinition_error key binding =
+    method redefinition_error key binding old =
       let kind = get_def_kind binding in
-      printf "%s `%s` is already defined\n" kind key.ident;
-      assert false
+      let def_id = binding_to_def_id binding in
+      let span = tcx#spans#unsafe_get def_id.inner in
+      let old_span = tcx#spans#unsafe_get (binding_to_def_id old).inner in
+      tcx#emit (Diagnostic.mk_err "previous definition" old_span);
+      let msg = sprintf "%s `%s` is already defined" kind key.ident in
+      Diagnostic.mk_err msg span
 
     method get_root_mod modul : modul =
       match modul.mkind with
@@ -267,7 +243,7 @@ class resolver sess modd =
     method resolve_path_in_modul modul (segs : path_segment vec) ns =
       let segs_len = segs#len in
       let unit_in_path_report = ref false in
-      let rec f i modul =
+      let rec f i modul : res =
         let ns = if i = segs_len - 1 then ns else Type in
         let seg = segs#get i in
         if i <> 0 && seg.ident = "unit" && not !unit_in_path_report
@@ -303,23 +279,7 @@ class resolver sess modd =
 
     method resolve_path_extern modul path ns =
       let res = ref @@ self#resolve_path modul path ns in
-      (match !res with
-       | Err ->
-           assert false
-           (* let i = ref 0 in *)
-           (* while !i < List.length resolver.extern_units && !res = Err do *)
-           (*   let modul = List.nth resolver.extern_units !i in *)
-           (*   (* TODO: not gonna work when `using` is introduced *) *)
-           (*   let name = *)
-           (*     match modul.mkind with *)
-           (*     | Def (_, _, name) -> name *)
-           (*     | Block -> assert false *)
-           (*   in *)
-           (*   if List.hd path.segments = name *)
-           (*   then res := resolve_path resolver modul path ns; *)
-           (*   incr i *)
-           (* done *)
-       | _ -> ());
+      (match !res with Err -> assert false | _ -> ());
       !res
 
     method resolve =
@@ -342,27 +302,13 @@ class resolver sess modd =
         | Ref ty | Ptr ty -> resolve_ty ty
         | ImplicitSelf | Int _ | Float _ | Bool | Str | Unit -> ()
         | _ ->
-            print_endline (render_ty ty);
+            print_endline (Front.Ast_printer.render_ty ty);
             assert false
       in
       let rec visit_expr expr (modul : modul) =
         match expr.expr_kind with
         | Call (path, exprs) ->
             visit_expr path modul;
-            (* let res = self#resolve_path modul path (Some Value) in *)
-            (* let name = *)
-            (*   List.nth path.segments (List.length path.segments - 1) *)
-            (* in *)
-            (* path.res <- *)
-            (*   (match res with *)
-            (*    | Def (id, Struct) -> *)
-            (*        let ty = *)
-            (*          lookup_def resolver.tcx id |> function Ty ty -> ty *)
-            (*        in *)
-            (*        (match lookup_assoc_fn resolver.tcx.def_table ty name with *)
-            (*         | Some id -> Def (id, Fn) *)
-            (*         | None -> assert false) *)
-            (*    | _ -> res); *)
             exprs#iter (fun expr -> visit_expr expr modul)
         | Binary (_, left, right) ->
             visit_expr left modul;
@@ -372,7 +318,7 @@ class resolver sess modd =
             (match resolved with
              | Err ->
                  let err =
-                   sess.parse_sess.span_diagnostic#span_err
+                   self#sess.parse_sess.span_diagnostic#span_err
                      path.span
                      {
                        msg =
@@ -382,7 +328,7 @@ class resolver sess modd =
                      ; style = NoStyle
                      }
                  in
-                 Sess.emit_err sess.parse_sess err
+                 Sess.emit_err self#sess.parse_sess err
              | _ -> ());
             print_endline @@ print_res resolved;
             (match res#insert path.path_id resolved with

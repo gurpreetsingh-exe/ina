@@ -27,6 +27,7 @@ class visitor resolver modd parent =
     method visit_fn_sig _ = ()
 
     method visit_expr expr =
+      resolver#tcx#insert_span expr.expr_id expr.expr_span;
       match expr.expr_kind with
       | Binary (_, left, right) ->
           self#visit_expr left;
@@ -88,6 +89,7 @@ class visitor resolver modd parent =
           | None -> ())
 
     method visit_fn fn =
+      resolver#tcx#insert_span fn.func_id fn.fn_sig.fn_span;
       let res = Res (Def (def_id fn.func_id 0, Fn)) in
       resolver#define modul fn.fn_sig.name Value res;
       self#visit_fn_sig fn.fn_sig;

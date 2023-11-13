@@ -843,7 +843,7 @@ class parser pcx file tokenizer =
           let* item =
             match token.kind with
             | Fn ->
-                let* fn = self#parse_fn "C" false in
+                let* fn = self#parse_fn "default" false in
                 Ok (AssocFn fn)
             | t ->
                 self#unexpected_token ?line:(Some __LINE__) t;
@@ -899,7 +899,7 @@ class parser pcx file tokenizer =
       let* attrs = self#parse_outer_attrs in
       match token.kind with
       | Fn ->
-          let* fn = self#parse_fn "C" false in
+              let* fn = self#parse_fn "default" false in
           Ok (Ast.Fn (fn, attrs))
       | Type ->
           let* ty = self#parse_type in

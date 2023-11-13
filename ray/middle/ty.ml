@@ -2,23 +2,6 @@ open Printf
 open Structures.Vec
 open Def_id
 
-type field = {
-    def_id: def_id
-  ; name: string
-}
-
-type variant = {
-    def_id: def_id
-  ; fields: field vec
-}
-
-type adt = {
-    def_id: def_id
-  ; variants: variant vec
-}
-
-let render_ty _ = "not implemented"
-
 type int_ty =
   | I8
   | I16
@@ -118,15 +101,61 @@ let render_infer_ty ty dbg =
     | TyVar _ -> "T"
 ;;
 
-type ty =
+type field =
+  | Field of {
+        ty: ty
+      ; name: string
+    }
+
+and variant =
+  | Variant of {
+        def_id: def_id
+      ; fields: field vec
+    }
+
+and abi =
+  | Default
+  | Intrinsic
+  | C
+
+and ty =
   | Int of int_ty
   | Float of float_ty
   | Bool
   | Str
   | Ptr of ty
   | Ref of ty
-  | Adt of def_id
-  | FnPtr of def_id
+  | Adt of {
+        def_id: def_id
+      ; variants: variant vec
+    }
+  | FnPtr of {
+        args: ty vec
+      ; ret: ty
+      ; is_variadic: bool
+      ; abi: abi
+    }
   | Infer of infer_ty
   | Unit
   | Err
+
+let rec render_ty ty =
+  match ty with
+  | Int i -> display_int_ty i
+  | Float f -> display_float_ty f
+  | Infer i -> display_infer_ty i
+  | Unit -> "unit"
+  | Bool -> "bool"
+  | Str -> "str"
+  | FnPtr { args; ret; is_variadic; abi } ->
+      sprintf
+        "%sfn(%s) -> %s"
+        (abi |> function
+         | Default -> ""
+         | Intrinsic -> "\"intrinsic\" "
+         | C -> "\"C\" ")
+        (args#join ", " (fun ty -> render_ty ty)
+         ^ if is_variadic then ", ..." else String.empty)
+        (render_ty ret)
+  | _ -> assert false
+;;

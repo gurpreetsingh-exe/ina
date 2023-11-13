@@ -78,3 +78,9 @@ class diagnostic level message multi_span =
     method message = message
     method span = span
   end
+
+let mk_err msg span =
+  let messages = new vec in
+  messages#push { msg; style = NoStyle };
+  new diagnostic Err messages (multi_span span)
+;;
