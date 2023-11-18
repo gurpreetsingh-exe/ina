@@ -10,12 +10,19 @@ open Session
 open Utils.Panic
 open Infer
 
+let ( let* ) v f = Result.bind v f
+
 type cx = {
     infcx: infer_ctx
-  ; locals: (node_id, ty) hashmap
+  ; locals: (node_id, ty ref) hashmap
 }
 
 let create infcx = { infcx; locals = new hashmap }
+
+type 'a expected_found = {
+    expected: 'a
+  ; found: 'a
+}
 
 type ty_err =
   | MismatchTy of ty * ty
@@ -24,10 +31,13 @@ type ty_err =
   | NoFieldInPrimitiveType of ty
   | InvalidBinaryExpression of binary_kind * ty * ty
   | MethodNotFound of ty * string
+  | IntMismatch of ty expected_found
+
+type 'a tyck_result = ('a, ty_err) result
 
 type expectation =
   | NoExpectation
-  | ExpectTy of ty
+  | ExpectTy of ty ref
 
 exception TypeError of ty_err
 
@@ -92,6 +102,8 @@ let ty_err_emit (tcx : tcx) err span =
       then tcx#emit (invalid_binary_expr kind left right span)
   | MethodNotFound (ty, name) ->
       if ty <> Err then tcx#emit (method_not_found ty name span)
+  | IntMismatch { expected; found } ->
+      tcx#emit (mismatch_ty expected found span)
 ;;
 
 let tychk_fn cx fn =
@@ -99,25 +111,42 @@ let tychk_fn cx fn =
   let define id ty = ignore (cx.locals#insert id ty) in
   let resolve_expectation = function
     | NoExpectation -> None
-    | ExpectTy ty -> Some (Infer.resolve_vars cx.infcx ty)
+    | ExpectTy ty -> Some (Infer.resolve_vars cx.infcx !ty)
   in
   let write_ty id ty =
-    dbg "write_ty(id = %d, ty = %s)\n" id (render_ty ty);
+    dbg "write_ty(id = %d, ty = %s)\n" id (render_ty !ty);
     ignore (tcx#node_id_to_ty#insert id ty)
   in
-  let equate (t0 : ty) (t1 : ty) =
+  let int_unification_error (v : IntVid.e) =
+    let expected, found = v in
+    IntMismatch { expected; found }
+  in
+  let unify_int_var vid value =
+    let* _ =
+      Result.map_error
+        int_unification_error
+        (IntUt.unify_var_value cx.infcx.int_ut vid (Some value))
+    in
+    Ok value
+  in
+  let equate (t0 : ty) (t1 : ty) : ty tyck_result =
     match t0, t1 with
     | Infer (IntVar i), (Int _ as t) | (Int _ as t), Infer (IntVar i) ->
-        IntUt.unify_var_value cx.infcx.int_ut i (Some t)
+        unify_int_var i t
     | Infer (IntVar i0), Infer (IntVar i1) ->
-        IntUt.unify_var_var cx.infcx.int_ut i0 i1
-    | _ -> Ok ()
+        let* _ =
+          Result.map_error
+            int_unification_error
+            (IntUt.unify_var_var cx.infcx.int_ut i0 i1)
+        in
+        Ok t0
+    | _ -> Ok !(tcx#types.unit)
   in
   let rec check_block block =
     block.block_stmts#iter check_stmt;
     match block.last_expr with
     | Some expr -> check_expr expr NoExpectation
-    | None -> Unit
+    | None -> tcx#types.unit
   and check_block_with_expected block expected =
     block.block_stmts#iter check_stmt;
     match block.last_expr with
@@ -125,19 +154,19 @@ let tychk_fn cx fn =
         let ty = check_expr expr expected in
         (match expected with
          | ExpectTy expected ->
-             ignore (equate ty expected);
-             if ty != expected
-             then tcx#emit (mismatch_ty expected ty expr.expr_span);
+             (match equate !ty !expected with
+              | Ok _ -> ()
+              | Error e -> ty_err_emit tcx e expr.expr_span);
              expected
          | NoExpectation -> ty)
-    | None -> Unit
+    | None -> tcx#types.unit
   and check_stmt stmt =
     match stmt with
     | Assign (expr1, expr2) ->
         let left = check_expr expr1 NoExpectation in
         let right = check_expr expr2 NoExpectation in
         if left != right
-        then ty_err_emit tcx (MismatchTy (left, right)) expr2.expr_span
+        then ty_err_emit tcx (MismatchTy (!left, !right)) expr2.expr_span
     | Stmt expr | Expr expr ->
         let _ = check_expr expr NoExpectation in
         ()
@@ -155,7 +184,7 @@ let tychk_fn cx fn =
                   then
                     ty_err_emit
                       tcx
-                      (MismatchTy (expected, ty))
+                      (MismatchTy (!expected, !ty))
                       binding_expr.expr_span
               | None ->
                   let ty = check_expr binding_expr NoExpectation in
@@ -163,7 +192,7 @@ let tychk_fn cx fn =
     | Assert _ -> ()
   and check_expr expr expectation =
     let ty = check_expr_kind expr expectation in
-    let ty = resolve_vars cx.infcx ty in
+    let ty = tcx#intern @@ resolve_vars cx.infcx !ty in
     write_ty expr.expr_id ty;
     ty
   and check_expr_kind expr expectation =
@@ -176,7 +205,7 @@ let tychk_fn cx fn =
         then
           ty_err_emit
             tcx
-            (InvalidBinaryExpression (kind, left, right))
+            (InvalidBinaryExpression (kind, !left, !right))
             expr.expr_span;
         left
     | Call (expr, args) ->
@@ -198,7 +227,7 @@ let tychk_fn cx fn =
              |> Option.map (fun (ty : ty) ->
                     match ty with Int _ -> ty | _ -> ty)
              |> ( function
-             | Some ty -> ty
+             | Some ty -> tcx#intern ty
              | None -> infcx_new_int_var cx.infcx )
          | LitFloat _ -> tcx#types.f32
          | LitStr _ -> tcx#types.str
@@ -210,18 +239,25 @@ let tychk_fn cx fn =
   in
   let ty = tcx#node_id_to_ty#unsafe_get fn.func_id in
   let ret =
-    match ty with
-    | FnPtr { ret; _ } -> ret
+    match !ty with
+    | FnPtr { ret; _ } -> tcx#intern ret
     | _ ->
-        dbg "expected function, found `%s`\n" (render_ty ty);
+        dbg "expected function, found `%s`\n" (render_ty !ty);
         assert false
   in
-  match fn.body with
-  | Some block ->
-      fn.fn_sig.args#iter (fun { ty; arg_id; _ } ->
-          define arg_id (tcx#ast_ty_to_ty ty));
-      ignore (check_block_with_expected block (ExpectTy ret))
-  | None -> ()
+  (match fn.body with
+   | Some block ->
+       fn.fn_sig.args#iter (fun { ty; arg_id; _ } ->
+           define arg_id (tcx#ast_ty_to_ty ty));
+       ignore (check_block_with_expected block (ExpectTy ret))
+   | None -> ());
+  Array.iter
+    (fun (v : IntUt.VarValue.t) ->
+      let old_ty = Infer (IntVar v.parent) in
+      let ty = Option.value v.value ~default:!(tcx#types.i32) in
+      tcx#invalidate old_ty ty)
+    cx.infcx.int_ut.values;
+  tcx#node_id_to_ty#iter (fun k v -> printf "%d -> %s\n" k (render_ty !v))
 ;;
 
 let rec tychk cx (modd : modd) =

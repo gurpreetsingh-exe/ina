@@ -21,47 +21,47 @@ and res =
   | Err
 
 type types = {
-    i8: ty
-  ; i16: ty
-  ; i32: ty
-  ; i64: ty
-  ; isize: ty
-  ; u8: ty
-  ; u16: ty
-  ; u32: ty
-  ; u64: ty
-  ; usize: ty
-  ; f32: ty
-  ; f64: ty
-  ; bool: ty
-  ; str: ty
-  ; unit: ty
+    i8: ty ref
+  ; i16: ty ref
+  ; i32: ty ref
+  ; i64: ty ref
+  ; isize: ty ref
+  ; u8: ty ref
+  ; u16: ty ref
+  ; u32: ty ref
+  ; u64: ty ref
+  ; usize: ty ref
+  ; f32: ty ref
+  ; f64: ty ref
+  ; bool: ty ref
+  ; str: ty ref
+  ; unit: ty ref
 }
 
 let dummy_types =
   {
-    i8 = Unit
-  ; i16 = Unit
-  ; i32 = Unit
-  ; i64 = Unit
-  ; isize = Unit
-  ; u8 = Unit
-  ; u16 = Unit
-  ; u32 = Unit
-  ; u64 = Unit
-  ; usize = Unit
-  ; f32 = Unit
-  ; f64 = Unit
-  ; bool = Unit
-  ; str = Unit
-  ; unit = Unit
+    i8 = ref Unit
+  ; i16 = ref Unit
+  ; i32 = ref Unit
+  ; i64 = ref Unit
+  ; isize = ref Unit
+  ; u8 = ref Unit
+  ; u16 = ref Unit
+  ; u32 = ref Unit
+  ; u64 = ref Unit
+  ; usize = ref Unit
+  ; f32 = ref Unit
+  ; f64 = ref Unit
+  ; bool = ref Unit
+  ; str = ref Unit
+  ; unit = ref Unit
   }
 ;;
 
 class tcx sess =
   object (self)
-    val types : (ty, unit) hashmap = new hashmap
-    val node_id_to_ty : ty nodemap = new hashmap
+    val types : (ty, ty ref) hashmap = new hashmap
+    val node_id_to_ty : ty ref nodemap = new hashmap
     method node_id_to_ty = node_id_to_ty
     val res_map : res nodemap = new hashmap
     method res_map = res_map
@@ -73,47 +73,44 @@ class tcx sess =
     initializer
       let ty =
         {
-          i8 = Int I8
-        ; i16 = Int I16
-        ; i32 = Int I32
-        ; i64 = Int I64
-        ; isize = Int Isize
-        ; u8 = Int U8
-        ; u16 = Int U16
-        ; u32 = Int U32
-        ; u64 = Int U64
-        ; usize = Int Usize
-        ; f32 = Float F32
-        ; f64 = Float F64
-        ; bool = Bool
-        ; str = Str
-        ; unit = Unit
+          i8 = self#intern (Ty.Int I8)
+        ; i16 = self#intern (Int I16)
+        ; i32 = self#intern (Int I32)
+        ; i64 = self#intern (Int I64)
+        ; isize = self#intern (Int Isize)
+        ; u8 = self#intern (Int U8)
+        ; u16 = self#intern (Int U16)
+        ; u32 = self#intern (Int U32)
+        ; u64 = self#intern (Int U64)
+        ; usize = self#intern (Int Usize)
+        ; f32 = self#intern (Float F32)
+        ; f64 = self#intern (Float F64)
+        ; bool = self#intern Bool
+        ; str = self#intern Str
+        ; unit = self#intern Unit
         }
       in
-      ignore (self#intern ty.i8);
-      ignore (self#intern ty.i16);
-      ignore (self#intern ty.i32);
-      ignore (self#intern ty.i64);
-      ignore (self#intern ty.isize);
-      ignore (self#intern ty.u8);
-      ignore (self#intern ty.u16);
-      ignore (self#intern ty.u32);
-      ignore (self#intern ty.u64);
-      ignore (self#intern ty.usize);
-      ignore (self#intern ty.f32);
-      ignore (self#intern ty.f64);
-      ignore (self#intern ty.bool);
-      ignore (self#intern ty.str);
-      ignore (self#intern ty.unit);
       _types <- ty
 
     method sess = sess
     method types = _types
 
-    method intern ty : ty =
-      if not @@ types#has ty then ignore (types#insert ty ());
-      dbg "intern(type = %s)\n" @@ render_ty ty;
-      ty
+    method intern ty : ty ref =
+      if types#has ty
+      then types#unsafe_get ty
+      else (
+        dbg "intern(type = %s)\n" @@ render_ty ty;
+        let rty = ref ty in
+        ignore (types#insert ty rty);
+        rty)
+
+    method invalidate old_ty new_ty =
+      let ty = self#intern old_ty in
+      dbg
+        "invalidate(old = %s, new = %s)\n"
+        (render_ty old_ty)
+        (render_ty new_ty);
+      ty := new_ty
 
     method emit err = Sess.emit_err sess.parse_sess err
 
@@ -121,10 +118,12 @@ class tcx sess =
       dbg "tcx.insert_span(id = %d, span = %s)\n" id (Span.display_span span);
       assert (spans#insert id span = None)
 
-    method ast_ty_to_ty (ty : Ast.ty) : ty =
+    method ast_ty_to_ty (ty : Ast.ty) : ty ref =
+      ref
+      @@
       match ty.kind with
       | Int i ->
-          Int
+          Ty.Int
             (match i with
              | I8 -> I8
              | I16 -> I16
