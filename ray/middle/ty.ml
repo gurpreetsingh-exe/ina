@@ -64,12 +64,14 @@ let float_ty_to_enum = function F32 -> 0 | F64 -> 1
 let float_ty_of_enum = function 0 -> Some F32 | 1 -> Some F64 | _ -> None
 let display_float_ty = function F32 -> "f32" | F64 -> "f64"
 
-type ty_vid = { index: int }
+type tyvid = { index: int }
+type intvid = { index: int }
+type floatvid = { index: int }
 
 type infer_ty =
-  | IntVar of ty_vid
-  | FloatVar of ty_vid
-  | TyVar of ty_vid
+  | IntVar of intvid
+  | FloatVar of floatvid
+  | TyVar of tyvid
 
 let i, f = ref 0, ref 0
 
@@ -85,8 +87,10 @@ let float_var_id () =
   t
 ;;
 
+let display_intvid (vid : intvid) = sprintf "\x1b[1;31m?%di\x1b[0m" vid.index
+
 let display_infer_ty = function
-  | IntVar i -> sprintf "\x1b[1;31m?%di\x1b[0m" i.index
+  | IntVar i -> display_intvid i
   | FloatVar i -> sprintf "\x1b[1;31m?%df\x1b[0m" i.index
   | TyVar i -> sprintf "\x1b[1;31m?%d\x1b[0m" i.index
 ;;

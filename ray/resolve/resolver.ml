@@ -302,7 +302,7 @@ class resolver tcx modd =
         | Ref ty | Ptr ty -> resolve_ty ty
         | ImplicitSelf | Int _ | Float _ | Bool | Str | Unit -> ()
         | _ ->
-            print_endline (Front.Ast_printer.render_ty ty);
+            (* print_endline (Front.Ast_printer.render_ty ty); *)
             assert false
       in
       let rec visit_expr expr (modul : modul) =

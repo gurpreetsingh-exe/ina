@@ -7,26 +7,78 @@ open Session
 open Middle.Ctx
 open Middle.Ty
 open Diagnostic
+open Structures.Vec
+open Unification_table
+open Utils.Panic
+
+type ty_constraint = TypeEqual of ty * ty
+
+module IntVid :
+  UnifyKey with type k = intvid and type v = ty option and type e = ty * ty =
+struct
+  type k = intvid
+  type v = ty option
+  type e = ty * ty
+
+  let index (vid : k) = vid.index
+  let from_index index : k = { index }
+  let tag () = "IntVid"
+  let order_roots _k1 _v1 _k2 _v2 = None
+  let display_key key = display_intvid key
+  let display_value = function Some ty -> render_ty ty | None -> "None"
+
+  let unify_values (v1 : v) (v2 : v) =
+    match v1, v2 with
+    | None, None -> Ok None
+    | Some v, None | None, Some v -> Ok (Some v)
+    | Some v1, Some v2 when v1 = v2 -> Ok (Some v1)
+    | Some v1, Some v2 -> Error (v1, v2)
+  ;;
+end
+
+module IntUt = Unification_table (IntVid)
 
 type infer_ctx = {
     tcx: tcx
-  ; int_ut: (ty_vid, ty option) Unification_table.t
-  ; float_ut: (ty_vid, ty option) Unification_table.t
+  ; int_ut: IntUt.t (* ; float_ut: (ty_vid, ty option) Unification_table.t *)
+  ; constraints: ty_constraint vec
 }
 
 let infer_ctx_create tcx =
-  { tcx; int_ut = { values = [||] }; float_ut = { values = [||] } }
+  { tcx; int_ut = IntUt.create (); constraints = new vec }
 ;;
 
 let infcx_new_int_var infcx =
-  infcx.tcx#intern
-    (Infer (IntVar (Unification_table.new_key infcx.int_ut None)))
+  infcx.tcx#intern (Infer (IntVar (IntUt.new_key infcx.int_ut None)))
 ;;
 
-let infcx_new_float_var infcx =
-  infcx.tcx#intern
-    (Infer (FloatVar (Unification_table.new_key infcx.float_ut None)))
+(* let infcx_new_float_var infcx = *)
+(*   infcx.tcx#intern *)
+(*     (Infer (FloatVar (Unification_table.new_key infcx.float_ut None))) *)
+(* ;; *)
+
+let fold_infer_ty infcx v =
+  match v with
+  | IntVar tyvid ->
+      let ty =
+        IntUt.probe_value infcx.int_ut tyvid
+        |> Option.map (fun v ->
+               dbg "fold_infer_ty() = %s\n" (render_ty v);
+               v)
+      in
+      ty
+  | FloatVar tyvid -> None
+  | TyVar tyvid -> None
 ;;
+
+let fold_ty infcx ty =
+  match ty with
+  | Infer i ->
+      (match fold_infer_ty infcx i with Some ty -> ty | None -> ty)
+  | _ -> ty
+;;
+
+let resolve_vars infcx ty = fold_ty infcx ty
 
 type infer_err =
   | MismatchTy of ty * ty
