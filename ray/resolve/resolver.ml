@@ -330,7 +330,6 @@ class resolver tcx modd =
                  in
                  Sess.emit_err self#sess.parse_sess err
              | _ -> ());
-            print_endline @@ print_res resolved;
             (match res#insert path.path_id resolved with
              | Some _ -> assert false
              | None -> ())

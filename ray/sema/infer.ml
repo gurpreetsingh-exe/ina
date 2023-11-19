@@ -14,18 +14,24 @@ open Utils.Panic
 type ty_constraint = TypeEqual of ty * ty
 
 module IntVid :
-  UnifyKey with type k = intvid and type v = ty option and type e = ty * ty =
-struct
+  UnifyKey
+    with type k = intvid
+     and type v = int_ty option
+     and type e = int_ty * int_ty = struct
   type k = intvid
-  type v = ty option
-  type e = ty * ty
+  type v = int_ty option
+  type e = int_ty * int_ty
 
   let index (vid : k) = vid.index
   let from_index index : k = { index }
   let tag () = "IntVid"
   let order_roots _k1 _v1 _k2 _v2 = None
   let display_key key = display_intvid key
-  let display_value = function Some ty -> render_ty ty | None -> "None"
+
+  let display_value = function
+    | Some ty -> display_int_ty ty
+    | None -> "None"
+  ;;
 
   let unify_values (v1 : v) (v2 : v) =
     match v1, v2 with
@@ -89,26 +95,24 @@ let infcx_new_float_var infcx =
 let fold_infer_ty infcx v =
   match v with
   | IntVar tyvid ->
-      let ty =
-        IntUt.probe_value infcx.int_ut tyvid
-        |> Option.map (fun v ->
-               dbg "fold_infer_ty(int) = %s\n" (render_ty v);
-               v)
-      in
-      ty
+      IntUt.probe_value infcx.int_ut tyvid
+      |> Option.map (fun v ->
+             let ty = infcx.tcx#int_ty_to_ty v in
+             dbg "fold_infer_ty(int) = %s\n" (render_ty !ty);
+             ty)
   | FloatVar tyvid ->
       let ty =
         FloatUt.probe_value infcx.float_ut tyvid
         |> Option.map (fun v ->
                dbg "fold_infer_ty(float) = %s\n" (render_ty v);
-               v)
+               ref v)
       in
       ty
   | TyVar _ -> None
 ;;
 
 let fold_ty infcx ty =
-  match ty with
+  match !ty with
   | Infer i ->
       (match fold_infer_ty infcx i with Some ty -> ty | None -> ty)
   | _ -> ty

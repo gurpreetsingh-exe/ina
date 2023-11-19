@@ -118,22 +118,34 @@ class tcx sess =
       dbg "tcx.insert_span(id = %d, span = %s)\n" id (Span.display_span span);
       assert (spans#insert id span = None)
 
+    method int_ty_to_ty (i : int_ty) : ty ref =
+      match i with
+      | I8 -> _types.i8
+      | I16 -> _types.i16
+      | I32 -> _types.i32
+      | I64 -> _types.i64
+      | Isize -> _types.isize
+      | U8 -> _types.u8
+      | U16 -> _types.u16
+      | U32 -> _types.u32
+      | U64 -> _types.u64
+      | Usize -> _types.usize
+
+    method ast_int_ty_to_ty (i : Ast.int_ty) : ty ref =
+      match i with
+      | I8 -> _types.i8
+      | I16 -> _types.i16
+      | I32 -> _types.i32
+      | I64 -> _types.i64
+      | Isize -> _types.isize
+      | U8 -> _types.u8
+      | U16 -> _types.u16
+      | U32 -> _types.u32
+      | U64 -> _types.u64
+      | Usize -> _types.usize
+
     method ast_ty_to_ty (ty : Ast.ty) : ty ref =
-      ref
-      @@
       match ty.kind with
-      | Int i ->
-          Ty.Int
-            (match i with
-             | I8 -> I8
-             | I16 -> I16
-             | I32 -> I32
-             | I64 -> I64
-             | Isize -> Isize
-             | U8 -> U8
-             | U16 -> U16
-             | U32 -> U32
-             | U64 -> U64
-             | Usize -> Usize)
+      | Int i -> self#ast_int_ty_to_ty i
       | _ -> assert false
   end
