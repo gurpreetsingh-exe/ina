@@ -73,25 +73,12 @@ type infer_ty =
   | FloatVar of floatvid
   | TyVar of tyvid
 
-let i, f = ref 0, ref 0
-
-let int_var_id () =
-  let t = !i in
-  incr i;
-  t
-;;
-
-let float_var_id () =
-  let t = !f in
-  incr f;
-  t
-;;
-
 let display_intvid (vid : intvid) = sprintf "\x1b[1;31m?%di\x1b[0m" vid.index
+let display_floatvid vid = sprintf "\x1b[1;31m?%df\x1b[0m" vid.index
 
 let display_infer_ty = function
   | IntVar i -> display_intvid i
-  | FloatVar i -> sprintf "\x1b[1;31m?%df\x1b[0m" i.index
+  | FloatVar f -> display_floatvid f
   | TyVar i -> sprintf "\x1b[1;31m?%d\x1b[0m" i.index
 ;;
 
@@ -147,7 +134,11 @@ let rec render_ty ty =
   match ty with
   | Int i -> display_int_ty i
   | Float f -> display_float_ty f
-  | Infer i -> display_infer_ty i
+  | Infer i ->
+      (match i with
+       | IntVar _ -> "int"
+       | FloatVar _ -> "float"
+       | TyVar _ -> "infer")
   | Unit -> "unit"
   | Bool -> "bool"
   | Str -> "str"
@@ -161,5 +152,26 @@ let rec render_ty ty =
         (args#join ", " (fun ty -> render_ty ty)
          ^ if is_variadic then ", ..." else String.empty)
         (render_ty ret)
+  | _ -> assert false
+;;
+
+let rec render_ty2 ty =
+  match ty with
+  | Int i -> display_int_ty i
+  | Float f -> display_float_ty f
+  | Infer i -> display_infer_ty i
+  | Unit -> "unit"
+  | Bool -> "bool"
+  | Str -> "str"
+  | FnPtr { args; ret; is_variadic; abi } ->
+      sprintf
+        "%sfn(%s) -> %s"
+        (abi |> function
+         | Default -> ""
+         | Intrinsic -> "\"intrinsic\" "
+         | C -> "\"C\" ")
+        (args#join ", " (fun ty -> render_ty2 ty)
+         ^ if is_variadic then ", ..." else String.empty)
+        (render_ty2 ret)
   | _ -> assert false
 ;;

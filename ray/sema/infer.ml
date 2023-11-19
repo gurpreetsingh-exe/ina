@@ -36,26 +36,55 @@ struct
   ;;
 end
 
+module FloatVid :
+  UnifyKey with type k = floatvid and type v = ty option and type e = ty * ty =
+struct
+  type k = floatvid
+  type v = ty option
+  type e = ty * ty
+
+  let index (vid : k) = vid.index
+  let from_index index : k = { index }
+  let tag () = "FloatVid"
+  let order_roots _k1 _v1 _k2 _v2 = None
+  let display_key key = display_floatvid key
+  let display_value = function Some ty -> render_ty ty | None -> "None"
+
+  let unify_values (v1 : v) (v2 : v) =
+    match v1, v2 with
+    | None, None -> Ok None
+    | Some v, None | None, Some v -> Ok (Some v)
+    | Some v1, Some v2 when v1 = v2 -> Ok (Some v1)
+    | Some v1, Some v2 -> Error (v1, v2)
+  ;;
+end
+
 module IntUt = Unification_table (IntVid)
+module FloatUt = Unification_table (FloatVid)
 
 type infer_ctx = {
     tcx: tcx
-  ; int_ut: IntUt.t (* ; float_ut: (ty_vid, ty option) Unification_table.t *)
+  ; int_ut: IntUt.t
+  ; float_ut: FloatUt.t
   ; constraints: ty_constraint vec
 }
 
 let infer_ctx_create tcx =
-  { tcx; int_ut = IntUt.create (); constraints = new vec }
+  {
+    tcx
+  ; int_ut = IntUt.create ()
+  ; float_ut = FloatUt.create ()
+  ; constraints = new vec
+  }
 ;;
 
 let infcx_new_int_var infcx =
   infcx.tcx#intern (Infer (IntVar (IntUt.new_key infcx.int_ut None)))
 ;;
 
-(* let infcx_new_float_var infcx = *)
-(*   infcx.tcx#intern *)
-(*     (Infer (FloatVar (Unification_table.new_key infcx.float_ut None))) *)
-(* ;; *)
+let infcx_new_float_var infcx =
+  infcx.tcx#intern (Infer (FloatVar (FloatUt.new_key infcx.float_ut None)))
+;;
 
 let fold_infer_ty infcx v =
   match v with
@@ -63,12 +92,19 @@ let fold_infer_ty infcx v =
       let ty =
         IntUt.probe_value infcx.int_ut tyvid
         |> Option.map (fun v ->
-               dbg "fold_infer_ty() = %s\n" (render_ty v);
+               dbg "fold_infer_ty(int) = %s\n" (render_ty v);
                v)
       in
       ty
-  | FloatVar tyvid -> None
-  | TyVar tyvid -> None
+  | FloatVar tyvid ->
+      let ty =
+        FloatUt.probe_value infcx.float_ut tyvid
+        |> Option.map (fun v ->
+               dbg "fold_infer_ty(float) = %s\n" (render_ty v);
+               v)
+      in
+      ty
+  | TyVar _ -> None
 ;;
 
 let fold_ty infcx ty =

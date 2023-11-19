@@ -32,6 +32,7 @@ type ty_err =
   | InvalidBinaryExpression of binary_kind * ty * ty
   | MethodNotFound of ty * string
   | IntMismatch of ty expected_found
+  | FloatMismatch of ty expected_found
 
 type 'a tyck_result = ('a, ty_err) result
 
@@ -104,12 +105,14 @@ let ty_err_emit (tcx : tcx) err span =
       if ty <> Err then tcx#emit (method_not_found ty name span)
   | IntMismatch { expected; found } ->
       tcx#emit (mismatch_ty expected found span)
+  | FloatMismatch { expected; found } ->
+      tcx#emit (mismatch_ty expected found span)
 ;;
 
 let tychk_fn cx fn =
   let tcx = cx.infcx.tcx in
   let define id ty = ignore (cx.locals#insert id ty) in
-  let resolve_expectation = function
+  let resolve_expected = function
     | NoExpectation -> None
     | ExpectTy ty -> Some (Infer.resolve_vars cx.infcx !ty)
   in
@@ -121,11 +124,23 @@ let tychk_fn cx fn =
     let expected, found = v in
     IntMismatch { expected; found }
   in
+  let float_unification_error (v : IntVid.e) =
+    let expected, found = v in
+    FloatMismatch { expected; found }
+  in
   let unify_int_var vid value =
     let* _ =
       Result.map_error
         int_unification_error
         (IntUt.unify_var_value cx.infcx.int_ut vid (Some value))
+    in
+    Ok value
+  in
+  let unify_float_var vid value =
+    let* _ =
+      Result.map_error
+        float_unification_error
+        (FloatUt.unify_var_value cx.infcx.float_ut vid (Some value))
     in
     Ok value
   in
@@ -140,6 +155,17 @@ let tychk_fn cx fn =
             (IntUt.unify_var_var cx.infcx.int_ut i0 i1)
         in
         Ok t0
+    | Infer (FloatVar i), (Float _ as t) | (Float _ as t), Infer (FloatVar i)
+      ->
+        unify_float_var i t
+    | Infer (FloatVar i0), Infer (FloatVar i1) ->
+        let* _ =
+          Result.map_error
+            float_unification_error
+            (FloatUt.unify_var_var cx.infcx.float_ut i0 i1)
+        in
+        Ok t0
+    | Infer _, _ | _, Infer _ -> Error (MismatchTy (t0, t1))
     | _ -> Ok !(tcx#types.unit)
   in
   let rec check_block block =
@@ -190,16 +216,16 @@ let tychk_fn cx fn =
                   let ty = check_expr binding_expr NoExpectation in
                   define binding_id ty))
     | Assert _ -> ()
-  and check_expr expr expectation =
-    let ty = check_expr_kind expr expectation in
+  and check_expr expr expected =
+    let ty = check_expr_kind expr expected in
     let ty = tcx#intern @@ resolve_vars cx.infcx !ty in
     write_ty expr.expr_id ty;
     ty
-  and check_expr_kind expr expectation =
+  and check_expr_kind expr expected =
     match expr.expr_kind with
     | Binary (kind, left, right) ->
         let left, right =
-          check_expr left expectation, check_expr right expectation
+          check_expr left expected, check_expr right expected
         in
         if left != right
         then
@@ -223,16 +249,16 @@ let tychk_fn cx fn =
     | Lit lit ->
         (match lit with
          | LitInt _ ->
-             resolve_expectation expectation
-             |> Option.map (fun (ty : ty) ->
-                    match ty with Int _ -> ty | _ -> ty)
-             |> ( function
+             resolve_expected expected |> ( function
              | Some ty -> tcx#intern ty
              | None -> infcx_new_int_var cx.infcx )
-         | LitFloat _ -> tcx#types.f32
+         | LitFloat _ ->
+             resolve_expected expected |> ( function
+             | Some ty -> tcx#intern ty
+             | None -> infcx_new_float_var cx.infcx )
          | LitStr _ -> tcx#types.str
          | LitBool _ -> tcx#types.bool)
-    | Block block -> check_block_with_expected block expectation
+    | Block block -> check_block_with_expected block expected
     | If _ | Deref _ | Ref _ | StructExpr _ | Field _ | Cast _ | MethodCall _
       ->
         assert false
