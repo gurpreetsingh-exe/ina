@@ -32,7 +32,7 @@ type ty_err =
   | InvalidBinaryExpression of binary_kind * ty * ty
   | MethodNotFound of ty * string
   | IntMismatch of int_ty expected_found
-  | FloatMismatch of ty expected_found
+  | FloatMismatch of float_ty expected_found
 
 type 'a tyck_result = ('a, ty_err) result
 
@@ -55,6 +55,16 @@ let mismatch_int_ty expected ty span =
       "expected `%s`, found `%s`"
       (display_int_ty expected)
       (display_int_ty ty)
+  in
+  mk_err msg span
+;;
+
+let mismatch_float_ty expected ty span =
+  let msg =
+    sprintf
+      "expected `%s`, found `%s`"
+      (display_float_ty expected)
+      (display_float_ty ty)
   in
   mk_err msg span
 ;;
@@ -116,7 +126,7 @@ let ty_err_emit (tcx : tcx) err span =
   | IntMismatch { expected; found } ->
       tcx#emit (mismatch_int_ty expected found span)
   | FloatMismatch { expected; found } ->
-      tcx#emit (mismatch_ty expected found span)
+      tcx#emit (mismatch_float_ty expected found span)
 ;;
 
 let tychk_fn cx fn =
@@ -152,30 +162,33 @@ let tychk_fn cx fn =
         float_unification_error
         (FloatUt.unify_var_value cx.infcx.float_ut vid (Some value))
     in
-    Ok (ref value)
+    Ok (tcx#float_ty_to_ty value)
   in
   let equate (t0 : ty ref) (t1 : ty ref) : ty ref tyck_result =
-    match !t0, !t1 with
-    | Infer (IntVar i), Int t | Int t, Infer (IntVar i) -> unify_int_var i t
-    | Infer (IntVar i0), Infer (IntVar i1) ->
-        let* _ =
-          Result.map_error
-            int_unification_error
-            (IntUt.unify_var_var cx.infcx.int_ut i0 i1)
-        in
-        Ok t0
-    | Infer (FloatVar i), (Float _ as t) | (Float _ as t), Infer (FloatVar i)
-      ->
-        unify_float_var i t
-    | Infer (FloatVar i0), Infer (FloatVar i1) ->
-        let* _ =
-          Result.map_error
-            float_unification_error
-            (FloatUt.unify_var_var cx.infcx.float_ut i0 i1)
-        in
-        Ok t0
-    | Infer _, _ | _, Infer _ -> Error (MismatchTy (!t0, !t1))
-    | _ -> Ok tcx#types.unit
+    if t0 == t1
+    then Ok t0
+    else
+      match !t0, !t1 with
+      | Infer (IntVar i), Int t | Int t, Infer (IntVar i) ->
+          unify_int_var i t
+      | Infer (IntVar i0), Infer (IntVar i1) ->
+          let* _ =
+            Result.map_error
+              int_unification_error
+              (IntUt.unify_var_var cx.infcx.int_ut i0 i1)
+          in
+          Ok t0
+      | Infer (FloatVar i), Float t | Float t, Infer (FloatVar i) ->
+          unify_float_var i t
+      | Infer (FloatVar i0), Infer (FloatVar i1) ->
+          let* _ =
+            Result.map_error
+              float_unification_error
+              (FloatUt.unify_var_var cx.infcx.float_ut i0 i1)
+          in
+          Ok t0
+      | Infer _, _ | _, Infer _ -> Error (MismatchTy (!t0, !t1))
+      | _ -> Error (MismatchTy (!t0, !t1))
   in
   let rec check_block block =
     block.block_stmts#iter check_stmt;
@@ -189,7 +202,7 @@ let tychk_fn cx fn =
         let ty = check_expr expr expected in
         (match expected with
          | ExpectTy expected ->
-             (match equate ty expected with
+             (match equate expected ty with
               | Ok _ -> ()
               | Error e -> ty_err_emit tcx e expr.expr_span);
              expected
@@ -200,8 +213,9 @@ let tychk_fn cx fn =
     | Assign (expr1, expr2) ->
         let left = check_expr expr1 NoExpectation in
         let right = check_expr expr2 NoExpectation in
-        if left != right
-        then ty_err_emit tcx (MismatchTy (!left, !right)) expr2.expr_span
+        (match equate left right with
+         | Ok _ -> ()
+         | Error e -> ty_err_emit tcx e expr2.expr_span)
     | Stmt expr | Expr expr ->
         let _ = check_expr expr NoExpectation in
         ()
@@ -215,12 +229,9 @@ let tychk_fn cx fn =
                   let expected = tcx#ast_ty_to_ty expected in
                   let ty = check_expr binding_expr (ExpectTy expected) in
                   define binding_id expected;
-                  if expected != ty
-                  then
-                    ty_err_emit
-                      tcx
-                      (MismatchTy (!expected, !ty))
-                      binding_expr.expr_span
+                  (match equate expected ty with
+                   | Ok _ -> ()
+                   | Error e -> ty_err_emit tcx e binding_expr.expr_span)
               | None ->
                   let ty = check_expr binding_expr NoExpectation in
                   define binding_id ty))
@@ -258,13 +269,13 @@ let tychk_fn cx fn =
     | Lit lit ->
         (match lit with
          | LitInt _ ->
-             resolve_expected expected |> ( function
-             | Some ty -> ty
-             | None -> infcx_new_int_var cx.infcx )
+             (match resolve_expected expected with
+              | Some ({ contents = Int _ } as ty) -> ty
+              | _ -> infcx_new_int_var cx.infcx)
          | LitFloat _ ->
-             resolve_expected expected |> ( function
-             | Some ty -> ty
-             | None -> infcx_new_float_var cx.infcx )
+             (match resolve_expected expected with
+              | Some ({ contents = Float _ } as ty) -> ty
+              | _ -> infcx_new_float_var cx.infcx)
          | LitStr _ -> tcx#types.str
          | LitBool _ -> tcx#types.bool)
     | Block block -> check_block_with_expected block expected
@@ -291,9 +302,10 @@ let tychk_fn cx fn =
       let old_ty = Infer (IntVar v.parent) in
       let ty = tcx#int_ty_to_ty @@ Option.value v.value ~default:I32 in
       tcx#invalidate old_ty !ty)
-    cx.infcx.int_ut.values;
-  (* tcx#node_id_to_ty#iter (fun k v -> printf "%d -> %s\n" k (render_ty !v)) *)
+    cx.infcx.int_ut.values
 ;;
+
+(* tcx#node_id_to_ty#iter (fun k v -> printf "%d -> %s\n" k (render_ty !v)) *)
 
 let rec tychk cx (modd : modd) =
   let f (item : item) =

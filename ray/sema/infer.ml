@@ -43,18 +43,24 @@ module IntVid :
 end
 
 module FloatVid :
-  UnifyKey with type k = floatvid and type v = ty option and type e = ty * ty =
-struct
+  UnifyKey
+    with type k = floatvid
+     and type v = float_ty option
+     and type e = float_ty * float_ty = struct
   type k = floatvid
-  type v = ty option
-  type e = ty * ty
+  type v = float_ty option
+  type e = float_ty * float_ty
 
   let index (vid : k) = vid.index
   let from_index index : k = { index }
   let tag () = "FloatVid"
   let order_roots _k1 _v1 _k2 _v2 = None
   let display_key key = display_floatvid key
-  let display_value = function Some ty -> render_ty ty | None -> "None"
+
+  let display_value = function
+    | Some ty -> display_float_ty ty
+    | None -> "None"
+  ;;
 
   let unify_values (v1 : v) (v2 : v) =
     match v1, v2 with
@@ -101,13 +107,11 @@ let fold_infer_ty infcx v =
              dbg "fold_infer_ty(int) = %s\n" (render_ty !ty);
              ty)
   | FloatVar tyvid ->
-      let ty =
-        FloatUt.probe_value infcx.float_ut tyvid
-        |> Option.map (fun v ->
-               dbg "fold_infer_ty(float) = %s\n" (render_ty v);
-               ref v)
-      in
-      ty
+      FloatUt.probe_value infcx.float_ut tyvid
+      |> Option.map (fun v ->
+             let ty = infcx.tcx#float_ty_to_ty v in
+             dbg "fold_infer_ty(float) = %s\n" (render_ty !ty);
+             ty)
   | TyVar _ -> None
 ;;
 

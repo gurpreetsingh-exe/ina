@@ -118,8 +118,8 @@ class tcx sess =
       dbg "tcx.insert_span(id = %d, span = %s)\n" id (Span.display_span span);
       assert (spans#insert id span = None)
 
-    method int_ty_to_ty (i : int_ty) : ty ref =
-      match i with
+    method int_ty_to_ty =
+      function
       | I8 -> _types.i8
       | I16 -> _types.i16
       | I32 -> _types.i32
@@ -131,8 +131,10 @@ class tcx sess =
       | U64 -> _types.u64
       | Usize -> _types.usize
 
-    method ast_int_ty_to_ty (i : Ast.int_ty) : ty ref =
-      match i with
+    method float_ty_to_ty = function F32 -> _types.f32 | F64 -> _types.f64
+
+    method ast_int_ty_to_ty : Ast.int_ty -> ty ref =
+      function
       | I8 -> _types.i8
       | I16 -> _types.i16
       | I32 -> _types.i32
@@ -143,9 +145,13 @@ class tcx sess =
       | U32 -> _types.u32
       | U64 -> _types.u64
       | Usize -> _types.usize
+
+    method ast_float_ty_to_ty : Ast.float_ty -> ty ref =
+      function F32 -> _types.f32 | F64 -> _types.f64
 
     method ast_ty_to_ty (ty : Ast.ty) : ty ref =
       match ty.kind with
       | Int i -> self#ast_int_ty_to_ty i
+      | Float f -> self#ast_float_ty_to_ty f
       | _ -> assert false
   end
