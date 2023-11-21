@@ -156,4 +156,7 @@ class tcx sess =
       | Int i -> self#ast_int_ty_to_ty i
       | Float f -> self#ast_float_ty_to_ty f
       | _ -> assert false
+
+    method inner_ty ty : ty ref option =
+      match !ty with Ptr ty | Ref ty -> Some (self#intern ty) | _ -> None
   end

@@ -1,7 +1,9 @@
 class ['a] vec =
   object (self)
     val mutable inner = [||]
+    method inner = inner
     method push (v : 'a) = inner <- Array.append inner [|v|]
+    method append (v : 'a vec) = inner <- Array.append inner v#inner
     method get i = Array.unsafe_get inner i
     method set i v = Array.unsafe_set inner i v
     method replace v = inner <- v
@@ -65,6 +67,19 @@ let map v (f : 'a -> 'b) =
     let r = Array.make l (f (v#get 0)) in
     for i = 1 to l - 1 do
       Array.unsafe_set r i (f @@ v#get i)
+    done;
+    mapped#replace r);
+  mapped
+;;
+
+let mapi v (f : int -> 'a -> 'b) =
+  let mapped = new vec in
+  let l = v#len in
+  if l <> 0
+  then (
+    let r = Array.make l (f 0 (v#get 0)) in
+    for i = 1 to l - 1 do
+      Array.unsafe_set r i (f i (v#get i))
     done;
     mapped#replace r);
   mapped

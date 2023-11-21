@@ -1,12 +1,10 @@
-open Ty
+open Middle.Ty
 open Printf
-
-(* let pp_ty (fmt : Format.formatter) ty : unit = *)
-(*   Format.pp_print_string fmt (render_ty ty) *)
+open Structures.Vec
 
 type t = {
     kind: inst_kind
-  ; id: int
+  ; mutable id: int
 }
 
 and binary_kind =
@@ -26,7 +24,7 @@ and binary_kind =
   | Or
 
 and inst_kind =
-  | Alloca of ty
+  | Alloca of ty ref
   | Binary of binary_kind * value * value
   | Br of value * value * value
   | Jmp of value
@@ -51,8 +49,8 @@ and inst_kind =
   | Nop
 
 and value =
-  | Const of const * ty
-  | VReg of t * int * ty
+  | Const of const * ty ref
+  | VReg of t * ty ref
   | Label of basic_block
   | Param of ty * string * int
   | Global of string
@@ -65,9 +63,9 @@ and const =
   | Struct of value list
 
 and basic_block = {
-    mutable pred: basic_block list
-  ; mutable succ: basic_block list
-  ; mutable insts: t list
+    mutable pred: basic_block vec
+  ; mutable succ: basic_block vec
+  ; mutable insts: t vec
   ; mutable bid: int
   ; mutable is_entry: bool
 }
@@ -117,8 +115,8 @@ let rec render_const = function
       sprintf "{ %s }" (String.concat ", " (List.map render_value values))
 
 and render_value = function
-  | Const (const, ty) -> sprintf "%s %s" (render_ty ty) (render_const const)
-  | VReg (_, i, ty) -> sprintf "%s%%%i" (render_ty ty ^ " ") i
+  | Const (const, ty) -> sprintf "%s %s" (render_ty !ty) (render_const const)
+  | VReg (inst, ty) -> sprintf "%s%%%i" (render_ty !ty ^ " ") inst.id
   | Label bb -> sprintf "label %%bb%d" bb.bid
   | Param (ty, name, _) -> sprintf "%s %%%s" (render_ty ty) name
   | Global name -> sprintf "@%s" name
@@ -126,14 +124,15 @@ and render_value = function
 
 let value_with_ty value ty =
   match value with
-  | Const (const, _) -> Const (const, ty)
-  | VReg (kind, i, _) -> VReg (kind, i, ty)
+  | Const (const, _) -> Const (const, ref ty)
+  | VReg (kind, _) -> VReg (kind, ref ty)
   | Param (_, name, i) -> Param (ty, name, i)
   | Global _ | Label _ -> value
 ;;
 
 let get_ty = function
-  | Param (ty, _, _) | Const (_, ty) | VReg (_, _, ty) -> ty
+  | Param (ty, _, _) -> ref ty
+  | Const (_, ty) | VReg (_, ty) -> ty
   | _ -> assert false
 ;;
 
@@ -143,7 +142,7 @@ let render_inst inst : string =
   (if has_value inst.kind then sprintf "    %%%d = " inst.id else "    ")
   ^
   match inst.kind with
-  | Alloca ty -> sprintf "alloca %s" (render_ty ty)
+  | Alloca ty -> sprintf "alloca %s" (render_ty !ty)
   | Binary (kind, left, right) ->
       sprintf
         "%s %s, %s"
@@ -172,16 +171,14 @@ let render_inst inst : string =
   | Load ptr ->
       sprintf
         "load %s, %s"
-        (match get_ty ptr with
+        (match !(get_ty ptr) with
          | Ptr ty -> render_ty ty
-         | RefTy ty -> render_ty ty
+         | Ref ty -> render_ty ty
          | _ -> assert false)
         (render_value ptr)
   | Gep (_, value, index) -> sprintf "gep %s, %d" (render_value value) index
   | Call (ty, fn, args) ->
-      let ty =
-        match ty with FnTy (_, ret_ty, _) -> ret_ty | _ -> assert false
-      in
+      let ty = match ty with FnPtr { ret; _ } -> ret | _ -> assert false in
       sprintf
         "call %s %s(%s)"
         (render_ty ty)

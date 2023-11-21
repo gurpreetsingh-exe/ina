@@ -1,132 +1,68 @@
 open Ast
-open Ty
+open Middle.Ty
 open Ir
+open Structures.Vec
 
-let mangle path =
-  "_Z"
-  ^ String.concat
-      ""
-      (List.map
-         (fun seg -> string_of_int (String.length seg) ^ seg)
-         path.segments)
+let gen_id fn =
+  let open Inst in
+  let bb_id = ref 0 in
+  let inst_id = ref 0 in
+  let Func.{ basic_blocks; _ } = fn in
+  let f inst =
+    if Inst.has_value inst.kind
+    then (
+      inst.id <- !inst_id;
+      incr inst_id)
+  in
+  let f bb =
+    bb.insts#iter f;
+    bb.bid <- !bb_id;
+    incr bb_id
+  in
+  basic_blocks.bbs#iter f
 ;;
 
-(* let mangle path = render_path path *)
-
-let rec lower_fn (fn : func) (ctx : Context.t) (mangle_name : bool) : Func.t =
-  Builder.reset ();
-  let {
-    fn_sig = { name; args; ret_ty; is_variadic; _ }
-  ; body
-  ; abi
-  ; is_extern
-  ; func_path
-  ; _
-  }
-    =
-    fn
+let lower lcx =
+  let tcx = lcx#tcx in
+  let fns = new vec in
+  let lower_fn fn =
+    let ty = tcx#node_id_to_ty#unsafe_get fn.func_id in
+    let arg_tys =
+      match !ty with FnPtr { args; _ } -> args | _ -> assert false
+    in
+    let def_id = tcx#node_id_to_def_id#unsafe_get fn.func_id in
+    let args =
+      mapi fn.fn_sig.args (fun i { arg; _ } ->
+          Inst.Param (arg_tys#get i, arg, i))
+    in
+    let ifn = Func.{ ty; def_id; args; basic_blocks = { bbs = new vec } } in
+    lcx#set_active_fn ifn;
+    (match fn.body with
+     | Some body ->
+         let bb = lcx#entry_block in
+         lcx#builder_at_end bb;
+         let bx = lcx#builder in
+         args#iter (function
+             | Param (ty, _, _) as inst ->
+                 let ptr = bx#alloca ty in
+                 bx#store inst ptr
+             | _ -> assert false);
+         let ret = Expr.lower_block lcx body in
+         (match ret with
+          | VReg (inst, ty) ->
+              (match inst.kind, ty with
+               | Nop, _ -> bx#ret_unit
+               | _ -> bx#ret ret)
+          | Const _ | Global _ -> bx#ret ret
+          | _ -> bx#ret_unit)
+     | None -> ());
+    gen_id ifn;
+    fns#push ifn
   in
-  let ret_ty = match ret_ty with Some ty -> ty | None -> Unit in
-  let fn_path = Option.get func_path in
-  let linkage_name =
-    if mangle_name then lookup_sym ctx.tcx fn_path.res else name
-  in
-  let fn_ty =
-    Func.
-      {
-        name
-      ; args =
-          List.map (fun (ty, name, _) -> unwrap_ty ctx.tcx ty, name) args
-      ; params =
-          List.mapi
-            (fun i (ty, name, _) ->
-              Inst.Param (unwrap_ty ctx.tcx ty, name, i))
-            args
-      ; ret_ty
-      ; is_variadic
-      ; abi
-      ; is_extern
-      ; linkage_name
-      }
-  in
-  match body with
-  | Some body ->
-      let fn = Func.Def { def_ty = fn_ty; basic_blocks = { bbs = [] } } in
-      ctx.fn <- Some fn;
-      lower_fn_body body ctx;
-      fn
-  | None -> Decl fn_ty
-
-and lower_fn_body body ctx =
-  let entry = Basicblock.create () in
-  entry.is_entry <- true;
-  Context.block_append ctx entry;
-  let ret = Expr.lower_block body ctx in
-  let builder = Builder.create ctx.tcx (Option.get ctx.block) in
-  match ret with
-  | VReg (inst, _, ty) ->
-      (match inst.kind, ty with
-       | Nop, _ -> Builder.ret_unit builder
-       | _, Ptr (Struct _) ->
-           (* HACK: load struct before returning *)
-           let ret = Builder.load ret builder in
-           Builder.ret ret builder
-       | _ -> Builder.ret ret builder)
-  | Const _ | Global _ -> Builder.ret ret builder
-  | _ -> Builder.ret_unit builder
-;;
-
-let gen_id (items : Func.t list) =
-  let f (item : Func.t) =
-    let bb_id = ref 0 in
-    match item with
-    | Def { basic_blocks; _ } ->
-        List.iter
-          (fun (bb : Inst.basic_block) ->
-            bb.bid <- !bb_id;
-            incr bb_id)
-          basic_blocks.bbs
+  let f : Ast.item -> unit = function
+    | Fn (fn, _) -> lower_fn fn
     | _ -> ()
   in
-  List.iter f items
-;;
-
-let rec lower_ast (ctx : Context.t) : Module.t =
-  let items = ref [] in
-  let f (item : item) =
-    match item with
-    | Fn (func, attrs) ->
-        let mangle = ref true in
-        List.iter
-          (fun attr ->
-            match attr.kind with
-            | NormalAttr { name = "nomangle" } -> mangle := false
-            | _ -> ())
-          attrs;
-        items := !items @ [lower_fn func ctx !mangle]
-    | Foreign funcs ->
-        items := !items @ List.map (fun f -> lower_fn f ctx false) funcs
-    | Impl { impl_items; _ } ->
-        items :=
-          !items
-          @ List.map (function AssocFn f -> lower_fn f ctx true) impl_items
-    | Import _ -> ()
-    | Const _ | Type _ | Unit _ | Mod _ -> ()
-  in
-  List.iter f ctx.modd.items;
-  let f (item : item) =
-    match item with
-    | Mod m ->
-        (match m.resolved_mod with
-         | Some modd ->
-             let tmp = ctx.modd in
-             ctx.modd <- modd;
-             items := !items @ (lower_ast ctx).items;
-             ctx.modd <- tmp
-         | None -> ())
-    | _ -> ()
-  in
-  List.iter f ctx.modd.items;
-  gen_id !items;
-  { items = !items }
+  lcx#mdl.items#iter f;
+  Module.{ items = fns }
 ;;

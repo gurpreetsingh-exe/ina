@@ -56,7 +56,8 @@ let create options =
       {
         sm
       ; span_diagnostic = new handler (Some sm) options.ui_testing
-      ; node_id = Random.int 0xffffff
+      (* ; node_id = Random.int 0xffffff *)
+      ; node_id = 0
       }
   }
 ;;

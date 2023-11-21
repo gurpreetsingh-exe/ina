@@ -4,7 +4,6 @@ open Session
 open Structures.Vec
 open Structures.Hashmap
 open Middle.Ctx
-open Middle.Ty
 open Middle.Def_id
 open Utils.Printer
 open Utils.Panic

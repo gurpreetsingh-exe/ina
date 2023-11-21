@@ -1,5 +1,5 @@
 (library
- (enabled_if false)
+ ; (enabled_if false)
  (name lowering)
  (libraries ast ir)
  (modules context item expr builder))

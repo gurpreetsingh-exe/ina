@@ -131,7 +131,10 @@ let ty_err_emit (tcx : tcx) err span =
 
 let tychk_fn cx fn =
   let tcx = cx.infcx.tcx in
-  let define id ty = ignore (cx.locals#insert id ty) in
+  let define id ty =
+    ignore (tcx#node_id_to_ty#insert id ty);
+    ignore (cx.locals#insert id ty)
+  in
   let resolve_expected = function
     | NoExpectation -> None
     | ExpectTy ty -> Some (Infer.resolve_vars cx.infcx ty)

@@ -4,13 +4,6 @@
  (libraries source))
 
 (library
- (name ty)
- (modules ty)
- ; (preprocess
- ;  (pps ppx_deriving.enum))
- (libraries token session metadata))
-
-(library
  (name ast)
  (modules ast)
  (libraries token))

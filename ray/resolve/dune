@@ -1,4 +1,4 @@
 (library
  (name resolve)
- (libraries ast ty middle front errors metadata utils)
+ (libraries ast middle front errors metadata utils)
  (modules module_graph resolver late))

@@ -5,6 +5,7 @@ open Utils
 open Resolve
 open Middle.Ctx
 open Sema
+open Lowering
 
 let () =
   let start = Sys.time () in
@@ -34,7 +35,10 @@ let () =
            (new Late.type_lowering resolver modd)#lower;
            let infcx = Infer.infer_ctx_create tcx in
            let cx = Tychk.create infcx in
-           Tychk.tychk cx modd
+           Tychk.tychk cx modd;
+           let lcx = new Context.lcx tcx modd in
+           let modulee = Item.lower lcx in
+           Ir.Module.render modulee
        | Fmt ->
            let open Ast_printer in
            render_module modd "";

@@ -1,45 +1,39 @@
-open Ty
+open Middle.Ctx
+open Structures.Hashmap
 open Ir
 open Ast
 
-type env = {
-    parent: env option
-  ; locals: (ident, Inst.value) Hashtbl.t
-}
+class lcx tcx mdl =
+  let dummy_builder () = new Builder.builder tcx (Basicblock.create ()) in
+  object
+    val tcx : tcx = tcx
+    val mdl : modd = mdl
+    val mutable fn : Func.t option = None
+    val mutable builder = dummy_builder ()
+    val locals : Inst.value nodemap = new hashmap
+    method tcx = tcx
+    method mdl = mdl
+    method builder = builder
+    method set_active_fn f = fn <- Some f
+    method builder_at_end bb = builder <- new Builder.builder tcx bb
+    method locals = locals
 
-type t = {
-    tcx: tcx
-  ; mutable env: env
-  ; mutable modd: modd
-  ; mutable fn: Func.t option
-  ; mutable block: Inst.basic_block option
-}
+    method entry_block =
+      let open Func in
+      match fn with
+      | Some fn ->
+          let bb = Basicblock.create () in
+          bb.is_entry <- true;
+          fn.basic_blocks.bbs#push bb;
+          bb
+      | None -> assert false
 
-let create tcx modd =
-  {
-    tcx
-  ; env = { parent = None; locals = Hashtbl.create 0 }
-  ; modd
-  ; fn = None
-  ; block = None
-  }
-;;
-
-let add_local ctx name ptr = Hashtbl.add ctx.env.locals name ptr
-
-let rec find_local env name =
-  if Hashtbl.mem env.locals name
-  then Hashtbl.find env.locals name
-  else
-    match env.parent with
-    | Some env -> find_local env name
-    | None -> raise Not_found
-;;
-
-let block_append ctx bb =
-  ctx.block <- Some bb;
-  let fn = Option.get ctx.fn in
-  match fn with
-  | Def { basic_blocks; _ } -> basic_blocks.bbs <- basic_blocks.bbs @ [bb]
-  | _ -> ()
-;;
+    method append_block =
+      let open Func in
+      match fn with
+      | Some fn ->
+          let bb = Basicblock.create () in
+          fn.basic_blocks.bbs#push bb;
+          bb
+      | None -> assert false
+  end

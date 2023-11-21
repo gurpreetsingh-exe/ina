@@ -1,44 +1,22 @@
-open Ty
+open Middle.Ty
+open Middle.Def_id
+open Structures.Vec
 open Printf
 
-type fn_type = {
-    name: string
-  ; linkage_name: string
-  ; args: (ty * string) list
-  ; params: Inst.value list
-  ; ret_ty: ty
-  ; is_variadic: bool
-  ; is_extern: bool
-  ; abi: string
+type blocks = { bbs: Inst.basic_block vec }
+
+type t = {
+    ty: ty ref
+  ; def_id: def_id
+  ; args: Inst.value vec
+  ; basic_blocks: blocks
 }
 
-let render_fn_type fn_ty =
+let render { ty; def_id; args; basic_blocks } =
   sprintf
-    "fn %s(%s) -> %s"
-    (if fn_ty.is_extern then fn_ty.name else fn_ty.linkage_name)
-    (String.concat
-       ", "
-       (List.map
-          (fun (ty, name) -> sprintf "%s %%%s" (render_ty ty) name)
-          fn_ty.args)
-     ^ if fn_ty.is_variadic then ", ..." else "")
-    (render_ty fn_ty.ret_ty)
-;;
-
-type blocks = { mutable bbs: Inst.basic_block list }
-
-type t =
-  | Decl of fn_type
-  | Def of {
-        def_ty: fn_type
-      ; basic_blocks: blocks
-    }
-
-let render = function
-  | Decl fn_ty -> render_fn_type fn_ty ^ ";\n"
-  | Def { def_ty; basic_blocks } ->
-      sprintf
-        "%s {\n%s\n}\n"
-        (render_fn_type def_ty)
-        (String.concat "\n\n" (List.map Basicblock.render basic_blocks.bbs))
+    "%s(%s): %s {\n%s\n}\n"
+    (print_def_id def_id)
+    (args#join ", " Inst.render_value)
+    (render_ty !ty)
+    (basic_blocks.bbs#join "\n\n" Basicblock.render)
 ;;
