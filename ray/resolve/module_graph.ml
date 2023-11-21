@@ -2,6 +2,7 @@ open Ast
 open Resolver
 open Middle.Def_id
 open Structures.Hashmap
+open Module
 
 class visitor resolver modd parent =
   let create_modul () =
@@ -13,16 +14,16 @@ class visitor resolver modd parent =
       ; resolutions = new hashmap
       }
     in
-    let _ = resolver#mod_table#insert id m in
+    let _ = resolver#modules#insert id m in
     m
   in
   object (self)
     val resolver : resolver = resolver
     val modd = modd
     val parent = parent
-    val mutable modul = create_modul ()
+    val mutable mdl = create_modul ()
     val mutable curr_fn = None
-    method modul = modul
+    method mdl = mdl
     method visit_ty _ = ()
     method visit_fn_sig _ = ()
 
@@ -49,10 +50,10 @@ class visitor resolver modd parent =
     method visit_pat _ = ()
 
     method with_module modul' f =
-      let tmp = modul in
-      modul <- modul';
+      let tmp = mdl in
+      mdl <- modul';
       f ();
-      modul <- tmp
+      mdl <- tmp
 
     method visit_stmt stmt =
       match stmt with
@@ -60,7 +61,7 @@ class visitor resolver modd parent =
       | Binding { binding_pat; binding_expr; binding_ty; binding_id; _ } ->
           let res = Res (Local binding_id) in
           (binding_pat |> function
-           | PatIdent name -> resolver#shadow modul name Value res);
+           | PatIdent name -> resolver#shadow mdl name Value res);
           self#visit_pat binding_pat;
           self#visit_expr binding_expr;
           (match binding_ty with Some ty -> self#visit_ty ty | None -> ())
@@ -70,19 +71,19 @@ class visitor resolver modd parent =
           self#visit_expr right
 
     method visit_block block =
-      let modul =
-        { mkind = Block; parent = Some modul; resolutions = new hashmap }
+      let mdl =
+        { mkind = Block; parent = Some mdl; resolutions = new hashmap }
       in
       (match curr_fn with
        | Some fn ->
            fn.fn_sig.args#iter (fun { arg; arg_id; _ } ->
                let res = Res (Local arg_id) in
-               resolver#shadow modul arg Value res);
+               resolver#shadow mdl arg Value res);
            curr_fn <- None
        | None -> ());
       let id = def_id block.block_id 0 in
-      assert (resolver#mod_table#insert id modul = None);
-      self#with_module modul (fun () ->
+      assert (resolver#modules#insert id mdl = None);
+      self#with_module mdl (fun () ->
           block.block_stmts#iter self#visit_stmt;
           match block.last_expr with
           | Some expr -> self#visit_expr expr
@@ -91,7 +92,7 @@ class visitor resolver modd parent =
     method visit_fn fn =
       resolver#tcx#insert_span fn.func_id fn.fn_sig.fn_span;
       let res = Res (Def (def_id fn.func_id 0, Fn)) in
-      resolver#define modul fn.fn_sig.name Value res;
+      resolver#define mdl fn.fn_sig.name Value res;
       self#visit_fn_sig fn.fn_sig;
       match fn.body with
       | Some body ->
@@ -111,10 +112,10 @@ class visitor resolver modd parent =
       | Mod { resolved_mod; _ } ->
           (match resolved_mod with
            | Some m ->
-               let visitor = new visitor resolver m (Some modul) in
+               let visitor = new visitor resolver m (Some mdl) in
                visitor#visit_mod;
-               let res = Module visitor#modul in
-               resolver#define modul m.mod_name Type res
+               let res = Module visitor#mdl in
+               resolver#define mdl m.mod_name Type res
            | None -> ())
       | Unit _ -> ()
 

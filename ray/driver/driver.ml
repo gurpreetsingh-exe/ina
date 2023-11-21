@@ -26,9 +26,9 @@ let () =
            let resolver = new Resolver.resolver tcx modd in
            let visitor = new Module_graph.visitor resolver modd None in
            visitor#visit_mod;
-           resolver#init visitor#modul;
+           resolver#init visitor#mdl;
            (* let printer = new Printer.printer in *)
-           (* Resolver.print_modul "" printer visitor#modul; *)
+           (* Resolver.Module.print_modul "" printer visitor#mdl; *)
            (* printer#print; *)
            resolver#resolve;
            (new Late.type_lowering resolver modd)#lower;

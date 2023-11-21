@@ -62,11 +62,9 @@ class tcx sess =
   object (self)
     val types : (ty, ty ref) hashmap = new hashmap
     val node_id_to_ty : ty ref nodemap = new hashmap
-    method node_id_to_ty = node_id_to_ty
+    val node_id_to_def_id : def_id nodemap = new hashmap
     val res_map : res nodemap = new hashmap
-    method res_map = res_map
     val spans : Span.t nodemap = new hashmap
-    method spans = spans
     val sess : Sess.t = sess
     val mutable _types = dummy_types
 
@@ -94,6 +92,10 @@ class tcx sess =
 
     method sess = sess
     method types = _types
+    method node_id_to_ty = node_id_to_ty
+    method node_id_to_def_id = node_id_to_def_id
+    method res_map = res_map
+    method spans = spans
 
     method intern ty : ty ref =
       if types#has ty

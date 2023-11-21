@@ -5,6 +5,7 @@ open Middle.Def_id
 open Structures.Vec
 open Utils.Panic
 open Resolver
+open Module
 
 class type_lowering resolver modd =
   object (self)
@@ -75,6 +76,8 @@ class type_lowering resolver modd =
       let ty =
         resolver#tcx#intern (FnPtr { args; ret; is_variadic = false; abi })
       in
+      let def_id = def_id fn.func_id 0 in
+      assert (resolver#tcx#node_id_to_def_id#insert fn.func_id def_id = None);
       assert (resolver#tcx#node_id_to_ty#insert fn.func_id ty = None);
       match fn.body with
       | Some body ->
@@ -97,6 +100,10 @@ class type_lowering resolver modd =
            | None -> ())
       | Unit _ -> ()
 
-    method visit_mod = modd.items#iter self#visit_item
+    method visit_mod =
+      let def_id = def_id modd.mod_id 0 in
+      assert (resolver#tcx#node_id_to_def_id#insert modd.mod_id def_id = None);
+      modd.items#iter self#visit_item
+
     method lower = self#visit_mod
   end

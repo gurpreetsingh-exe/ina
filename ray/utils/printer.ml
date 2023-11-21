@@ -2,6 +2,10 @@ let green ?(bold = true) s =
   (if bold then "\x1b[1;32m" else "\x1b[32m") ^ s ^ "\x1b[0m"
 ;;
 
+let red ?(bold = true) s =
+  (if bold then "\x1b[1;31m" else "\x1b[31m") ^ s ^ "\x1b[0m"
+;;
+
 let q s = "'" ^ s ^ "'"
 let t = green "├─"
 let bar = green "│ "
