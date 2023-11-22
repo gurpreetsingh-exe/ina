@@ -38,7 +38,7 @@ let () =
            Tychk.tychk cx modd;
            let lcx = new Context.lcx tcx modd in
            let modulee = Item.lower lcx in
-           Ir.Module.render modulee
+           Ir.Module.render tcx modulee
        | Fmt ->
            let open Ast_printer in
            render_module modd "";

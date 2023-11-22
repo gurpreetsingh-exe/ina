@@ -42,9 +42,11 @@ let lower lcx =
          let bb = lcx#entry_block in
          lcx#builder_at_end bb;
          let bx = lcx#builder in
-         args#iter (function
+         fn.fn_sig.args#iteri (fun i { arg_id; _ } ->
+             args#get i |> function
              | Param (ty, _, _) as inst ->
                  let ptr = bx#alloca ty in
+                 assert (lcx#locals#insert arg_id ptr = None);
                  bx#store inst ptr
              | _ -> assert false);
          let ret = Expr.lower_block lcx body in

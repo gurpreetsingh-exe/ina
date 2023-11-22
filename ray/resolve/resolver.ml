@@ -153,10 +153,7 @@ class resolver tcx modd =
     val modd : modd = modd
     val modules : (def_id, Module.t) hashmap = new hashmap
     val res : res nodemap = new hashmap
-    method res = res
-    method modules = modules
-    method tcx = tcx
-    method sess = tcx#sess
+    val mutable current_qpath : string vec = new vec
 
     val binding_parent_module : (name_resolution, Module.t) hashmap =
       new hashmap
@@ -169,6 +166,17 @@ class resolver tcx modd =
 
     method unit_root = unit_root
     method init mdl = unit_root <- mdl
+    method res = res
+    method modules = modules
+    method tcx = tcx
+    method sess = tcx#sess
+    method append_segment segment = current_qpath#push segment
+    method pop_segment = current_qpath#pop
+
+    method set_path def_id =
+      let path = new vec in
+      path#copy current_qpath;
+      assert (tcx#def_id_to_qpath#insert def_id path = None)
 
     method shadow mdl ident ns binding =
       let key = { ident; ns; disambiguator = 0 } in

@@ -2,8 +2,8 @@ open Structures.Vec
 
 type t = { items: Func.t vec }
 
-let render modulee =
-  modulee.items#iter (fun f -> print_endline (Func.render f))
+let render tcx modulee =
+  modulee.items#iter (fun f -> print_endline (Func.render tcx f))
 ;;
 
 let dot_graph_func name bbs out_dir =

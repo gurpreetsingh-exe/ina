@@ -12,10 +12,15 @@ class ['a] vec =
     method clear = inner <- [||]
     method all f = Array.for_all f inner
     method any f = Array.exists f inner
+    method copy (v : 'a vec) = inner <- Array.copy v#inner
 
     method pop_front =
       let _, tl = self#split 1 in
       inner <- tl
+
+    method pop =
+      let hd, _ = self#split (self#len - 1) in
+      inner <- hd
 
     method private split i =
       if i = 0

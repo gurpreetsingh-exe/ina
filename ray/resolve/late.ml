@@ -58,6 +58,7 @@ class type_lowering resolver modd =
       | None -> ()
 
     method visit_fn fn =
+      resolver#append_segment fn.fn_sig.name;
       let abi : abi =
         match fn.abi with
         | "intrinsic" -> Intrinsic
@@ -77,13 +78,15 @@ class type_lowering resolver modd =
         resolver#tcx#intern (FnPtr { args; ret; is_variadic = false; abi })
       in
       let def_id = def_id fn.func_id 0 in
+      resolver#set_path def_id;
       assert (resolver#tcx#node_id_to_def_id#insert fn.func_id def_id = None);
       assert (resolver#tcx#node_id_to_ty#insert fn.func_id ty = None);
-      match fn.body with
-      | Some body ->
-          curr_fn <- Some fn;
-          self#visit_block body
-      | None -> ()
+      (match fn.body with
+       | Some body ->
+           curr_fn <- Some fn;
+           self#visit_block body
+       | None -> ());
+      resolver#pop_segment
 
     method visit_impl _ = ()
     method visit_type _ = ()
@@ -101,9 +104,12 @@ class type_lowering resolver modd =
       | Unit _ -> ()
 
     method visit_mod =
+      resolver#append_segment modd.mod_name;
       let def_id = def_id modd.mod_id 0 in
+      resolver#set_path def_id;
       assert (resolver#tcx#node_id_to_def_id#insert modd.mod_id def_id = None);
-      modd.items#iter self#visit_item
+      modd.items#iter self#visit_item;
+      resolver#pop_segment
 
     method lower = self#visit_mod
   end

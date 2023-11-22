@@ -12,11 +12,13 @@ type t = {
   ; basic_blocks: blocks
 }
 
-let render { ty; def_id; args; basic_blocks } =
+let render tcx { ty; def_id; args; basic_blocks } =
+  let qpath = tcx#def_id_to_qpath#unsafe_get def_id in
+  let ret = !ty |> function FnPtr { ret; _ } -> ret | _ -> assert false in
   sprintf
-    "%s(%s): %s {\n%s\n}\n"
-    (print_def_id def_id)
+    "fn %s(%s)%s {\n%s\n}\n"
+    (qpath#join "::" (fun s -> s))
     (args#join ", " Inst.render_value)
-    (render_ty !ty)
+    (match ret with Unit -> String.empty | ty -> " -> " ^ render_ty ty)
     (basic_blocks.bbs#join "\n\n" Basicblock.render)
 ;;

@@ -1,6 +1,6 @@
 open Ty
 open Session
-open Printf
+open Structures.Vec
 open Structures.Hashmap
 open Def_id
 open Utils.Panic
@@ -64,6 +64,7 @@ class tcx sess =
     val node_id_to_ty : ty ref nodemap = new hashmap
     val node_id_to_def_id : def_id nodemap = new hashmap
     val res_map : res nodemap = new hashmap
+    val def_id_to_qpath : (def_id, string vec) hashmap = new hashmap
     val spans : Span.t nodemap = new hashmap
     val sess : Sess.t = sess
     val mutable _types = dummy_types
@@ -95,6 +96,7 @@ class tcx sess =
     method node_id_to_ty = node_id_to_ty
     method node_id_to_def_id = node_id_to_def_id
     method res_map = res_map
+    method def_id_to_qpath = def_id_to_qpath
     method spans = spans
 
     method intern ty : ty ref =
