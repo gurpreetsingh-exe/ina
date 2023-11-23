@@ -10,7 +10,7 @@ let lower_block (lcx : lcx) block =
       | Binding binding ->
           let { binding_expr; binding_id; _ } = binding in
           let ty = tcx#node_id_to_ty#unsafe_get binding_id in
-          let ptr = bx#alloca !ty in
+          let ptr = bx#alloca ty in
           assert (lcx#locals#insert binding_id ptr = None);
           let src = lower binding_expr in
           bx#store src ptr

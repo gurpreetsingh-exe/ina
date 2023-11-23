@@ -4,6 +4,7 @@ open Structures.Vec
 
 type t = {
     kind: inst_kind
+  ; ty: ty ref
   ; mutable id: int
 }
 
@@ -49,13 +50,16 @@ and inst_kind =
   | Nop
 
 and value =
-  | Const of const * ty ref
-  | VReg of t * ty ref
+  | Const of {
+        kind: const_kind
+      ; ty: ty ref
+    }
+  | VReg of t
   | Label of basic_block
   | Param of ty * string * int
   | Global of string
 
-and const =
+and const_kind =
   | Int of int
   | Float of float
   | Str of string
@@ -115,24 +119,18 @@ let rec render_const = function
       sprintf "{ %s }" (String.concat ", " (List.map render_value values))
 
 and render_value = function
-  | Const (const, ty) -> sprintf "%s %s" (render_ty !ty) (render_const const)
-  | VReg (inst, ty) -> sprintf "%s%%%i" (render_ty !ty ^ " ") inst.id
+  | Const const ->
+      sprintf "%s %s" (render_ty !(const.ty)) (render_const const.kind)
+  | VReg inst -> sprintf "%s%%%i" (render_ty !(inst.ty) ^ " ") inst.id
   | Label bb -> sprintf "label %%bb%d" bb.bid
   | Param (ty, name, _) -> sprintf "%s %%%s" (render_ty ty) name
   | Global name -> sprintf "@%s" name
 ;;
 
-let value_with_ty value ty =
-  match value with
-  | Const (const, _) -> Const (const, ref ty)
-  | VReg (kind, _) -> VReg (kind, ref ty)
-  | Param (_, name, i) -> Param (ty, name, i)
-  | Global _ | Label _ -> value
-;;
-
 let get_ty = function
   | Param (ty, _, _) -> ref ty
-  | Const (_, ty) | VReg (_, ty) -> ty
+  | Const c -> c.ty
+  | VReg v -> v.ty
   | _ -> assert false
 ;;
 

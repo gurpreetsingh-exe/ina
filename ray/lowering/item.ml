@@ -22,7 +22,7 @@ let gen_id fn =
   basic_blocks.bbs#iter f
 ;;
 
-let lower lcx =
+let lower (lcx : Context.lcx) =
   let tcx = lcx#tcx in
   let fns = new vec in
   let lower_fn fn =
@@ -45,14 +45,14 @@ let lower lcx =
          fn.fn_sig.args#iteri (fun i { arg_id; _ } ->
              args#get i |> function
              | Param (ty, _, _) as inst ->
-                 let ptr = bx#alloca ty in
+                 let ptr = bx#alloca (tcx#intern ty) in
                  assert (lcx#locals#insert arg_id ptr = None);
                  bx#store inst ptr
              | _ -> assert false);
          let ret = Expr.lower_block lcx body in
          (match ret with
-          | VReg (inst, ty) ->
-              (match inst.kind, ty with
+          | VReg inst ->
+              (match inst.kind, inst.ty with
                | Nop, _ -> bx#ret_unit
                | _ -> bx#ret ret)
           | Const _ | Global _ -> bx#ret ret
