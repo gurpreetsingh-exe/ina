@@ -11,6 +11,7 @@ type t = {
   ; mutable output_type: output_type
   ; mutable command: command
   ; mutable print_ir: bool
+  ; mutable print_ast: bool
   ; mutable display_time: bool
   ; mutable display_type_vars: bool
   ; mutable ui_testing: bool
@@ -54,6 +55,7 @@ let config () : t =
   ; output_type = Exe
   ; command = Nan
   ; print_ir = false
+  ; print_ast = false
   ; display_time = false
   ; display_type_vars = false
   ; ui_testing = false

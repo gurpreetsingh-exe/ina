@@ -10,6 +10,7 @@ let usage arg0 =
   printf "        --emit=asm|llvm-ir|exe|obj|unit\n";
   printf "                         output type to emit\n";
   printf "        --opt=0|3        optimization level\n";
+  printf "        --print-ast      print AST of the file\n";
   printf "        --print-ir       print IR of the file\n";
   printf
     "        --dot-cfg        emit cfg of function(s) to \".dot\" file(s)\n";
@@ -56,6 +57,7 @@ let parse_args () =
        then
          match arg with
          | "--help" -> usage arg0
+         | "--print-ast" -> config.print_ast <- true
          | "--print-ir" -> config.print_ir <- true
          | "--time" -> config.display_time <- true
          | "--type-vars" -> config.display_type_vars <- true

@@ -22,6 +22,11 @@ let () =
          then Filename.dirname modd.mod_path
          else Path.join [Filename.dirname modd.mod_path; modd.mod_name]);
       sess.timings.parse <- time;
+      if sess.options.print_ast
+      then (
+        Front.Ast_printer.render_module modd "";
+        print_endline !Front.Ast_printer.out;
+        exit 0);
       (match sess.options.command with
        | Build ->
            let time, resolver =
