@@ -147,7 +147,7 @@ def parse_expected_result(lines: List[str]) -> TestResult:
 
 
 def fmt_test(tests: Tests, case: pathlib.Path, src: str):
-    command = "./bin/ray fmt {}".format(case).split(" ")
+    command = "./bin/ina fmt {}".format(case).split(" ")
     proc = subprocess.Popen(command, stdout=subprocess.PIPE)
     if proc.stdout:
         if stdout := proc.stdout.read().decode():
@@ -191,10 +191,10 @@ def run_test(case: pathlib.Path, options: argparse.Namespace):
                 if unit_src in tests.units:
                     continue
                 tests.units[unit_src] = unit
-                subprocess.call("./bin/ray build {} --emit=unit".format(
+                subprocess.call("./bin/ina build {} --emit=unit".format(
                     unit_src).split(" "))
 
-        command = "./bin/ray build {} --ui-testing".format(case).split(" ")
+        command = "./bin/ina build {} --ui-testing".format(case).split(" ")
         proc = subprocess.Popen(
             command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stderr = None

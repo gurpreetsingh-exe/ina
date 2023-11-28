@@ -382,8 +382,8 @@ let emit (cx : codegen_ctx) =
   let output = tcx.sess.options.output in
   let machine = tcx.sess.machine in
   let content = const_string llcx (tcx_metadata tcx) in
-  let metadata = define_global "__ray_metadata" content llmod in
-  set_section ".ray" metadata;
+  let metadata = define_global "__ina_metadata" content llmod in
+  set_section ".ina" metadata;
   set_linkage Private metadata;
   match tcx.sess.options.output_type with
   | LlvmIr ->

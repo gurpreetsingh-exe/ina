@@ -1,5 +1,5 @@
 error: function `f` is not found in this scope
-   --> function_not_found.ray:4:5
+   --> function_not_found.ina:4:5
     |
  LL |     f();
     |     ^^^ not found in this scope

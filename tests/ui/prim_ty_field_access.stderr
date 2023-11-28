@@ -1,5 +1,5 @@
 error: primitive type `i64` has no fields
-   --> prim_ty_field_access.ray:5:13
+   --> prim_ty_field_access.ina:5:13
     |
  LL |     let b = a.a;
     |             ^

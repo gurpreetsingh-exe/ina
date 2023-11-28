@@ -18,7 +18,7 @@ let () =
   match res with
   | Ok modd ->
       sess.options.output <-
-        (if Filename.basename modd.mod_path = "lib.ray"
+        (if Filename.basename modd.mod_path = "lib.ina"
          then Filename.dirname modd.mod_path
          else Path.join [Filename.dirname modd.mod_path; modd.mod_name]);
       sess.timings.parse <- time;

@@ -1,5 +1,5 @@
 error: struct `Foo` is not found in this scope
-   --> struct_not_found.ray:4:13
+   --> struct_not_found.ina:4:13
     |
  LL |     let a = Foo { a: 32 };
     |             ^^^^^^^^^^^^^ not found in this scope

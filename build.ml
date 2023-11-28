@@ -206,7 +206,7 @@ let run () =
   (* TODO: custom build dir *)
   ignore @@ Sys.command ("rm -rf " ^ build_dir);
   if Sys.command ("mkdir -p " ^ build_dir) <> 0 then assert false;
-  if Sys.command (sprintf "cp -rf ray %s/ray" build_dir) <> 0
+  if Sys.command (sprintf "cp -rf ina %s/ina" build_dir) <> 0
   then assert false;
   let options =
     List.map
@@ -220,7 +220,7 @@ let run () =
   in
   List.iter
     (fun (lib, deps) ->
-      let lib = Library.load (Path.join [build_dir; "ray"; lib]) deps in
+      let lib = Library.load (Path.join [build_dir; "ina"; lib]) deps in
       if not lib.is_single_unit then Library.resolve lib;
       compile lib options)
     libs

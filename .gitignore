@@ -9,7 +9,7 @@ __pycache__/
 _build/
 library/
 *.ll
-test*.ray
+test*.ina
 test*.*
 *.cmi
 *.cma

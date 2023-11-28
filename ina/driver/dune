@@ -1,5 +1,5 @@
 (executable
- (public_name ray)
+ (public_name ina)
  (name driver)
  ; (libraries front codegen sema resolve session lowering)
  (libraries front resolve sema lowering session utils)
