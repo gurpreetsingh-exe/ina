@@ -18,7 +18,7 @@ let render tcx { ty; def_id; args; basic_blocks } =
   sprintf
     "fn %s(%s)%s {\n%s\n}\n"
     (qpath#join "::" (fun s -> s))
-    (args#join ", " Inst.render_value)
+    (args#join ", " (tcx |> Inst.render_value))
     (match ret with Unit -> String.empty | ty -> " -> " ^ render_ty ty)
-    (basic_blocks.bbs#join "\n\n" Basicblock.render)
+    (basic_blocks.bbs#join "\n\n" (tcx |> Basicblock.render))
 ;;

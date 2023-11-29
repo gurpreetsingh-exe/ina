@@ -160,5 +160,7 @@ class tcx sess =
       | _ -> assert false
 
     method inner_ty ty : ty ref option =
-      match !ty with Ptr ty | Ref ty -> Some (self#intern ty) | _ -> None
+      match !ty with
+      | Ptr ty | Ref ty | FnPtr { ret = ty; _ } -> Some (self#intern ty)
+      | _ -> None
   end

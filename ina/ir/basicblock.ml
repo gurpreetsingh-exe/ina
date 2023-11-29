@@ -20,7 +20,7 @@ let append_succ (bb : Inst.basic_block) succs =
   succs#iter (fun bb0 -> bb0.pred#push bb)
 ;;
 
-let render (bb : Inst.basic_block) : string =
+let render tcx (bb : Inst.basic_block) : string =
   let preds =
     if bb.pred#empty
     then ""
@@ -29,5 +29,9 @@ let render (bb : Inst.basic_block) : string =
         "                                              ; preds: %s"
         (bb.pred#join ", " label)
   in
-  sprintf "%s:%s\n%s" (label bb) preds (bb.insts#join "\n" Inst.render_inst)
+  sprintf
+    "%s:%s\n%s"
+    (label bb)
+    preds
+    (bb.insts#join "\n" (tcx |> Inst.render_inst))
 ;;

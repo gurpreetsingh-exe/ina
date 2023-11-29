@@ -25,9 +25,13 @@ class builder tcx block =
     method store src dst = self#add_inst (Store (src, dst))
 
     method load ptr =
-      let ty = get_ty ptr in
+      let ty = get_ty tcx ptr in
       let ty = Option.get @@ tcx#inner_ty ty in
       self#add_inst_with_ty ty (Load ptr)
+
+    method call ty value args =
+      let ret = Option.get @@ tcx#inner_ty ty in
+      self#add_inst_with_ty ret (Call (ty, value, args))
 
     method nop =
       let inst = { kind = Nop; ty = tcx#types.unit; id = -1 } in

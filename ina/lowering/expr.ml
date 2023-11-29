@@ -1,5 +1,6 @@
 open Ast
 open Context
+open Structures.Vec
 
 let lower_block (lcx : lcx) block =
   let tcx = lcx#tcx in
@@ -14,6 +15,7 @@ let lower_block (lcx : lcx) block =
           assert (lcx#locals#insert binding_id ptr = None);
           let src = lower binding_expr in
           bx#store src ptr
+      | Stmt expr | Expr expr -> ignore (lower expr)
       | _ -> ()
     in
     block.block_stmts#iter f;
@@ -34,7 +36,13 @@ let lower_block (lcx : lcx) block =
          | Local id ->
              let ptr = lcx#locals#unsafe_get id in
              bx#load ptr
+         | Def (id, _) -> Global id
          | _ -> assert false)
+    | Call (expr, args) ->
+        let fn = lower expr in
+        let ty = Ir.Inst.get_ty tcx fn in
+        let args = map args (fun arg -> lower arg) in
+        bx#call ty fn args
     | _ -> assert false
   in
   lower_block' ()

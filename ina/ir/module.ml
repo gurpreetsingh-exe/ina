@@ -6,7 +6,7 @@ let render tcx modulee =
   modulee.items#iter (fun f -> print_endline (Func.render tcx f))
 ;;
 
-let dot_graph_func name bbs out_dir =
+let dot_graph_func tcx name bbs out_dir =
   let strip_tab i =
     let len = String.length i in
     String.sub i 4 (len - 4)
@@ -17,7 +17,7 @@ let dot_graph_func name bbs out_dir =
           "    bb%d [label = \"%s\" xlabel = \"bb%d\"];\n"
           bb.bid
           (bb.insts#join "" (fun inst ->
-               strip_tab (Inst.render_inst inst) ^ "\\l"))
+               strip_tab (Inst.render_inst tcx inst) ^ "\\l"))
           bb.bid)
   in
   let out_name = out_dir ^ Filename.dir_sep ^ name in
@@ -37,8 +37,8 @@ let dot_graph_func name bbs out_dir =
   |> output_string out
 ;;
 
-let dot_graph modulee =
+let dot_graph tcx modulee =
   (try Sys.mkdir ".dots" 0o775 with Sys_error _ -> ());
-  modulee.items#iter (fun Func.{ ty; def_id; basic_blocks = { bbs }; _ } ->
-      dot_graph_func (Middle.Def_id.print_def_id def_id) bbs ".dots")
+  modulee.items#iter (fun Func.{ def_id; basic_blocks = { bbs }; _ } ->
+      dot_graph_func tcx (Middle.Def_id.print_def_id def_id) bbs ".dots")
 ;;
