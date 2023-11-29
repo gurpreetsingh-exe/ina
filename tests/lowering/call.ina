@@ -1,0 +1,10 @@
+// RUN: %ina build %s --print-ir | FileCheck %s
+
+// CHECK-LABEL: call::f
+fn f() {}
+
+// CHECK-LABEL: call::main
+fn main() {
+    // CHECK: call unit @call::f()
+    f();
+}
