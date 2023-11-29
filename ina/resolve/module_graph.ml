@@ -58,10 +58,7 @@ class visitor resolver modd parent =
     method visit_stmt stmt =
       match stmt with
       | Stmt expr | Expr expr -> self#visit_expr expr
-      | Binding { binding_pat; binding_expr; binding_ty; binding_id; _ } ->
-          let res = Res (Local binding_id) in
-          (binding_pat |> function
-           | PatIdent name -> resolver#shadow mdl name Value res);
+      | Binding { binding_pat; binding_expr; binding_ty; _ } ->
           self#visit_pat binding_pat;
           self#visit_expr binding_expr;
           (match binding_ty with Some ty -> self#visit_ty ty | None -> ())

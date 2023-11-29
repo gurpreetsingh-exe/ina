@@ -403,12 +403,16 @@ class resolver tcx modd =
         body.block_stmts#iter (fun stmt ->
             match stmt with
             | Stmt expr | Expr expr -> visit_expr expr mdl
-            | Binding { binding_pat; binding_expr = expr; binding_ty; _ } ->
+            | Binding
+                { binding_pat; binding_expr; binding_ty; binding_id; _ } ->
                 (match binding_ty with
                  | Some ty -> resolve_ty ty
                  | None -> ());
                 binding_pat |> ( function
-                | PatIdent _ -> visit_expr expr mdl )
+                | PatIdent name ->
+                    visit_expr binding_expr mdl;
+                    let res = Res (Local binding_id) in
+                    self#shadow mdl name Value res )
             | Assert (expr, _) -> visit_expr expr mdl
             | Assign (expr1, expr2) ->
                 visit_expr expr1 mdl;
