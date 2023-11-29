@@ -174,5 +174,6 @@ let rec render_ty2 ty =
         (args#join ", " (fun ty -> render_ty2 ty)
          ^ if is_variadic then ", ..." else String.empty)
         (render_ty2 ret)
+  | Err -> "err"
   | _ -> assert false
 ;;

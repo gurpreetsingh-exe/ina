@@ -128,7 +128,7 @@ type infer_err =
   | FnNotFound of ident
   | StructNotFound of ident
   | VarNotFound of ident
-  | MismatchArgs of ident * int * int
+  | MismatchArgs of int * int
   | InvalidCall of ty
   | InvalidDeref of ty
   | AssocFnAsMethod of string
@@ -159,11 +159,10 @@ let invalid_call ty span =
   mk_err msg span
 ;;
 
-let mismatch_args func expected found span =
+let mismatch_args expected found span =
   let msg =
     sprintf
-      "`%s` expected %d arg%s, found %d"
-      func
+      "expected %d arg%s, found %d"
       expected
       (if expected = 1 then "" else "s")
       found
@@ -186,8 +185,8 @@ let infer_err_emit tcx (ty_err : infer_err) (span : Span.t) =
   | FnNotFound name -> tcx#emit (fn_not_found name span)
   | StructNotFound name -> tcx#emit (struct_not_found name span)
   | VarNotFound name -> tcx#emit (local_var_not_found name span)
-  | MismatchArgs (func, expected, args) ->
-      tcx#emit (mismatch_args func expected args span)
+  | MismatchArgs (expected, args) ->
+      tcx#emit (mismatch_args expected args span)
   | InvalidDeref ty -> if ty <> Err then tcx#emit (invalid_deref ty span)
   | InvalidCall ty -> if ty <> Err then tcx#emit (invalid_call ty span)
   | AssocFnAsMethod name -> tcx#emit (assoc_call_as_method name span)

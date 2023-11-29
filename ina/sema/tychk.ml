@@ -109,6 +109,11 @@ let method_not_found ty name span =
   mk_err msg span
 ;;
 
+let invalid_call ty span =
+  let msg = sprintf "`%s` is not callable" (render_ty ty) in
+  mk_err msg span
+;;
+
 let ty_err_emit (tcx : tcx) err span =
   match err with
   | MismatchTy (expected, ty) ->
@@ -140,7 +145,7 @@ let tychk_fn cx fn =
     | ExpectTy ty -> Some (Infer.resolve_vars cx.infcx ty)
   in
   let write_ty id ty =
-    dbg "write_ty(id = %d, ty = %s)\n" id (render_ty !ty);
+    dbg "write_ty(id = %d, ty = %s)\n" id (render_ty2 !ty);
     ignore (tcx#node_id_to_ty#insert id ty)
   in
   let int_unification_error (v : IntVid.e) =
@@ -265,7 +270,22 @@ let tychk_fn cx fn =
         left
     | Call (expr, args) ->
         let ty = check_expr expr NoExpectation in
-        ty
+        (match !ty with
+         | FnPtr { args = arg_tys; ret; _ } ->
+             if args#len <> arg_tys#len
+             then
+               tcx#emit @@ mismatch_args arg_tys#len args#len expr.expr_span;
+             args#iteri (fun i arg ->
+                 ignore
+                   (check_expr
+                      arg
+                      (if i < arg_tys#len
+                       then ExpectTy (tcx#intern @@ arg_tys#get i)
+                       else NoExpectation)));
+             tcx#intern ret
+         | _ ->
+             tcx#emit @@ invalid_call !ty expr.expr_span;
+             ref Middle.Ty.Err)
     | Path path ->
         let res = tcx#res_map#unsafe_get path.path_id in
         let ty =
