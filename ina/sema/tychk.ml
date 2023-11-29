@@ -210,7 +210,13 @@ let tychk_fn cx fn =
               | Error e -> ty_err_emit tcx e expr.expr_span);
              expected
          | NoExpectation -> ty)
-    | None -> tcx#types.unit
+    | None ->
+        (match expected with
+         | ExpectTy expected ->
+             tcx#emit
+             @@ mismatch_ty !expected !(tcx#types.unit) block.block_span;
+             expected
+         | NoExpectation -> tcx#types.unit)
   and check_stmt stmt =
     match stmt with
     | Assign (expr1, expr2) ->
@@ -294,11 +300,20 @@ let tychk_fn cx fn =
         dbg "expected function, found `%s`\n" (render_ty !ty);
         assert false
   in
+  (* TODO: display better error span *)
+  let span =
+    match fn.fn_sig.ret_ty with
+    | Some ty -> ty.span
+    | None -> fn.fn_sig.fn_span
+  in
   (match fn.body with
    | Some block ->
        fn.fn_sig.args#iter (fun { ty; arg_id; _ } ->
            define arg_id (tcx#ast_ty_to_ty ty));
-       ignore (check_block_with_expected block (ExpectTy ret))
+       let ty = check_block block in
+       (match equate ret ty with
+        | Ok _ -> ()
+        | Error e -> ty_err_emit tcx e span)
    | None -> ());
   Array.iter
     (fun (v : IntUt.VarValue.t) ->
