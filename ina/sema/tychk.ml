@@ -300,11 +300,19 @@ let tychk_fn cx fn =
          | LitInt _ ->
              (match resolve_expected expected with
               | Some ({ contents = Int _ } as ty) -> ty
-              | _ -> infcx_new_int_var cx.infcx)
+              | Some ty ->
+                  let found = infcx_new_int_var cx.infcx in
+                  tcx#emit @@ mismatch_ty !ty !found expr.expr_span;
+                  ty
+              | None -> infcx_new_int_var cx.infcx)
          | LitFloat _ ->
              (match resolve_expected expected with
               | Some ({ contents = Float _ } as ty) -> ty
-              | _ -> infcx_new_float_var cx.infcx)
+              | Some ty ->
+                  let found = infcx_new_float_var cx.infcx in
+                  tcx#emit @@ mismatch_ty !ty !found expr.expr_span;
+                  ty
+              | None -> infcx_new_float_var cx.infcx)
          | LitStr _ -> tcx#types.str
          | LitBool _ -> tcx#types.bool)
     | Block block -> check_block_with_expected block expected
