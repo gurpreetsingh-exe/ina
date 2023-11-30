@@ -77,6 +77,20 @@ let map v (f : 'a -> 'b) =
   mapped
 ;;
 
+let map2 v1 v2 (f : 'a -> 'b -> 'c) =
+  assert (v1#len = v2#len);
+  let mapped = new vec in
+  let l = v1#len in
+  if l <> 0
+  then (
+    let r = Array.make l (f (v1#get 0) (v2#get 0)) in
+    for i = 1 to l - 1 do
+      Array.unsafe_set r i (f (v1#get i) (v2#get i))
+    done;
+    mapped#replace r);
+  mapped
+;;
+
 let mapi v (f : int -> 'a -> 'b) =
   let mapped = new vec in
   let l = v#len in

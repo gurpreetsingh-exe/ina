@@ -60,7 +60,8 @@ let () =
            if sess.options.print_ir
            then (
              Ir.Module.render tcx modulee;
-             exit 0)
+             exit 0);
+           Codegen.Ctx.codegen tcx modulee
        | Fmt ->
            let open Ast_printer in
            render_module modd "";

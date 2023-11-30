@@ -10,6 +10,7 @@ type t = {
   ; mutable opt_level: opt_level
   ; mutable output_type: output_type
   ; mutable command: command
+  ; mutable backend: backend
   ; mutable print_ir: bool
   ; mutable print_ast: bool
   ; mutable display_time: bool
@@ -31,6 +32,10 @@ and output_type =
   | Object
   | Unit
   | LlvmIr
+
+and backend =
+  | C
+  | Llvm
 
 let get_opt_level = function
   | "0" -> Some Default
@@ -54,6 +59,7 @@ let config () : t =
   ; opt_level = Default
   ; output_type = Exe
   ; command = Nan
+  ; backend = C
   ; print_ir = false
   ; print_ast = false
   ; display_time = false

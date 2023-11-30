@@ -311,7 +311,18 @@ class resolver tcx modd =
       (match !res with Err -> assert false | _ -> ());
       !res
 
-    method resolve = self#resolve_paths unit_root modd
+    method resolve_main =
+      let mdl = self#get_root_mod unit_root in
+      let segs = new vec in
+      segs#push { ident = "main"; span = Source.Span.make 0 0 };
+      self#resolve_path_in_modul mdl segs Value
+
+    method resolve =
+      self#resolve_paths unit_root modd;
+      let main = self#resolve_main in
+      match main with
+      | Def (id, _) -> tcx#set_main id
+      | _ -> print_endline "main not found"
 
     method resolve_paths (mdl : Module.t) (modd : modd) : unit =
       dbg "resolve_paths(module = %s)\n" (print_mkind mdl.mkind);

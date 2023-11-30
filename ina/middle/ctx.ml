@@ -85,6 +85,7 @@ class tcx sess =
     val def_id_to_qpath : (def_id, string vec) hashmap = new hashmap
     val spans : Span.t nodemap = new hashmap
     val sess : Sess.t = sess
+    val mutable main : def_id option = None
     val mutable _types = dummy_types
     val mutable err_count = 0
 
@@ -118,6 +119,8 @@ class tcx sess =
     method res_map = res_map
     method def_id_to_qpath = def_id_to_qpath
     method spans = spans
+    method set_main id = main <- Some id
+    method main = main
 
     method intern ty : ty ref =
       if types#has ty
@@ -145,6 +148,21 @@ class tcx sess =
     method insert_span id span =
       dbg "tcx.insert_span(id = %d, span = %s)\n" id (Span.display_span span);
       assert (spans#insert id span = None)
+
+    method sizeof_int_ty =
+      function
+      | I8 | U8 -> 8
+      | U16 | I16 -> 16
+      | U32 | I32 -> 32
+      | U64 | Usize | I64 | Isize -> 64
+
+    method sizeof_float_ty = function F32 -> 4 | F64 -> 8
+
+    method sizeof ty =
+      match !ty with
+      | Ty.Int i -> self#sizeof_int_ty i
+      | Float f -> self#sizeof_float_ty f
+      | _ -> assert false
 
     method int_ty_to_ty =
       function
