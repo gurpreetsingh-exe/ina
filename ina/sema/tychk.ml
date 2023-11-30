@@ -283,15 +283,17 @@ let tychk_fn cx fn =
                        then ExpectTy (tcx#intern @@ arg_tys#get i)
                        else NoExpectation)));
              tcx#intern ret
+         | Err -> ty
          | _ ->
              tcx#emit @@ invalid_call !ty expr.expr_span;
-             ref Middle.Ty.Err)
+             tcx#types.err)
     | Path path ->
         let res = tcx#res_map#unsafe_get path.path_id in
         let ty =
           match res with
           | Def (id, _) -> tcx#node_id_to_ty#unsafe_get id.inner
           | Local id -> cx.locals#unsafe_get id
+          | Err -> tcx#types.err
           | _ -> assert false
         in
         ty

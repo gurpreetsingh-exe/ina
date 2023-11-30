@@ -57,21 +57,6 @@ module Module = struct
   let name_binding_kind_to_enum = function Res _ -> 0L | Module _ -> 1L
   let render_ns = function Type -> "type" | Value -> "value"
 
-  let print_prim_ty : prim_ty -> string = function
-    | Int _ -> "int"
-    | Float _ -> "float"
-    | Bool -> "bool"
-    | Str -> "str"
-  ;;
-
-  let print_res : res -> string = function
-    | Def (id, kind) ->
-        sprintf "(%s~%s)" (print_def_kind kind) (print_def_id id)
-    | PrimTy ty -> print_prim_ty ty
-    | Local id -> "local#" ^ string_of_int id
-    | Err -> "err"
-  ;;
-
   let module_res mdl =
     match mdl.mkind with
     | Def (kind, def_id, _) ->

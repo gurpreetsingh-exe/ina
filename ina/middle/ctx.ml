@@ -5,6 +5,7 @@ open Structures.Hashmap
 open Def_id
 open Utils.Panic
 open Source
+open Printf
 
 type 'a nodemap = (int, 'a) hashmap
 
@@ -19,6 +20,21 @@ and res =
   | PrimTy of prim_ty
   | Local of int
   | Err
+
+let print_prim_ty : prim_ty -> string = function
+  | Int _ -> "int"
+  | Float _ -> "float"
+  | Bool -> "bool"
+  | Str -> "str"
+;;
+
+let print_res : res -> string = function
+  | Def (id, kind) ->
+      sprintf "(%s~%s)" (print_def_kind kind) (print_def_id id)
+  | PrimTy ty -> print_prim_ty ty
+  | Local id -> "local#" ^ string_of_int id
+  | Err -> "err"
+;;
 
 type types = {
     i8: ty ref
@@ -36,6 +52,7 @@ type types = {
   ; bool: ty ref
   ; str: ty ref
   ; unit: ty ref
+  ; err: ty ref
 }
 
 let dummy_types =
@@ -55,6 +72,7 @@ let dummy_types =
   ; bool = ref Unit
   ; str = ref Unit
   ; unit = ref Unit
+  ; err = ref Unit
   }
 ;;
 
@@ -68,6 +86,7 @@ class tcx sess =
     val spans : Span.t nodemap = new hashmap
     val sess : Sess.t = sess
     val mutable _types = dummy_types
+    val mutable err_count = 0
 
     initializer
       let ty =
@@ -87,6 +106,7 @@ class tcx sess =
         ; bool = self#intern Bool
         ; str = self#intern Str
         ; unit = self#intern Unit
+        ; err = self#intern Err
         }
       in
       _types <- ty
@@ -116,7 +136,11 @@ class tcx sess =
         (render_ty new_ty);
       ty := new_ty
 
-    method emit err = Sess.emit_err sess.parse_sess err
+    method emit err =
+      err_count <- err_count + 1;
+      Sess.emit_err sess.parse_sess err
+
+    method has_errors = err_count > 0
 
     method insert_span id span =
       dbg "tcx.insert_span(id = %d, span = %s)\n" id (Span.display_span span);

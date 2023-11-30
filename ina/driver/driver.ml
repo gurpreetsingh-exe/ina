@@ -50,6 +50,7 @@ let () =
                  Tychk.tychk cx modd)
            in
            sess.timings.sema <- time;
+           if tcx#has_errors then exit 1;
            let time, modulee =
              Timer.time (fun () ->
                  let lcx = new Context.lcx tcx modd in
