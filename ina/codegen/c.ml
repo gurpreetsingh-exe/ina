@@ -78,7 +78,17 @@ let create tcx irmdl =
 
 let gen cx =
   let inst_name inst = sprintf "_%d" inst.id in
-  let get_const kind = render_const cx.tcx kind in
+  let get_const = function
+    | Int v -> string_of_int v
+    | Float v -> string_of_float v
+    | Bool v -> string_of_bool v
+    | Str v ->
+        sprintf
+          "(str) { .ptr = \"%s\", .length = %d }"
+          (String.escaped v)
+          (String.length v)
+    | _ -> assert false
+  in
   let get_value = function
     | Param (_, name, _) -> name
     | VReg i -> inst_name i
