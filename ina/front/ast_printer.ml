@@ -70,7 +70,7 @@ let rec render_ty (ty : ty) =
   | Ptr ty -> sprintf "*%s" (render_ty ty)
   | Ref ty -> sprintf "&%s" (render_ty ty)
   | Unit -> "()"
-  | FnTy (ty_list, ret_ty, _) ->
+  | FnPtr (ty_list, ret_ty, _) ->
       sprintf
         "fn(%s) -> %s"
         (ty_list#join ", " (fun ty -> render_ty ty))

@@ -9,7 +9,7 @@ let gen_id fn =
   let inst_id = ref 0 in
   let Func.{ basic_blocks; _ } = fn in
   let f inst =
-    if Inst.has_value inst.kind
+    if Inst.has_value inst
     then (
       inst.id <- !inst_id;
       incr inst_id)
@@ -22,9 +22,8 @@ let gen_id fn =
   basic_blocks.bbs#iter f
 ;;
 
-let lower (lcx : Context.lcx) =
+let rec lower (lcx : Context.lcx) mdl =
   let tcx = lcx#tcx in
-  let fns = new vec in
   let lower_fn fn =
     let ty = tcx#node_id_to_ty#unsafe_get fn.func_id in
     let arg_tys =
@@ -35,7 +34,16 @@ let lower (lcx : Context.lcx) =
       mapi fn.fn_sig.args (fun i { arg; _ } ->
           Inst.Param (arg_tys#get i, arg, i))
     in
-    let ifn = Func.{ ty; def_id; args; basic_blocks = { bbs = new vec } } in
+    let ifn =
+      Func.
+        {
+          ty
+        ; def_id
+        ; args
+        ; basic_blocks = { bbs = new vec }
+        ; decl = fn.is_extern
+        }
+    in
     lcx#set_active_fn ifn;
     (match fn.body with
      | Some body ->
@@ -59,12 +67,12 @@ let lower (lcx : Context.lcx) =
           | _ -> bx#ret_unit)
      | None -> ());
     gen_id ifn;
-    fns#push ifn
+    lcx#define ifn
   in
   let f : Ast.item -> unit = function
     | Fn (fn, _) -> lower_fn fn
-    | _ -> ()
+    | Mod { resolved_mod = Some mdl; _ } -> lower lcx mdl
+    | _ -> assert false
   in
-  lcx#mdl.items#iter f;
-  Module.{ items = fns }
+  mdl.items#iter f
 ;;

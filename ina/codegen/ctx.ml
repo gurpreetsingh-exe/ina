@@ -45,6 +45,6 @@ let codegen (tcx : tcx) mdl =
         | Unit -> ""
       in
       if Sys.command command <> 0 then eprintf "command failed\n";
-      assert (Sys.command (sprintf "rm -f %s" input) = 0)
+      (* assert (Sys.command (sprintf "rm -f %s" input) = 0) *)
   | Llvm -> assert false
 ;;

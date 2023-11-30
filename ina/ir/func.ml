@@ -10,10 +10,12 @@ type t = {
   ; def_id: def_id
   ; args: Inst.value vec
   ; basic_blocks: blocks
+  ; decl: bool
 }
 
-let render tcx { ty; def_id; args; basic_blocks } =
+let render tcx { ty; def_id; args; basic_blocks; _ } =
   let qpath = tcx#def_id_to_qpath#unsafe_get def_id in
+  print_endline (print_def_id def_id);
   let ret = !ty |> function FnPtr { ret; _ } -> ret | _ -> assert false in
   sprintf
     "fn %s(%s)%s {\n%s\n}\n"

@@ -303,7 +303,8 @@ class parser pcx file tokenizer =
           in
           let* ret_ty = self#parse_ret_ty in
           let ret_ty = Option.value ~default:unit_ty ret_ty in
-          Ok (mk_ty (FnTy (args, ret_ty, !var_arg)) (self#mk_span s) self#id)
+          Ok
+            (mk_ty (FnPtr (args, ret_ty, !var_arg)) (self#mk_span s) self#id)
       | Ident ->
           let name = get_token_str token file#src in
           (match Hashtbl.find_opt builtin_types name with
@@ -899,7 +900,7 @@ class parser pcx file tokenizer =
       let* attrs = self#parse_outer_attrs in
       match token.kind with
       | Fn ->
-              let* fn = self#parse_fn "default" false in
+          let* fn = self#parse_fn "default" false in
           Ok (Ast.Fn (fn, attrs))
       | Type ->
           let* ty = self#parse_type in

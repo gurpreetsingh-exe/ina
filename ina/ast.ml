@@ -39,7 +39,7 @@ type ty_kind =
   | Str
   | Ptr of ty
   | Ref of ty
-  | FnTy of ty vec * ty * bool
+  | FnPtr of ty vec * ty * bool
   | Path of path
   | ImplicitSelf
   | Unit

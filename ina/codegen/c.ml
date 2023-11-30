@@ -1,10 +1,13 @@
 open Middle.Ctx
-open Structures
+open Middle.Ty
+open Middle.Def_id
+open Structures.Vec
+open Structures.Hashmap
 open Printf
 open Ir.Inst
 
 let prelude =
-  "#include <alloca.h>\n#include <stdint.h>\n#include <stdlib.h>\n\n"
+  ref "#include <alloca.h>\n#include <stdint.h>\n#include <stdlib.h>\n\n"
 ;;
 
 let out = ref ""
@@ -19,15 +22,22 @@ let newline () = out ^ "\n"
 type cx = {
     tcx: tcx
   ; irmdl: Ir.Module.t
+  ; types: (ty, string) hashmap
+  ; gen'd_fns: (def_id, unit) hashmap
 }
 
-let mangle cx def_id =
-  let qpath = cx.tcx#def_id_to_qpath#unsafe_get def_id in
-  String.concat
-    ""
-    [
-      "_ZN"; qpath#join "" (fun s -> sprintf "%d%s" (String.length s) s); "Ev"
-    ]
+let mangle cx did =
+  let qpath = cx.tcx#def_id_to_qpath#unsafe_get did in
+  if cx.tcx#is_extern did
+  then Option.get qpath#last
+  else
+    String.concat
+      ""
+      [
+        "_ZN"
+      ; qpath#join "" (fun s -> sprintf "%d%s" (String.length s) s)
+      ; "Ev"
+      ]
 ;;
 
 let rec backend_ty cx = function
@@ -45,13 +55,28 @@ let rec backend_ty cx = function
        | Usize -> "size_t")
   | Float floatty -> (match floatty with F32 -> "float" | F64 -> "double")
   | Ptr ty -> sprintf "%s*" (backend_ty cx ty)
-  | _ -> assert false
+  | Unit -> "void"
+  | Str as ty ->
+      (match cx.types#get ty with
+       | Some ty -> ty
+       | None ->
+           prelude
+           ^ "typedef struct str {\n\
+             \  void* ptr;\n\
+             \  size_t length;\n\
+              } str;\n\n";
+           assert (cx.types#insert ty "str" = None);
+           "str")
+  | ty ->
+      print_endline @@ Middle.Ty.render_ty ty;
+      assert false
 ;;
 
-let create tcx irmdl = { tcx; irmdl }
+let create tcx irmdl =
+  { tcx; irmdl; types = new hashmap; gen'd_fns = new hashmap }
+;;
 
 let gen cx =
-  out ^ prelude;
   let inst_name inst = sprintf "_%d" inst.id in
   let get_const kind = render_const cx.tcx kind in
   let get_value = function
@@ -68,7 +93,7 @@ let gen cx =
   and gen_inst inst =
     out
     ^
-    if has_value inst.kind
+    if has_value inst
     then sprintf "  %s %s = " (backend_ty cx !(inst.ty)) (inst_name inst)
     else "  ";
     match inst.kind with
@@ -95,27 +120,41 @@ let gen cx =
     let gen_arg ty arg =
       sprintf "%s %s" (backend_ty cx ty) (get_value arg)
     in
-    let args = Vec.map2 args func.args gen_arg in
+    let args = map2 args func.args gen_arg in
     let header =
       sprintf
-        "%s %s(%s)"
+        "%s%s %s(%s)"
+        (if cx.tcx#is_extern func.def_id then "extern " else "")
         (backend_ty cx ret)
         name
         (args#join ", " (fun s -> s))
     in
     out ^ header;
-    out ^ " {\n";
-    func.basic_blocks.bbs#iter gen_bb;
-    out ^ "}\n\n"
+    if cx.tcx#is_extern func.def_id
+    then out ^ ";\n"
+    else (
+      out ^ " {\n";
+      func.basic_blocks.bbs#iter gen_bb;
+      out ^ "}\n\n")
   in
   let gen_main main_id =
     let name = mangle cx main_id in
     out ^ sprintf "int main() {\n  return %s();\n}\n" name
   in
-  cx.irmdl.items#iter gen_function;
-  match cx.tcx#main with
-  | Some id -> gen_main id
-  | _ -> out ^ "int main() {}\n"
+  cx.irmdl.items#iter (fun f ->
+      let did =
+        if f.decl
+        then cx.tcx#decl_extern (mangle cx f.def_id) f.def_id
+        else f.def_id
+      in
+      if not (cx.gen'd_fns#has did)
+      then (
+        assert (cx.gen'd_fns#insert did () = None);
+        gen_function f));
+  (match cx.tcx#main with
+   | Some id -> gen_main id
+   | _ -> out ^ "int main() {}\n");
+  out := String.cat !prelude !out
 ;;
 
 let emit _cx output =

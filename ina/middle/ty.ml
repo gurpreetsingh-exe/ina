@@ -176,5 +176,7 @@ let rec render_ty2 ty =
          ^ if is_variadic then ", ..." else String.empty)
         (render_ty2 ret)
   | Err -> "err"
+  | Ptr ty -> "*" ^ render_ty2 ty
+  | Ref ty -> "&" ^ render_ty2 ty
   | _ -> assert false
 ;;

@@ -165,7 +165,7 @@ class resolver tcx modd =
 
     method shadow mdl ident ns binding =
       let key = { ident; ns; disambiguator = 0 } in
-      self#set_binding_parent_module binding mdl;
+      (* self#set_binding_parent_module binding mdl; *)
       ignore (mdl.resolutions#insert key binding)
 
     method define parent ident ns name_binding =
@@ -186,7 +186,7 @@ class resolver tcx modd =
       match res#get key with Some nameres -> nameres | None -> assert false
 
     method try_define mdl key binding =
-      self#set_binding_parent_module binding mdl;
+      (* self#set_binding_parent_module binding mdl; *)
       match mdl.resolutions#insert key binding with
       | Some old_binding ->
           if not @@ pcmp old_binding binding
@@ -328,7 +328,7 @@ class resolver tcx modd =
       dbg "resolve_paths(module = %s)\n" (print_mkind mdl.mkind);
       let rec resolve_ty (ty : Ast.ty) =
         match ty.kind with
-        | FnTy (args, ty, _) ->
+        | FnPtr (args, ty, _) ->
             args#iter (fun ty -> resolve_ty ty);
             resolve_ty ty
         | Path path ->
@@ -340,7 +340,7 @@ class resolver tcx modd =
         | Ref ty | Ptr ty -> resolve_ty ty
         | ImplicitSelf | Int _ | Float _ | Bool | Str | Unit -> ()
         | _ ->
-            (* print_endline (Front.Ast_printer.render_ty ty); *)
+            print_endline (Front.Ast_printer.render_ty ty);
             assert false
       in
       let rec visit_expr expr (mdl : Module.t) =
@@ -366,7 +366,7 @@ class resolver tcx modd =
                      ; style = NoStyle
                      }
                  in
-                 Sess.emit_err self#sess.parse_sess err
+                 tcx#emit err
              | _ -> ());
             (match res#insert path.path_id resolved with
              | Some _ -> assert false

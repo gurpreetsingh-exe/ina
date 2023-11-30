@@ -106,15 +106,12 @@ let render_binary = function
   | BitOr | Or -> "or"
 ;;
 
-let has_value = function
-  | Br _ | Jmp _ | Store _ | Ret _ | RetUnit | Nop -> false
-  | _ -> true
-;;
+let has_value inst = !(inst.ty) <> Unit
 
 let rec render_const tcx = function
   | Int value -> sprintf "%d" value
   | Float value -> sprintf "%f" value
-  | Str value -> sprintf "%s" (String.escaped value)
+  | Str value -> sprintf "\"%s\"" (String.escaped value)
   | Bool value -> sprintf "%b" value
   | Struct values ->
       sprintf
@@ -144,7 +141,7 @@ let get_ty tcx = function
 let extract_block = function Label bb -> bb | _ -> assert false
 
 let render_inst tcx inst : string =
-  (if has_value inst.kind then sprintf "    %%%d = " inst.id else "    ")
+  (if has_value inst then sprintf "    %%%d = " inst.id else "    ")
   ^
   match inst.kind with
   | Alloca ty -> sprintf "alloca %s" (render_ty !ty)

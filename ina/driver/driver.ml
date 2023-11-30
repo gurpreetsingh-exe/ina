@@ -51,17 +51,18 @@ let () =
            in
            sess.timings.sema <- time;
            if tcx#has_errors then exit 1;
-           let time, modulee =
+           let time, mdl =
              Timer.time (fun () ->
-                 let lcx = new Context.lcx tcx modd in
-                 Item.lower lcx)
+                 let lcx = new Context.lcx tcx in
+                 Item.lower lcx modd;
+                 lcx#mdl)
            in
            sess.timings.lowering <- time;
            if sess.options.print_ir
            then (
-             Ir.Module.render tcx modulee;
+             Ir.Module.render tcx mdl;
              exit 0);
-           Codegen.Ctx.codegen tcx modulee
+           Codegen.Ctx.codegen tcx mdl
        | Fmt ->
            let open Ast_printer in
            render_module modd "";

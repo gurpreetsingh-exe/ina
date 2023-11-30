@@ -88,6 +88,8 @@ class tcx sess =
     val mutable main : def_id option = None
     val mutable _types = dummy_types
     val mutable err_count = 0
+    val extern_decls : (string, def_id) hashmap = new hashmap
+    val extern_def_ids : (def_id, unit) hashmap = new hashmap
 
     initializer
       let ty =
@@ -119,8 +121,18 @@ class tcx sess =
     method res_map = res_map
     method def_id_to_qpath = def_id_to_qpath
     method spans = spans
+    method extern_decls = extern_decls
     method set_main id = main <- Some id
     method main = main
+    method is_extern did = extern_def_ids#has did
+
+    method decl_extern name did =
+      extern_def_ids#insert' did ();
+      match extern_decls#get name with
+      | Some did -> did
+      | None ->
+          assert (extern_decls#insert name did = None);
+          did
 
     method intern ty : ty ref =
       if types#has ty
@@ -162,6 +174,8 @@ class tcx sess =
       match !ty with
       | Ty.Int i -> self#sizeof_int_ty i
       | Float f -> self#sizeof_float_ty f
+      | Ptr _ | Ref _ | FnPtr _ -> 8
+      | Str -> 16
       | _ -> assert false
 
     method int_ty_to_ty =
@@ -199,6 +213,22 @@ class tcx sess =
       match ty.kind with
       | Int i -> self#ast_int_ty_to_ty i
       | Float f -> self#ast_float_ty_to_ty f
+      | Ptr ty -> self#intern (Ptr !(self#ast_ty_to_ty ty))
+      | Ref ty -> self#intern (Ref !(self#ast_ty_to_ty ty))
+      | Str -> _types.str
+      | Bool -> _types.bool
+      | Unit -> _types.unit
+      | FnPtr (args, ret, is_variadic) ->
+          self#intern
+            (FnPtr
+               {
+                 args = map args (fun ty -> !(self#ast_ty_to_ty ty))
+               ; ret = !(self#ast_ty_to_ty ret)
+               ; is_variadic
+               ; abi = Default
+               })
+      | Err -> assert false
+      | Path _ -> assert false
       | _ -> assert false
 
     method inner_ty ty : ty ref option =

@@ -14,6 +14,7 @@ class ['k, 'v] hashmap =
         Hashtbl.add inner k v;
         None)
 
+    method insert' k v = if not (self#has k) then Hashtbl.add inner k v
     method get k = Hashtbl.find_opt inner k
     method unsafe_get k = Hashtbl.find inner k
     method has k = Hashtbl.mem inner k

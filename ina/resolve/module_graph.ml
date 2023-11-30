@@ -88,7 +88,12 @@ class visitor resolver modd parent =
 
     method visit_fn fn =
       resolver#tcx#insert_span fn.func_id fn.fn_sig.fn_span;
-      let res = Res (Def (def_id fn.func_id 0, Fn)) in
+      let name = fn.fn_sig.name in
+      let did = def_id fn.func_id 0 in
+      let did =
+        if fn.is_extern then resolver#tcx#decl_extern name did else did
+      in
+      let res = Res (Def (did, Fn)) in
       resolver#define mdl fn.fn_sig.name Value res;
       self#visit_fn_sig fn.fn_sig;
       match fn.body with
