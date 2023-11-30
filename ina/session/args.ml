@@ -7,7 +7,7 @@ let usage arg0 =
   printf "    build                compile the file\n";
   printf "    fmt                  format the file\n";
   printf "\nOptions:\n";
-  printf "        --emit=asm|llvm-ir|exe|obj|unit\n";
+  printf "        --emit=asm|exe|obj|unit\n";
   printf "                         output type to emit\n";
   printf "        --opt=0|3        optimization level\n";
   printf "        --print-ast      print AST of the file\n";
@@ -23,9 +23,7 @@ let usage arg0 =
 let value_map =
   let tbl = Hashtbl.create 0 in
   let entries =
-    [|
-       "--emit", ["asm"; "llvm-ir"; "exe"; "obj"; "unit"]; "--opt", ["0"; "3"]
-    |]
+    [|"--emit", ["asm"; "exe"; "obj"; "unit"]; "--opt", ["0"; "3"]|]
   in
   Array.iter (fun (option, value) -> Hashtbl.add tbl option value) entries;
   tbl

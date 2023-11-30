@@ -3,7 +3,10 @@ open Structures
 open Printf
 open Ir.Inst
 
-let prelude = "#include <stdint.h>\n#include <stdlib.h>\n\n"
+let prelude =
+  "#include <alloca.h>\n#include <stdint.h>\n#include <stdlib.h>\n\n"
+;;
+
 let out = ref ""
 
 let ( ^ ) s rest =
@@ -56,7 +59,7 @@ let gen cx =
   in
   let rec gen_bb bb =
     let open Ir.Inst in
-    out ^ sprintf "bb%d:\n" bb.bid;
+    out ^ sprintf "bb%d:;\n" bb.bid;
     bb.insts#iter gen_inst
   and gen_inst inst =
     out

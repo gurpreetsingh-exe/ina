@@ -31,7 +31,6 @@ and output_type =
   | Asm
   | Object
   | Unit
-  | LlvmIr
 
 and backend =
   | C
@@ -48,7 +47,6 @@ let get_output_type = function
   | "asm" -> Some Asm
   | "obj" -> Some Object
   | "unit" -> Some Unit
-  | "llvm-ir" -> Some LlvmIr
   | _ -> None
 ;;
 
