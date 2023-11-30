@@ -23,7 +23,11 @@ type cx = {
 
 let mangle cx def_id =
   let qpath = cx.tcx#def_id_to_qpath#unsafe_get def_id in
-  qpath#join "$" (fun s -> s)
+  String.concat
+    ""
+    [
+      "_ZN"; qpath#join "" (fun s -> sprintf "%d%s" (String.length s) s); "Ev"
+    ]
 ;;
 
 let rec backend_ty cx = function
