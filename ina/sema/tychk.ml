@@ -318,8 +318,14 @@ let tychk_fn cx fn =
          | LitStr _ -> tcx#types.str
          | LitBool _ -> tcx#types.bool)
     | Block block -> check_block_with_expected block expected
-    | If _ | Deref _ | Ref _ | StructExpr _ | Field _ | Cast _ | MethodCall _
-      ->
+    | Deref expr ->
+        let ty = check_expr expr NoExpectation in
+        (match !ty with
+         | Ptr ty | Ref ty -> tcx#intern ty
+         | ty ->
+             tcx#emit @@ invalid_deref ty expr.expr_span;
+             tcx#types.err)
+    | If _ | Ref _ | StructExpr _ | Field _ | Cast _ | MethodCall _ ->
         assert false
   in
   let ty = tcx#node_id_to_ty#unsafe_get fn.func_id in
