@@ -5,6 +5,7 @@ let usage arg0 =
   printf "Usage: %s [command] [options] input...\n" arg0;
   printf "\nCommands:\n";
   printf "    build                compile the file\n";
+  printf "    check                analyze the file and report errors\n";
   printf "    fmt                  format the file\n";
   printf "\nOptions:\n";
   printf "        --emit=asm|exe|obj|unit\n";
@@ -87,6 +88,7 @@ let parse_args () =
        config.command <-
          (match arg with
           | "build" -> Build
+          | "check" -> Check
           | "fmt" -> Fmt
           | "test" -> Test
           | _ ->

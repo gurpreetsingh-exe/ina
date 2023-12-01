@@ -15,46 +15,49 @@ let () =
     Timer.time (fun () ->
         Parser.parse_mod_from_file sess.parse_sess sess.options.input)
   in
+  let resolve_and_sema mdl =
+    let time, resolver =
+      Timer.time (fun () ->
+          let resolver = new Resolver.resolver tcx mdl in
+          let visitor = new Module_graph.visitor resolver mdl None in
+          visitor#visit_mod;
+          resolver#init visitor#mdl;
+          resolver#resolve;
+          (* let printer = new Printer.printer in *)
+          (* Resolver.Module.print_modul "" printer visitor#mdl; *)
+          (* printer#print; *)
+          resolver)
+    in
+    sess.timings.resolve <- time;
+    (new Late.type_lowering resolver mdl)#lower;
+    let time, _ =
+      Timer.time (fun () ->
+          let infcx = Infer.infer_ctx_create tcx in
+          let cx = Tychk.create infcx in
+          Tychk.tychk cx mdl)
+    in
+    sess.timings.sema <- time;
+    if tcx#has_errors then exit 1
+  in
   match res with
-  | Ok modd ->
+  | Ok mdl ->
       sess.options.output <-
-        (if Filename.basename modd.mod_path = "lib.ina"
-         then Filename.dirname modd.mod_path
-         else Path.join [Filename.dirname modd.mod_path; modd.mod_name]);
+        (if Filename.basename mdl.mod_path = "lib.ina"
+         then Filename.dirname mdl.mod_path
+         else Path.join [Filename.dirname mdl.mod_path; mdl.mod_name]);
       sess.timings.parse <- time;
       if sess.options.print_ast
       then (
-        Front.Ast_printer.render_module modd "";
+        Front.Ast_printer.render_module mdl "";
         print_endline !Front.Ast_printer.out;
         exit 0);
       (match sess.options.command with
        | Build ->
-           let time, resolver =
-             Timer.time (fun () ->
-                 let resolver = new Resolver.resolver tcx modd in
-                 let visitor = new Module_graph.visitor resolver modd None in
-                 visitor#visit_mod;
-                 resolver#init visitor#mdl;
-                 resolver#resolve;
-                 (* let printer = new Printer.printer in *)
-                 (* Resolver.Module.print_modul "" printer visitor#mdl; *)
-                 (* printer#print; *)
-                 resolver)
-           in
-           sess.timings.resolve <- time;
-           (new Late.type_lowering resolver modd)#lower;
-           let time, _ =
-             Timer.time (fun () ->
-                 let infcx = Infer.infer_ctx_create tcx in
-                 let cx = Tychk.create infcx in
-                 Tychk.tychk cx modd)
-           in
-           sess.timings.sema <- time;
-           if tcx#has_errors then exit 1;
+           resolve_and_sema mdl;
            let time, mdl =
              Timer.time (fun () ->
                  let lcx = new Context.lcx tcx in
-                 Item.lower lcx modd;
+                 Item.lower lcx mdl;
                  lcx#mdl)
            in
            sess.timings.lowering <- time;
@@ -63,9 +66,10 @@ let () =
              Ir.Module.render tcx mdl;
              exit 0);
            Codegen.Ctx.codegen tcx mdl
+       | Check -> resolve_and_sema mdl
        | Fmt ->
            let open Ast_printer in
-           render_module modd "";
+           render_module mdl "";
            Format.print_string !out
        | _ -> ());
       let time = (Sys.time () -. start) *. 1000. in
