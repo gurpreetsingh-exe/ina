@@ -163,10 +163,10 @@ class tcx sess =
 
     method sizeof_int_ty =
       function
-      | I8 | U8 -> 8
-      | U16 | I16 -> 16
-      | U32 | I32 -> 32
-      | U64 | Usize | I64 | Isize -> 64
+      | I8 | U8 -> 1
+      | U16 | I16 -> 2
+      | U32 | I32 -> 4
+      | U64 | Usize | I64 | Isize -> 8
 
     method sizeof_float_ty = function F32 -> 4 | F64 -> 8
 
