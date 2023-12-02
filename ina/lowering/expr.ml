@@ -43,6 +43,9 @@ let lower_block (lcx : lcx) block =
         let ty = Ir.Inst.get_ty tcx fn in
         let args = map args (fun arg -> lower arg) in
         bx#call ty fn args
+    | Deref expr ->
+        let ptr = lower expr in
+        bx#load ptr
     | _ -> assert false
   in
   lower_block' ()
