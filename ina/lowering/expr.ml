@@ -26,6 +26,15 @@ let lower_block (lcx : lcx) block =
     | LitFloat value -> bx#const_float ty value
     | LitStr value -> bx#const_string ty value
     | LitBool value -> bx#const_bool ty value
+  and lower_lvalue expr =
+    match expr.expr_kind with
+    | Path path ->
+        let res = tcx#res_map#unsafe_get path.path_id in
+        (match res with
+         | Local id -> lcx#locals#unsafe_get id
+         | Def (id, _) -> Global id
+         | _ -> assert false)
+    | _ -> assert false
   and lower expr =
     let ty = tcx#node_id_to_ty#unsafe_get expr.expr_id in
     match expr.expr_kind with
@@ -46,6 +55,7 @@ let lower_block (lcx : lcx) block =
     | Deref expr ->
         let ptr = lower expr in
         bx#load ptr
+    | Ref expr -> lower_lvalue expr
     | _ -> assert false
   in
   lower_block' ()
