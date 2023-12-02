@@ -276,12 +276,17 @@ let tychk_fn cx fn =
              then
                tcx#emit @@ mismatch_args arg_tys#len args#len expr.expr_span;
              args#iteri (fun i arg ->
-                 ignore
-                   (check_expr
-                      arg
-                      (if i < arg_tys#len
-                       then ExpectTy (tcx#intern @@ arg_tys#get i)
-                       else NoExpectation)));
+                 let expected = tcx#intern @@ arg_tys#get i in
+                 let ty =
+                   check_expr
+                     arg
+                     (if i < arg_tys#len
+                      then ExpectTy expected
+                      else NoExpectation)
+                 in
+                 match equate ty expected with
+                 | Ok _ -> ()
+                 | Error e -> ty_err_emit tcx e arg.expr_span);
              tcx#intern ret
          | Err -> ty
          | _ ->
