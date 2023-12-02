@@ -57,7 +57,7 @@ and value =
     }
   | VReg of t
   | Label of basic_block
-  | Param of ty * string * int
+  | Param of ty ref * string * int
   | Global of def_id
 
 and const_kind =
@@ -120,8 +120,8 @@ let rec render_const tcx = function
 
 and render_value tcx = function
   | Const const ->
-      sprintf "%s %s" (render_ty !(const.ty)) (render_const tcx const.kind)
-  | VReg inst -> sprintf "%s %%%i" (render_ty !(inst.ty)) inst.id
+      sprintf "%s %s" (render_ty const.ty) (render_const tcx const.kind)
+  | VReg inst -> sprintf "%s %%%i" (render_ty inst.ty) inst.id
   | Label bb -> sprintf "label %%bb%d" bb.bid
   | Param (ty, name, _) -> sprintf "%s %%%s" (render_ty ty) name
   | Global id ->
@@ -131,7 +131,7 @@ and render_value tcx = function
 ;;
 
 let get_ty tcx = function
-  | Param (ty, _, _) -> tcx#intern ty
+  | Param (ty, _, _) -> ty
   | Const c -> c.ty
   | VReg v -> v.ty
   | Global id -> tcx#node_id_to_ty#unsafe_get id.inner
@@ -144,7 +144,7 @@ let render_inst tcx inst : string =
   (if has_value inst then sprintf "    %%%d = " inst.id else "    ")
   ^
   match inst.kind with
-  | Alloca ty -> sprintf "alloca %s" (render_ty !ty)
+  | Alloca ty -> sprintf "alloca %s" (render_ty ty)
   | Binary (kind, left, right) ->
       sprintf
         "%s %s, %s"
@@ -160,7 +160,7 @@ let render_inst tcx inst : string =
   | Phi (ty, args) ->
       sprintf
         "phi %s, %s"
-        (render_ty ty)
+        (render_ty (ref ty))
         (String.concat
            ", "
            (List.map
@@ -198,9 +198,15 @@ let render_inst tcx inst : string =
         name
         (String.concat ", " (List.map (tcx |> render_value) args))
   | PtrToInt (value, ty) ->
-      sprintf "ptrtoint %s to %s" (render_value tcx value) (render_ty ty)
+      sprintf
+        "ptrtoint %s to %s"
+        (render_value tcx value)
+        (render_ty (ref ty))
   | IntToPtr (value, ty) ->
-      sprintf "inttoptr %s to %s" (render_value tcx value) (render_ty ty)
+      sprintf
+        "inttoptr %s to %s"
+        (render_value tcx value)
+        (render_ty (ref ty))
   | Ret ret -> sprintf "ret %s" (render_value tcx ret)
   | Trap _ -> "trap"
   | RetUnit -> "ret"

@@ -2,7 +2,6 @@ open Middle.Ctx
 open Structures.Hashmap
 open Structures.Vec
 open Ir
-open Ast
 
 class lcx tcx =
   let dummy_builder () = new Builder.builder tcx (Basicblock.create ()) in

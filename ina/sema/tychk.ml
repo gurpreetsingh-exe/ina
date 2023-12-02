@@ -2,11 +2,9 @@ open Ast
 open Middle.Ty
 open Middle.Ctx
 open Errors
-open Structures.Vec
 open Structures.Hashmap
 open Diagnostic
 open Printf
-open Session
 open Utils.Panic
 open Infer
 
@@ -25,12 +23,12 @@ type 'a expected_found = {
 }
 
 type ty_err =
-  | MismatchTy of ty * ty
+  | MismatchTy of ty ref * ty ref
   | UninitializedFields of ident
   | UnknownField of ident * ident
-  | NoFieldInPrimitiveType of ty
-  | InvalidBinaryExpression of binary_kind * ty * ty
-  | MethodNotFound of ty * string
+  | NoFieldInPrimitiveType of ty ref
+  | InvalidBinaryExpression of binary_kind * ty ref * ty ref
+  | MethodNotFound of ty ref * string
   | IntMismatch of int_ty expected_found
   | FloatMismatch of float_ty expected_found
 
@@ -65,6 +63,22 @@ let mismatch_float_ty expected ty span =
       "expected `%s`, found `%s`"
       (display_float_ty expected)
       (display_float_ty ty)
+  in
+  mk_err msg span
+;;
+
+let invalid_deref ty span =
+  let msg = sprintf "`%s` cannot be dereferenced" (render_ty ty) in
+  mk_err msg span
+;;
+
+let mismatch_args expected found span =
+  let msg =
+    sprintf
+      "expected %d arg%s, found %d"
+      expected
+      (if expected = 1 then "" else "s")
+      found
   in
   mk_err msg span
 ;;
@@ -117,17 +131,17 @@ let invalid_call ty span =
 let ty_err_emit (tcx : tcx) err span =
   match err with
   | MismatchTy (expected, ty) ->
-      if ty <> Err && expected <> Err
+      if ty <> tcx#types.err && expected <> tcx#types.err
       then tcx#emit (mismatch_ty expected ty span)
   | UninitializedFields name -> tcx#emit (uninitialized_fields name span)
   | UnknownField (strukt, name) -> tcx#emit (unknown_field strukt name span)
   | NoFieldInPrimitiveType ty ->
-      if ty <> Err then tcx#emit (no_field_in_prim_ty ty span)
+      if ty <> tcx#types.err then tcx#emit (no_field_in_prim_ty ty span)
   | InvalidBinaryExpression (kind, left, right) ->
-      if left <> Err && right <> Err
+      if left <> tcx#types.err && right <> tcx#types.err
       then tcx#emit (invalid_binary_expr kind left right span)
   | MethodNotFound (ty, name) ->
-      if ty <> Err then tcx#emit (method_not_found ty name span)
+      if ty <> tcx#types.err then tcx#emit (method_not_found ty name span)
   | IntMismatch { expected; found } ->
       tcx#emit (mismatch_int_ty expected found span)
   | FloatMismatch { expected; found } ->
@@ -145,7 +159,7 @@ let tychk_fn cx fn =
     | ExpectTy ty -> Some (Infer.resolve_vars cx.infcx ty)
   in
   let write_ty id ty =
-    dbg "write_ty(id = %d, ty = %s)\n" id (render_ty2 !ty);
+    dbg "write_ty(id = %d, ty = %s)\n" id (render_ty2 ty);
     ignore (tcx#node_id_to_ty#insert id ty)
   in
   let int_unification_error (v : IntVid.e) =
@@ -172,7 +186,7 @@ let tychk_fn cx fn =
     in
     Ok (tcx#float_ty_to_ty value)
   in
-  let equate (t0 : ty ref) (t1 : ty ref) : ty ref tyck_result =
+  let rec equate (t0 : ty ref) (t1 : ty ref) : ty ref tyck_result =
     if t0 == t1
     then Ok t0
     else
@@ -195,8 +209,9 @@ let tychk_fn cx fn =
               (FloatUt.unify_var_var cx.infcx.float_ut i0 i1)
           in
           Ok t0
-      | Infer _, _ | _, Infer _ -> Error (MismatchTy (!t0, !t1))
-      | _ -> Error (MismatchTy (!t0, !t1))
+      | Infer _, _ | _, Infer _ -> Error (MismatchTy (t0, t1))
+      | Ref t0, Ref t1 -> equate t0 t1
+      | _ -> Error (MismatchTy (t0, t1))
   in
   let rec check_block block =
     block.block_stmts#iter check_stmt;
@@ -218,8 +233,7 @@ let tychk_fn cx fn =
     | None ->
         (match expected with
          | ExpectTy expected ->
-             tcx#emit
-             @@ mismatch_ty !expected !(tcx#types.unit) block.block_span;
+             tcx#emit @@ mismatch_ty expected tcx#types.unit block.block_span;
              expected
          | NoExpectation -> tcx#types.unit)
   and check_stmt stmt =
@@ -265,7 +279,7 @@ let tychk_fn cx fn =
         then
           ty_err_emit
             tcx
-            (InvalidBinaryExpression (kind, !left, !right))
+            (InvalidBinaryExpression (kind, left, right))
             expr.expr_span;
         left
     | Call (expr, args) ->
@@ -276,7 +290,7 @@ let tychk_fn cx fn =
              then
                tcx#emit @@ mismatch_args arg_tys#len args#len expr.expr_span;
              args#iteri (fun i arg ->
-                 let expected = tcx#intern @@ arg_tys#get i in
+                 let expected = arg_tys#get i in
                  let ty =
                    check_expr
                      arg
@@ -284,13 +298,13 @@ let tychk_fn cx fn =
                       then ExpectTy expected
                       else NoExpectation)
                  in
-                 match equate ty expected with
+                 match equate expected ty with
                  | Ok _ -> ()
                  | Error e -> ty_err_emit tcx e arg.expr_span);
-             tcx#intern ret
+             ret
          | Err -> ty
          | _ ->
-             tcx#emit @@ invalid_call !ty expr.expr_span;
+             tcx#emit @@ invalid_call ty expr.expr_span;
              tcx#types.err)
     | Path path ->
         let res = tcx#res_map#unsafe_get path.path_id in
@@ -309,7 +323,7 @@ let tychk_fn cx fn =
               | Some ({ contents = Int _ } as ty) -> ty
               | Some ty ->
                   let found = infcx_new_int_var cx.infcx in
-                  tcx#emit @@ mismatch_ty !ty !found expr.expr_span;
+                  tcx#emit @@ mismatch_ty ty found expr.expr_span;
                   ty
               | None -> infcx_new_int_var cx.infcx)
          | LitFloat _ ->
@@ -317,7 +331,7 @@ let tychk_fn cx fn =
               | Some ({ contents = Float _ } as ty) -> ty
               | Some ty ->
                   let found = infcx_new_float_var cx.infcx in
-                  tcx#emit @@ mismatch_ty !ty !found expr.expr_span;
+                  tcx#emit @@ mismatch_ty ty found expr.expr_span;
                   ty
               | None -> infcx_new_float_var cx.infcx)
          | LitStr _ -> tcx#types.str
@@ -326,19 +340,29 @@ let tychk_fn cx fn =
     | Deref expr ->
         let ty = check_expr expr NoExpectation in
         (match !ty with
-         | Ptr ty | Ref ty -> tcx#intern ty
-         | ty ->
+         | Ptr ty | Ref ty -> ty
+         | _ ->
              tcx#emit @@ invalid_deref ty expr.expr_span;
              tcx#types.err)
-    | If _ | Ref _ | StructExpr _ | Field _ | Cast _ | MethodCall _ ->
-        assert false
+    | Ref expr ->
+        (match resolve_expected expected with
+         | Some expected ->
+             let ty = check_expr expr NoExpectation in
+             (match equate expected (tcx#ref ty) with
+              | Ok _ -> ()
+              | Error e -> ty_err_emit tcx e expr.expr_span);
+             expected
+         | None ->
+             let ty = check_expr expr NoExpectation in
+             tcx#ref ty)
+    | If _ | StructExpr _ | Field _ | Cast _ | MethodCall _ -> assert false
   in
   let ty = tcx#node_id_to_ty#unsafe_get fn.func_id in
   let ret =
     match !ty with
-    | FnPtr { ret; _ } -> tcx#intern ret
+    | FnPtr { ret; _ } -> ret
     | _ ->
-        dbg "expected function, found `%s`\n" (render_ty !ty);
+        dbg "expected function, found `%s`\n" (render_ty ty);
         assert false
   in
   (* TODO: display better error span *)

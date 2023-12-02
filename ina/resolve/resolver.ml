@@ -1,6 +1,5 @@
 open Printf
 open Ast
-open Session
 open Structures.Vec
 open Structures.Hashmap
 open Middle.Ctx

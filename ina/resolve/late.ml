@@ -5,7 +5,6 @@ open Middle.Def_id
 open Structures.Vec
 open Utils.Panic
 open Resolver
-open Module
 
 class type_lowering resolver modd =
   object (self)
@@ -67,12 +66,12 @@ class type_lowering resolver modd =
         | _ -> assert false
       in
       let args =
-        map fn.fn_sig.args (fun { ty; _ } -> !(resolver#tcx#ast_ty_to_ty ty))
+        map fn.fn_sig.args (fun { ty; _ } -> resolver#tcx#ast_ty_to_ty ty)
       in
       let ret =
-        !(match fn.fn_sig.ret_ty with
-          | Some ty -> resolver#tcx#ast_ty_to_ty ty
-          | None -> resolver#tcx#types.unit)
+        match fn.fn_sig.ret_ty with
+        | Some ty -> resolver#tcx#ast_ty_to_ty ty
+        | None -> resolver#tcx#types.unit
       in
       let ty =
         resolver#tcx#intern (FnPtr { args; ret; is_variadic = false; abi })

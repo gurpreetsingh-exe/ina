@@ -40,7 +40,8 @@ let mangle cx did =
       ]
 ;;
 
-let rec backend_ty cx = function
+let rec backend_ty cx ty =
+  !ty |> function
   | Middle.Ty.Int intty ->
       (match intty with
        | I8 -> "int8_t"
@@ -54,7 +55,7 @@ let rec backend_ty cx = function
        | U64 -> "uint64_t"
        | Usize -> "size_t")
   | Float floatty -> (match floatty with F32 -> "float" | F64 -> "double")
-  | Ptr ty -> sprintf "%s*" (backend_ty cx ty)
+  | Ptr ty | Ref ty -> sprintf "%s*" (backend_ty cx ty)
   | Unit -> "void"
   | Str as ty ->
       (match cx.types#get ty with
@@ -67,7 +68,7 @@ let rec backend_ty cx = function
               } str;\n\n";
            assert (cx.types#insert ty "str" = None);
            "str")
-  | ty ->
+  | _ ->
       print_endline @@ Middle.Ty.render_ty ty;
       assert false
 ;;
@@ -104,7 +105,7 @@ let gen cx =
     out
     ^
     if has_value inst
-    then sprintf "  %s %s = " (backend_ty cx !(inst.ty)) (inst_name inst)
+    then sprintf "  %s %s = " (backend_ty cx inst.ty) (inst_name inst)
     else "  ";
     match inst.kind with
     | Alloca ty -> out ^ sprintf "alloca(%d);\n" (cx.tcx#sizeof ty)

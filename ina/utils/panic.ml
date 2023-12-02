@@ -10,7 +10,7 @@ let devnull = open_out Filename.null
 let dbg fmt =
   if false
   then
-    let loc () =
+    let _loc () =
       let stack = Printexc.get_callstack 2 in
       let entries = Printexc.raw_backtrace_entries stack in
       let slots =

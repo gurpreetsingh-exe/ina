@@ -137,18 +137,18 @@ class tcx sess =
     method intern ty : ty ref =
       if types#has ty
       then types#unsafe_get ty
-      else (
-        dbg "intern(type = %s)\n" @@ render_ty ty;
+      else
         let rty = ref ty in
+        dbg "intern(type = %s)\n" @@ render_ty rty;
         ignore (types#insert ty rty);
-        rty)
+        rty
 
     method invalidate old_ty new_ty =
       let ty = self#intern old_ty in
       dbg
         "invalidate(old = %s, new = %s)\n"
-        (render_ty old_ty)
-        (render_ty new_ty);
+        (render_ty ty)
+        (render_ty (self#intern new_ty));
       ty := new_ty
 
     method emit err =
@@ -160,6 +160,9 @@ class tcx sess =
     method insert_span id span =
       dbg "tcx.insert_span(id = %d, span = %s)\n" id (Span.display_span span);
       assert (spans#insert id span = None)
+
+    method ptr ty = self#intern (Ptr ty)
+    method ref ty = self#intern (Ref ty)
 
     method sizeof_int_ty =
       function
@@ -213,8 +216,8 @@ class tcx sess =
       match ty.kind with
       | Int i -> self#ast_int_ty_to_ty i
       | Float f -> self#ast_float_ty_to_ty f
-      | Ptr ty -> self#intern (Ptr !(self#ast_ty_to_ty ty))
-      | Ref ty -> self#intern (Ref !(self#ast_ty_to_ty ty))
+      | Ptr ty -> self#intern (Ptr (self#ast_ty_to_ty ty))
+      | Ref ty -> self#intern (Ref (self#ast_ty_to_ty ty))
       | Str -> _types.str
       | Bool -> _types.bool
       | Unit -> _types.unit
@@ -222,8 +225,8 @@ class tcx sess =
           self#intern
             (FnPtr
                {
-                 args = map args (fun ty -> !(self#ast_ty_to_ty ty))
-               ; ret = !(self#ast_ty_to_ty ret)
+                 args = map args self#ast_ty_to_ty
+               ; ret = self#ast_ty_to_ty ret
                ; is_variadic
                ; abi = Default
                })
@@ -233,6 +236,6 @@ class tcx sess =
 
     method inner_ty ty : ty ref option =
       match !ty with
-      | Ptr ty | Ref ty | FnPtr { ret = ty; _ } -> Some (self#intern ty)
+      | Ptr ty | Ref ty | FnPtr { ret = ty; _ } -> Some ty
       | _ -> None
   end

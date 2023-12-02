@@ -19,7 +19,7 @@ class builder tcx block =
 
     method alloca ty =
       let inst = Alloca ty in
-      let ty = tcx#intern (Ptr !ty) in
+      let ty = tcx#ptr ty in
       self#add_inst_with_ty ty inst
 
     method store src dst = self#add_inst (Store (src, dst))

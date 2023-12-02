@@ -114,15 +114,15 @@ and ty =
   | Float of float_ty
   | Bool
   | Str
-  | Ptr of ty
-  | Ref of ty
+  | Ptr of ty ref
+  | Ref of ty ref
   | Adt of {
         def_id: def_id
       ; variants: variant vec
     }
   | FnPtr of {
-        args: ty vec
-      ; ret: ty
+        args: ty ref vec
+      ; ret: ty ref
       ; is_variadic: bool
       ; abi: abi
     }
@@ -131,7 +131,7 @@ and ty =
   | Err
 
 let rec render_ty ty =
-  match ty with
+  match !ty with
   | Int i -> display_int_ty i
   | Float f -> display_float_ty f
   | Infer i ->
@@ -159,7 +159,7 @@ let rec render_ty ty =
 ;;
 
 let rec render_ty2 ty =
-  match ty with
+  match !ty with
   | Int i -> display_int_ty i
   | Float f -> display_float_ty f
   | Infer i -> display_infer_ty i

@@ -53,7 +53,7 @@ let rec lower (lcx : Context.lcx) mdl =
          fn.fn_sig.args#iteri (fun i { arg_id; _ } ->
              args#get i |> function
              | Param (ty, _, _) as inst ->
-                 let ptr = bx#alloca (tcx#intern ty) in
+                 let ptr = bx#alloca ty in
                  assert (lcx#locals#insert arg_id ptr = None);
                  bx#store inst ptr
              | _ -> assert false);
