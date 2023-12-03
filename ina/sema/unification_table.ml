@@ -58,8 +58,10 @@ module Unification_table (K : UnifyKey) = struct
   let new_key ut value =
     let len = Array.length ut.values in
     let key = K.from_index len in
-    ut.values <- Array.append ut.values [|VarValue.create key value|];
+    let v = VarValue.create key value in
+    ut.values <- Array.append ut.values [|v|];
     dbg "%s: created new key: %s\n" (K.tag ()) (K.display_key key);
+    dbg "  %s\n" (VarValue.display v);
     key
   ;;
 
@@ -95,9 +97,10 @@ module Unification_table (K : UnifyKey) = struct
 
   let unify_roots ut key0 key1 new_value =
     dbg
-      "unify_roots(key0 = %s, key1 = %s)\n"
+      "unify_roots(key0 = %s, key1 = %s, value = %s)\n"
       (K.display_key key0)
-      (K.display_key key1);
+      (K.display_key key1)
+      (K.display_value new_value);
     let rank0 = (value ut key0).rank in
     let rank1 = (value ut key1).rank in
     match
@@ -121,6 +124,10 @@ module Unification_table (K : UnifyKey) = struct
   ;;
 
   let unify_var_var ut t0 t1 =
+    dbg
+      "unify_var_var(key0 = %s, key1 = %s)\n"
+      (K.display_key t0)
+      (K.display_key t1);
     let root_t0 = find ut t0 in
     let root_t1 = find ut t1 in
     if root_t0 = root_t1
@@ -158,5 +165,11 @@ module Unification_table (K : UnifyKey) = struct
   let probe_value ut k =
     let k = get_root_key ut k in
     (value ut k).value
+  ;;
+
+  let display ut =
+    Array.iter
+      (fun (v : VarValue.t) -> print_endline @@ VarValue.display v)
+      ut.values
   ;;
 end

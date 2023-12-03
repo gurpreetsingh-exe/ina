@@ -213,6 +213,22 @@ let tychk_fn cx fn =
       | Ref t0, Ref t1 -> equate t0 t1
       | _ -> Error (MismatchTy (t0, t1))
   in
+  let fold_int_ty intvid old_ty =
+    let opt_ty = IntUt.probe_value cx.infcx.int_ut intvid in
+    tcx#invalidate
+      !old_ty
+      (match opt_ty with
+       | Some ty -> tcx#int_ty_to_ty ty
+       | None -> tcx#types.i32)
+  in
+  let fold_float_ty floatvid old_ty =
+    let opt_ty = FloatUt.probe_value cx.infcx.float_ut floatvid in
+    tcx#invalidate
+      !old_ty
+      (match opt_ty with
+       | Some ty -> tcx#float_ty_to_ty ty
+       | None -> tcx#types.f32)
+  in
   let rec check_block block =
     block.block_stmts#iter check_stmt;
     match block.last_expr with
@@ -380,12 +396,12 @@ let tychk_fn cx fn =
         | Ok _ -> ()
         | Error e -> ty_err_emit tcx e span)
    | None -> ());
-  Array.iter
-    (fun (v : IntUt.VarValue.t) ->
-      let old_ty = Infer (IntVar v.parent) in
-      let ty = tcx#int_ty_to_ty @@ Option.value v.value ~default:I32 in
-      tcx#invalidate old_ty ty)
-    cx.infcx.int_ut.values
+  tcx#node_id_to_ty#iter (fun _ v ->
+      match !v with
+      | Infer (IntVar i) -> fold_int_ty i v
+      | Infer (FloatVar f) -> fold_float_ty f v
+      | Infer _ -> assert false
+      | _ -> ())
 ;;
 
 (* tcx#node_id_to_ty#iter (fun k v -> printf "%d -> %s\n" k (render_ty !v)) *)
