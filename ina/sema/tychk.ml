@@ -290,16 +290,19 @@ let tychk_fn cx fn =
   and check_expr_kind expr expected =
     match expr.expr_kind with
     | Binary (kind, left, right) ->
-        let left, right =
-          check_expr left expected, check_expr right expected
+        let left = check_expr left NoExpectation in
+        let right = check_expr right NoExpectation in
+        let ty =
+          match equate left right with
+          | Ok ty -> ty
+          | Error _ ->
+              let e = InvalidBinaryExpression (kind, left, right) in
+              ty_err_emit tcx e expr.expr_span;
+              left
         in
-        if left != right
-        then
-          ty_err_emit
-            tcx
-            (InvalidBinaryExpression (kind, left, right))
-            expr.expr_span;
-        left
+        (match kind with
+         | Lt | LtEq | Gt | GtEq | Eq | NotEq -> tcx#types.bool
+         | _ -> ty)
     | Call (expr, args) ->
         let ty = check_expr expr NoExpectation in
         (match !ty with
