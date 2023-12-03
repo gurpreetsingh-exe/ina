@@ -73,9 +73,7 @@ class type_lowering resolver modd =
         | Some ty -> resolver#tcx#ast_ty_to_ty ty
         | None -> resolver#tcx#types.unit
       in
-      let ty =
-        resolver#tcx#intern (FnPtr { args; ret; is_variadic = false; abi })
-      in
+      let ty = resolver#tcx#fn_ptr args ret false abi in
       let def_id = def_id fn.func_id 0 in
       resolver#set_path def_id;
       assert (resolver#tcx#node_id_to_def_id#insert fn.func_id def_id = None);

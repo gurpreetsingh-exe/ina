@@ -130,6 +130,20 @@ and ty =
   | Unit
   | Err
 
+and t = ty
+
+let rec hash = function
+  | FnPtr { args; ret; is_variadic; abi } ->
+      fold_left (fun init ty -> Hashtbl.hash (init + hash !ty)) 0 args
+      + hash !ret
+      + if is_variadic then 0 else 1 + Hashtbl.hash abi
+  | Ptr ty -> 1 + hash !ty
+  | Ref ty -> 2 + hash !ty
+  | ty -> Hashtbl.hash ty
+;;
+
+let equal t0 t1 = hash t0 = hash t1
+
 let rec render_ty ty =
   match !ty with
   | Int i -> display_int_ty i

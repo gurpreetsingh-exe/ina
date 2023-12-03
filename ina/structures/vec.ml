@@ -104,4 +104,5 @@ let mapi v (f : int -> 'a -> 'b) =
   mapped
 ;;
 
+let fold_left f init vec = Array.fold_left f init vec#inner
 let ( / ) (v : 'a vec) (i : int) = v#get i

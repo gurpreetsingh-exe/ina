@@ -6,6 +6,7 @@ open Def_id
 open Utils.Panic
 open Source
 open Printf
+module TypeMap = Hashtbl.Make (Ty)
 
 type 'a nodemap = (int, 'a) hashmap
 
@@ -78,7 +79,7 @@ let dummy_types =
 
 class tcx sess =
   object (self)
-    val types : (ty, ty ref) hashmap = new hashmap
+    val types : ty ref TypeMap.t = TypeMap.create 0
     val node_id_to_ty : ty ref nodemap = new hashmap
     val node_id_to_def_id : def_id nodemap = new hashmap
     val res_map : res nodemap = new hashmap
@@ -135,13 +136,13 @@ class tcx sess =
           did
 
     method intern ty : ty ref =
-      if types#has ty
-      then types#unsafe_get ty
-      else
-        let rty = ref ty in
-        dbg "intern(type = %s)\n" @@ render_ty2 rty;
-        ignore (types#insert ty rty);
-        rty
+      match TypeMap.find_opt types ty with
+      | Some ty -> ty
+      | None ->
+          let rty = ref ty in
+          dbg "intern(type = %s)\n" @@ render_ty2 rty;
+          ignore (TypeMap.add types ty rty);
+          rty
 
     method invalidate old_ty new_ty =
       let ty = self#intern old_ty in
@@ -165,6 +166,9 @@ class tcx sess =
 
     method ptr ty = self#intern (Ptr ty)
     method ref ty = self#intern (Ref ty)
+
+    method fn_ptr args ret is_variadic abi =
+      self#intern (FnPtr { args; ret; is_variadic; abi })
 
     method sizeof_int_ty =
       function
