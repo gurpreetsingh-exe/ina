@@ -49,22 +49,21 @@ let rec lower (lcx : Context.lcx) mdl =
      | Some body ->
          let bb = lcx#entry_block in
          lcx#builder_at_end bb;
-         let bx = lcx#builder in
          fn.fn_sig.args#iteri (fun i { arg_id; _ } ->
              args#get i |> function
              | Param (ty, _, _) as inst ->
-                 let ptr = bx#alloca ty in
+                 let ptr = lcx#bx#alloca ty in
                  assert (lcx#locals#insert arg_id ptr = None);
-                 bx#store inst ptr
+                 lcx#bx#store inst ptr
              | _ -> assert false);
          let ret = Expr.lower_block lcx body in
          (match ret with
           | VReg inst ->
               (match inst.kind, inst.ty with
-               | Nop, _ -> bx#ret_unit
-               | _ -> bx#ret ret)
-          | Const _ | Global _ -> bx#ret ret
-          | _ -> bx#ret_unit)
+               | Nop, _ -> lcx#bx#ret_unit
+               | _ -> lcx#bx#ret ret)
+          | Const _ | Global _ -> lcx#bx#ret ret
+          | _ -> lcx#bx#ret_unit)
      | None -> ());
     gen_id ifn;
     lcx#define ifn

@@ -31,7 +31,7 @@ and inst_kind =
   | Br of value * value * value
   | Jmp of value
   (* (bb * inst) *)
-  | Phi of ty * (value * value) list
+  | Phi of ty ref * (value * value) list
   | Store of value * value
   | Load of value
   | Gep of ty * value * int
@@ -162,7 +162,7 @@ let render_inst tcx inst : string =
   | Phi (ty, args) ->
       sprintf
         "phi %s, %s"
-        (render_ty (ref ty))
+        (render_ty ty)
         (String.concat
            ", "
            (List.map

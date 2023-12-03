@@ -7,6 +7,7 @@ class builder tcx block =
   object (self)
     val tcx : tcx = tcx
     val block : Inst.basic_block = block
+    method block = block
 
     method private add_inst kind =
       let inst = { kind; ty = tcx#types.unit; id = -1 } in
@@ -22,6 +23,11 @@ class builder tcx block =
       let ty = tcx#ptr ty in
       self#add_inst_with_ty ty inst
 
+    method binary kind left right =
+      let ty = get_ty tcx right in
+      let inst = Binary (kind, left, right) in
+      self#add_inst_with_ty ty inst
+
     method store src dst = self#add_inst (Store (src, dst))
 
     method load ptr =
@@ -32,6 +38,20 @@ class builder tcx block =
     method call ty value args =
       let ret = Option.get @@ tcx#inner_ty ty in
       self#add_inst_with_ty ret (Call (ty, value, args))
+
+    method br cond then_block else_block =
+      self#add_inst (Br (cond, then_block, else_block));
+      let then_block = Inst.extract_block then_block
+      and else_block = Inst.extract_block else_block in
+      Basicblock.append_succ block then_block;
+      Basicblock.append_succ block else_block
+
+    method jmp bb =
+      self#add_inst (Jmp bb);
+      let bb = Inst.extract_block bb in
+      Basicblock.append_succ block bb
+
+    method phi ty args = self#add_inst_with_ty ty (Phi (ty, args))
 
     method nop =
       let inst = { kind = Nop; ty = tcx#types.unit; id = -1 } in

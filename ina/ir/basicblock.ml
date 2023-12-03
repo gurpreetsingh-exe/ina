@@ -13,9 +13,14 @@ let create () : Inst.basic_block =
 ;;
 
 let label (bb : Inst.basic_block) : string = "bb" ^ string_of_int bb.bid
-let append_pred (bb : Inst.basic_block) succs = bb.pred#append succs
+let append_pred (bb : Inst.basic_block) pred = bb.pred#append pred
 
-let append_succ (bb : Inst.basic_block) succs =
+let append_succ (bb : Inst.basic_block) succ =
+  bb.succ#push succ;
+  succ.pred#push bb
+;;
+
+let append_succs (bb : Inst.basic_block) succs =
   bb.succ#append succs;
   succs#iter (fun bb0 -> bb0.pred#push bb)
 ;;
