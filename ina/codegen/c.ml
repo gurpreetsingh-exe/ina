@@ -116,6 +116,7 @@ let gen cx =
     | Call (_, value, args) ->
         out
         ^ sprintf "%s(%s);\n" (get_value value) (args#join ", " get_value)
+    | RetUnit -> out ^ "return;\n"
     | _ ->
         newline ();
         print_endline @@ render_inst cx.tcx inst;
