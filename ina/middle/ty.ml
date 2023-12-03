@@ -136,8 +136,8 @@ let rec render_ty ty =
   | Float f -> display_float_ty f
   | Infer i ->
       (match i with
-       | IntVar _ -> "int"
-       | FloatVar _ -> "float"
+       | IntVar _ -> "{int}"
+       | FloatVar _ -> "{float}"
        | TyVar _ -> "infer")
   | Unit -> "unit"
   | Bool -> "bool"
