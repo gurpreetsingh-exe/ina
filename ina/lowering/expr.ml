@@ -15,6 +15,10 @@ let lower_block (lcx : lcx) block =
           assert (lcx#locals#insert binding_id ptr = None);
           let src = lower binding_expr in
           bx#store src ptr
+      | Assign (left, right) ->
+          let dst = lower_lvalue left in
+          let src = lower right in
+          bx#store src dst
       | Stmt expr | Expr expr -> ignore (lower expr)
       | _ -> ()
     in
@@ -34,6 +38,7 @@ let lower_block (lcx : lcx) block =
          | Local id -> lcx#locals#unsafe_get id
          | Def (id, _) -> Global id
          | _ -> assert false)
+    | Deref expr -> lower expr
     | _ -> assert false
   and lower expr =
     let ty = tcx#node_id_to_ty#unsafe_get expr.expr_id in
