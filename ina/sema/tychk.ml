@@ -373,7 +373,21 @@ let tychk_fn cx fn =
          | None ->
              let ty = check_expr expr NoExpectation in
              tcx#ref ty)
-    | If _ | StructExpr _ | Field _ | Cast _ | MethodCall _ -> assert false
+    | If { cond; then_block; else_block; if_span; _ } ->
+        ignore (check_expr cond (ExpectTy tcx#types.bool));
+        let if_ty = check_block_with_expected then_block expected in
+        Option.fold
+          ~some:(fun expr ->
+            let else_ty = check_expr expr expected in
+            Result.fold
+              ~ok:(fun ty -> ty)
+              ~error:(fun e ->
+                ty_err_emit tcx e if_span;
+                else_ty)
+              (equate if_ty else_ty))
+          ~none:tcx#types.unit
+          else_block
+    | StructExpr _ | Field _ | Cast _ | MethodCall _ -> assert false
   in
   let ty = tcx#node_id_to_ty#unsafe_get fn.func_id in
   let ret =
