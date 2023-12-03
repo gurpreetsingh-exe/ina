@@ -210,7 +210,9 @@ let tychk_fn cx fn =
           in
           Ok t0
       | Infer _, _ | _, Infer _ -> Error (MismatchTy (t0, t1))
-      | Ref t0, Ref t1 -> equate t0 t1
+      | Ref t0, Ref t1 ->
+          let* ty = equate t0 t1 in
+          Ok (tcx#ref ty)
       | _ -> Error (MismatchTy (t0, t1))
   in
   let fold_int_ty intvid old_ty =
