@@ -187,7 +187,7 @@ let tychk_fn cx fn =
     Ok (tcx#float_ty_to_ty value)
   in
   let rec equate (t0 : ty ref) (t1 : ty ref) : ty ref tyck_result =
-    if t0 == t1
+    if t0 = t1
     then Ok t0
     else
       match !t0, !t1 with
@@ -384,7 +384,7 @@ let tychk_fn cx fn =
     (fun (v : IntUt.VarValue.t) ->
       let old_ty = Infer (IntVar v.parent) in
       let ty = tcx#int_ty_to_ty @@ Option.value v.value ~default:I32 in
-      tcx#invalidate old_ty !ty)
+      tcx#invalidate old_ty ty)
     cx.infcx.int_ut.values
 ;;
 

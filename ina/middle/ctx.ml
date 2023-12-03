@@ -139,17 +139,19 @@ class tcx sess =
       then types#unsafe_get ty
       else
         let rty = ref ty in
-        dbg "intern(type = %s)\n" @@ render_ty rty;
+        dbg "intern(type = %s)\n" @@ render_ty2 rty;
         ignore (types#insert ty rty);
         rty
 
     method invalidate old_ty new_ty =
       let ty = self#intern old_ty in
-      dbg
-        "invalidate(old = %s, new = %s)\n"
-        (render_ty ty)
-        (render_ty (self#intern new_ty));
-      ty := new_ty
+      if ty <> new_ty
+      then (
+        dbg
+          "invalidate(old = %s, new = %s)\n"
+          (render_ty2 ty)
+          (render_ty2 new_ty);
+        ty := !new_ty)
 
     method emit err =
       err_count <- err_count + 1;
