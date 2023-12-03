@@ -9,4 +9,7 @@
     -warn-error
     "-unused-var"
     -warn-error
-    "-unused-var-strict"))))
+    "-unused-var-strict")))
+ (release
+  (ocamlopt_flags
+   (:standard -O3 -unsafe -inline 100))))

@@ -1,8 +1,4 @@
 (library
  (name codegen)
- (libraries
-  ir
-  ast
-  resolve
-  session)
+ (libraries ir ast resolve session)
  (modules c ctx))

@@ -280,7 +280,7 @@ class parser pcx file tokenizer =
       let* _ = parse_outer_attrs_impl () in
       Ok attrs
 
-    method unexpected_token ?(line = __LINE__) kind =
+    method unexpected_token ?(line = __LINE__) kind : unit =
       let msg =
         sprintf "%d: unexpected token `%s`" line @@ display_token_kind kind
       in
