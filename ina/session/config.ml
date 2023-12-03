@@ -19,6 +19,7 @@ type t = {
   ; mutable ui_testing: bool
   ; mutable dot_cfg: bool
   ; mutable build_stdlib: bool
+  ; mutable skip_codegen: bool
 }
 
 and opt_level =
@@ -66,5 +67,6 @@ let config () : t =
   ; ui_testing = false
   ; dot_cfg = false
   ; build_stdlib = false
+  ; skip_codegen = false
   }
 ;;

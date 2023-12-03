@@ -65,7 +65,7 @@ let () =
            then (
              Ir.Module.render tcx mdl;
              exit 0);
-           Codegen.Ctx.codegen tcx mdl
+           if not sess.options.skip_codegen then Codegen.Ctx.codegen tcx mdl
        | Check -> resolve_and_sema mdl
        | Fmt ->
            let open Ast_printer in

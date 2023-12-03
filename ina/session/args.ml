@@ -11,6 +11,7 @@ let usage arg0 =
   printf "        --emit=asm|exe|obj|unit\n";
   printf "                         output type to emit\n";
   printf "        --opt=0|3        optimization level\n";
+  printf "        --skip-codegen   run every pass except codegen\n";
   printf "        --print-ast      print AST of the file\n";
   printf "        --print-ir       print IR of the file\n";
   printf
@@ -63,6 +64,7 @@ let parse_args () =
          | "--ui-testing" -> config.ui_testing <- true
          | "--dot-cfg" -> config.dot_cfg <- true
          | "--stdlib" -> config.build_stdlib <- true
+         | "--skip-codegen" -> config.skip_codegen <- true
          | _ ->
              if String.contains arg '='
              then (
