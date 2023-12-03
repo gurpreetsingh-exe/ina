@@ -181,6 +181,7 @@ class tcx sess =
       | Float f -> self#sizeof_float_ty f
       | Ptr _ | Ref _ | FnPtr _ -> 8
       | Str -> 16
+      | Unit -> 0
       | _ -> assert false
 
     method int_ty_to_ty =

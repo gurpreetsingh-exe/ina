@@ -66,6 +66,7 @@ and const_kind =
   | Str of string
   | Bool of bool
   | Struct of value list
+  | Unit
 
 and basic_block = {
     mutable pred: basic_block vec
@@ -117,6 +118,7 @@ let rec render_const tcx = function
       sprintf
         "{ %s }"
         (String.concat ", " (List.map (tcx |> render_value) values))
+  | Unit -> "()"
 
 and render_value tcx = function
   | Const const ->
