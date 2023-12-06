@@ -55,6 +55,7 @@ let rec backend_ty cx ty =
        | U64 -> "uint64_t"
        | Usize -> "size_t")
   | Float floatty -> (match floatty with F32 -> "float" | F64 -> "double")
+  | Bool -> "bool"
   | Ptr ty | Ref ty -> sprintf "%s*" (backend_ty cx ty)
   | Unit -> "void"
   | Str as ty ->
@@ -69,7 +70,7 @@ let rec backend_ty cx ty =
            assert (cx.types#insert ty "str" = None);
            "str")
   | _ ->
-      print_endline @@ Middle.Ty.render_ty ty;
+      print_endline @@ Middle.Ty.render_ty2 ty;
       assert false
 ;;
 
@@ -95,7 +96,7 @@ let gen cx =
     | VReg i -> inst_name i
     | Global id -> mangle cx id
     | Const { kind; _ } -> get_const kind
-    | _ -> assert false
+    | Label bb -> sprintf "bb%d" bb.bid
   in
   let rec gen_bb bb =
     let open Ir.Inst in
@@ -109,6 +110,16 @@ let gen cx =
     else "  ";
     match inst.kind with
     | Alloca ty -> out ^ sprintf "alloca(%d);\n" (cx.tcx#sizeof ty)
+    | Binary (kind, left, right) ->
+        let op =
+          match kind with
+          | Add -> "+"
+          | Sub -> "-"
+          | And -> "&&"
+          | Eq -> "=="
+          | _ -> assert false
+        in
+        out ^ sprintf "%s %s %s;\n" (get_value left) op (get_value right)
     | Store (src, dst) ->
         out ^ sprintf "*%s = %s;\n" (get_value dst) (get_value src)
     | Load ptr -> out ^ sprintf "*%s;\n" (get_value ptr)
@@ -117,7 +128,16 @@ let gen cx =
         out
         ^ sprintf "%s(%s);\n" (get_value value) (args#join ", " get_value)
     | RetUnit -> out ^ "return;\n"
+    | Br (cond, then_block, else_block) ->
+        out
+        ^ sprintf
+            "if (%s) { goto %s; } else { goto %s; }\n"
+            (get_value cond)
+            (get_value then_block)
+            (get_value else_block)
+    | Jmp bb -> out ^ sprintf "goto %s;\n" (get_value bb)
     | _ ->
+        print_endline !out;
         newline ();
         print_endline @@ render_inst cx.tcx inst;
         assert false
