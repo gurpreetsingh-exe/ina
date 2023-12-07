@@ -2,7 +2,7 @@ open Ast
 open Context
 open Structures.Vec
 
-let lower_block (lcx : lcx) block =
+let rec lower_block (lcx : lcx) block =
   let tcx = lcx#tcx in
   let rec lower_block' () =
     let f stmt =
@@ -96,6 +96,41 @@ let lower_block (lcx : lcx) block =
         let ptr = lower expr in
         lcx#bx#load ptr
     | Ref expr -> lower_lvalue expr
+    | If { cond; then_block; else_block; _ } ->
+        let open Ir in
+        let open Inst in
+        let cond = lower cond in
+        let then_bb = Basicblock.create () in
+        let last_then_bb = ref then_bb in
+        let else_bb = Basicblock.create () in
+        let last_else_bb = ref else_bb in
+        let join_bb = Basicblock.create () in
+        let then_label = Label then_bb in
+        let else_label = Label else_bb in
+        lcx#bx#br cond then_label else_label;
+        lcx#append_block_with_builder then_bb;
+        let true' = lower_block lcx then_block in
+        last_then_bb := lcx#bx#block;
+        let false' = ref None in
+        lcx#bx#jmp (Label join_bb);
+        lcx#append_block_with_builder else_bb;
+        (match else_block with
+         | Some else_block ->
+             false' := Some (lower else_block);
+             last_else_bb := lcx#bx#block
+         | None -> ());
+        lcx#bx#jmp (Label join_bb);
+        lcx#append_block_with_builder join_bb;
+        (match !ty with
+         | Unit -> lcx#bx#nop
+         | _ ->
+             lcx#bx#phi
+               ty
+               [
+                 Label !last_then_bb, true'
+               ; Label !last_else_bb, Option.get !false'
+               ])
+    | Block block -> lower_block lcx block
     | _ -> assert false
   in
   lower_block' ()
