@@ -1,31 +1,41 @@
 open Printf
 open Structures.Vec
+open Inst
 
-let create () : Inst.basic_block =
+let create () : basic_block =
   Inst.
     {
       pred = new vec
     ; succ = new vec
     ; insts = new vec
+    ; terminator = RetUnit
     ; bid = -1
     ; is_entry = false
     }
 ;;
 
-let label (bb : Inst.basic_block) : string = "bb" ^ string_of_int bb.bid
-let append_pred (bb : Inst.basic_block) pred = bb.pred#append pred
+let label bb : string = "bb" ^ string_of_int bb.bid
 
-let append_succ (bb : Inst.basic_block) succ =
+let is_phi bb =
+  fold_left
+    (fun hd rest -> hd || match rest.kind with Phi _ -> true | _ -> false)
+    false
+    bb.insts
+;;
+
+let append_pred bb pred = bb.pred#append pred
+
+let append_succ bb succ =
   bb.succ#push succ;
   succ.pred#push bb
 ;;
 
-let append_succs (bb : Inst.basic_block) succs =
+let append_succs bb succs =
   bb.succ#append succs;
   succs#iter (fun bb0 -> bb0.pred#push bb)
 ;;
 
-let render tcx (bb : Inst.basic_block) : string =
+let render tcx bb : string =
   let preds =
     if bb.pred#empty
     then ""
@@ -35,8 +45,10 @@ let render tcx (bb : Inst.basic_block) : string =
         (bb.pred#join ", " label)
   in
   sprintf
-    "%s:%s\n%s"
+    "%s:%s\n%s%s"
     (label bb)
     preds
     (bb.insts#join "\n" (tcx |> Inst.render_inst))
+    ((if bb.insts#empty then "" else "\n")
+     ^ Inst.render_terminator tcx bb.terminator)
 ;;

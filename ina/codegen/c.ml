@@ -101,7 +101,8 @@ let gen cx =
   let rec gen_bb bb =
     let open Ir.Inst in
     out ^ sprintf "bb%d:;\n" bb.bid;
-    bb.insts#iter gen_inst
+    bb.insts#iter gen_inst;
+    gen_terminator bb.terminator
   and gen_inst inst =
     out
     ^
@@ -123,10 +124,16 @@ let gen cx =
     | Store (src, dst) ->
         out ^ sprintf "*%s = %s;\n" (get_value dst) (get_value src)
     | Load ptr -> out ^ sprintf "*%s;\n" (get_value ptr)
-    | Ret value -> out ^ sprintf "return %s;\n" (get_value value)
     | Call (_, value, args) ->
         out
         ^ sprintf "%s(%s);\n" (get_value value) (args#join ", " get_value)
+    | _ ->
+        print_endline !out;
+        newline ();
+        print_endline @@ render_inst cx.tcx inst;
+        assert false
+  and gen_terminator = function
+    | Ret value -> out ^ sprintf "return %s;\n" (get_value value)
     | RetUnit -> out ^ "return;\n"
     | Br (cond, then_block, else_block) ->
         out
@@ -136,11 +143,6 @@ let gen cx =
             (get_value then_block)
             (get_value else_block)
     | Jmp bb -> out ^ sprintf "goto %s;\n" (get_value bb)
-    | _ ->
-        print_endline !out;
-        newline ();
-        print_endline @@ render_inst cx.tcx inst;
-        assert false
   and gen_function func =
     let open Ir.Func in
     let name = mangle cx func.def_id in

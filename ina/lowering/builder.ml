@@ -13,6 +13,8 @@ class builder tcx block =
       let inst = { kind; ty = tcx#types.unit; id = -1 } in
       block.insts#push inst
 
+    method private add_terminator term = block.terminator <- term
+
     method private add_inst_with_ty ty kind =
       let inst = { kind; ty; id = -1 } in
       block.insts#push inst;
@@ -40,14 +42,14 @@ class builder tcx block =
       self#add_inst_with_ty ret (Call (ty, value, args))
 
     method br cond then_block else_block =
-      self#add_inst (Br (cond, then_block, else_block));
+      self#add_terminator (Br (cond, then_block, else_block));
       let then_block = Inst.extract_block then_block
       and else_block = Inst.extract_block else_block in
       Basicblock.append_succ block then_block;
       Basicblock.append_succ block else_block
 
     method jmp bb =
-      self#add_inst (Jmp bb);
+      self#add_terminator (Jmp bb);
       let bb = Inst.extract_block bb in
       Basicblock.append_succ block bb
 
@@ -57,8 +59,8 @@ class builder tcx block =
       let inst = { kind = Nop; ty = tcx#types.unit; id = -1 } in
       VReg inst
 
-    method ret ret = self#add_inst (Ret ret)
-    method ret_unit = self#add_inst RetUnit
+    method ret ret = self#add_terminator (Ret ret)
+    method ret_unit = self#add_terminator RetUnit
     method const_int ty value = Const { kind = Int value; ty }
     method const_float ty value = Const { kind = Float value; ty }
     method const_string ty value = Const { kind = Str value; ty }

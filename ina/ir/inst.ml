@@ -28,8 +28,6 @@ and binary_kind =
 and inst_kind =
   | Alloca of ty ref
   | Binary of binary_kind * value * value
-  | Br of value * value * value
-  | Jmp of value
   (* (bb * inst) *)
   | Phi of ty ref * (value * value) list
   | Store of value * value
@@ -37,7 +35,6 @@ and inst_kind =
   | Gep of ty * value * int
   | Call of ty ref * value * value vec
   | Intrinsic of string * value list
-  | Ret of value
   | Trap of value
   (* Bitcast of ty * value *)
   (* Zext of ty * value *)
@@ -47,8 +44,13 @@ and inst_kind =
   (* Fptrunc of ty * value *)
   | PtrToInt of value * ty
   | IntToPtr of value * ty
-  | RetUnit
   | Nop
+
+and terminator =
+  | Br of value * value * value
+  | Jmp of value
+  | Ret of value
+  | RetUnit
 
 and value =
   | Const of {
@@ -72,6 +74,7 @@ and basic_block = {
     mutable pred: basic_block vec
   ; mutable succ: basic_block vec
   ; mutable insts: t vec
+  ; mutable terminator: terminator
   ; mutable bid: int
   ; mutable is_entry: bool
 }
@@ -142,6 +145,21 @@ let get_ty tcx = function
 
 let extract_block = function Label bb -> bb | _ -> assert false
 
+let render_terminator tcx term =
+  "    "
+  ^
+  match term with
+  | Br (cond, true_block, false_block) ->
+      sprintf
+        "br %s, %s, %s"
+        (render_value tcx cond)
+        (render_value tcx true_block)
+        (render_value tcx false_block)
+  | Jmp bb -> sprintf "jmp %s" (render_value tcx bb)
+  | Ret ret -> sprintf "ret %s" (render_value tcx ret)
+  | RetUnit -> "ret"
+;;
+
 let render_inst tcx inst : string =
   (if has_value inst then sprintf "    %%%d = " inst.id else "    ")
   ^
@@ -153,12 +171,6 @@ let render_inst tcx inst : string =
         (render_binary kind)
         (render_value tcx left)
         (render_value tcx right)
-  | Br (cond, true_block, false_block) ->
-      sprintf
-        "br %s, %s, %s"
-        (render_value tcx cond)
-        (render_value tcx true_block)
-        (render_value tcx false_block)
   | Phi (ty, args) ->
       sprintf
         "phi %s, %s"
@@ -172,7 +184,6 @@ let render_inst tcx inst : string =
                   (render_value tcx bb)
                   (render_value tcx inst))
               args))
-  | Jmp bb -> sprintf "jmp %s" (render_value tcx bb)
   | Store (src, dst) ->
       sprintf "store %s, %s" (render_value tcx src) (render_value tcx dst)
   | Load ptr ->
@@ -209,8 +220,6 @@ let render_inst tcx inst : string =
         "inttoptr %s to %s"
         (render_value tcx value)
         (render_ty (ref ty))
-  | Ret ret -> sprintf "ret %s" (render_value tcx ret)
   | Trap _ -> "trap"
-  | RetUnit -> "ret"
   | Nop -> "nop"
 ;;
