@@ -13,6 +13,24 @@ type t = {
   ; decl: bool
 }
 
+let gen_id blocks =
+  let open Inst in
+  let bb_id = ref 0 in
+  let inst_id = ref 0 in
+  let f inst =
+    if Inst.has_value inst
+    then (
+      inst.id <- !inst_id;
+      incr inst_id)
+  in
+  let f bb =
+    bb.insts#iter f;
+    bb.bid <- !bb_id;
+    incr bb_id
+  in
+  blocks.bbs#iter f
+;;
+
 let render tcx { ty; def_id; args; basic_blocks; _ } =
   let qpath = tcx#def_id_to_qpath#unsafe_get def_id in
   let ret = !ty |> function FnPtr { ret; _ } -> ret | _ -> assert false in

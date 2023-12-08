@@ -4,7 +4,7 @@ open Printf
 open Structures.Vec
 
 type t = {
-    kind: inst_kind
+    mutable kind: inst_kind
   ; ty: ty ref
   ; mutable id: int
 }

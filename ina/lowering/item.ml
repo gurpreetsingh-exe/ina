@@ -3,25 +3,6 @@ open Middle.Ty
 open Ir
 open Structures.Vec
 
-let gen_id fn =
-  let open Inst in
-  let bb_id = ref 0 in
-  let inst_id = ref 0 in
-  let Func.{ basic_blocks; _ } = fn in
-  let f inst =
-    if Inst.has_value inst
-    then (
-      inst.id <- !inst_id;
-      incr inst_id)
-  in
-  let f bb =
-    bb.insts#iter f;
-    bb.bid <- !bb_id;
-    incr bb_id
-  in
-  basic_blocks.bbs#iter f
-;;
-
 let rec lower (lcx : Context.lcx) mdl =
   let tcx = lcx#tcx in
   let lower_fn fn =
@@ -65,7 +46,7 @@ let rec lower (lcx : Context.lcx) mdl =
           | Const _ | Global _ -> lcx#bx#ret ret
           | _ -> lcx#bx#ret_unit)
      | None -> ());
-    gen_id ifn;
+    Func.gen_id ifn.basic_blocks;
     lcx#define ifn
   in
   let f : Ast.item -> unit = function

@@ -61,6 +61,8 @@ let () =
                  lcx#mdl)
            in
            sess.timings.lowering <- time;
+           mdl.items#iter (fun fn ->
+               Transform.run_passes tcx fn.basic_blocks);
            if sess.options.print_ir
            then (
              Ir.Module.render tcx mdl;

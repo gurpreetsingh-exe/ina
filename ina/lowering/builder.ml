@@ -1,5 +1,4 @@
 open Ir
-open Middle.Ty
 open Middle.Ctx
 open Inst
 

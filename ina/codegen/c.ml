@@ -7,7 +7,11 @@ open Printf
 open Ir.Inst
 
 let prelude =
-  ref "#include <alloca.h>\n#include <stdint.h>\n#include <stdlib.h>\n\n"
+  ref
+    "#include <alloca.h>\n\
+     #include <stdint.h>\n\
+     #include <stdlib.h>\n\
+     #include <stdbool.h>\n\n"
 ;;
 
 let out = ref ""
@@ -102,6 +106,7 @@ let gen cx =
     let open Ir.Inst in
     out ^ sprintf "bb%d:;\n" bb.bid;
     bb.insts#iter gen_inst;
+    out ^ "  ";
     gen_terminator bb.terminator
   and gen_inst inst =
     out

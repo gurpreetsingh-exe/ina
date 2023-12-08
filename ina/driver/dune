@@ -1,5 +1,5 @@
 (executable
  (public_name ina)
  (name driver)
- (libraries front codegen resolve sema lowering session utils)
+ (libraries front codegen resolve sema lowering transform session utils)
  (modules driver))

@@ -13,6 +13,7 @@ class ['a] vec =
     method all f = Array.for_all f inner
     method any f = Array.exists f inner
     method copy (v : 'a vec) = inner <- Array.copy v#inner
+    method find f : 'a option = Array.find_map f inner
 
     method pop_front =
       let _, tl = self#split 1 in
@@ -47,6 +48,7 @@ class ['a] vec =
 
     method iter f = Array.iter f inner
     method iteri f = Array.iteri f inner
+    method iter_if cond f = Array.iter (fun bb -> if cond bb then f bb) inner
 
     method join sep f =
       Array.to_list inner |> List.map f |> String.concat sep
