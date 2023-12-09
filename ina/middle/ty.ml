@@ -94,7 +94,7 @@ let render_infer_ty ty dbg =
 
 type field =
   | Field of {
-        ty: ty
+        ty: ty ref
       ; name: string
     }
 
@@ -193,5 +193,12 @@ let rec render_ty2 ty =
   | Err -> "err"
   | Ptr ty -> "*" ^ render_ty2 ty
   | Ref ty -> "&" ^ render_ty2 ty
-  | _ -> assert false
+  | Adt { def_id; variants } ->
+      let render (Field { name; ty }) =
+        sprintf "%s: %s" name (render_ty2 ty)
+      in
+      let render (Variant { def_id; fields }) =
+        sprintf "%s { %s }" (print_def_id def_id) (fields#join ", " render)
+      in
+      sprintf "%s { %s }" (print_def_id def_id) (variants#join ", " render)
 ;;

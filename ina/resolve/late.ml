@@ -25,16 +25,19 @@ class type_lowering resolver modd =
           (match else_block with Some e -> self#visit_expr e | None -> ())
       | Cast (expr, _) | Field (expr, _) | Ref expr | Deref expr ->
           self#visit_expr expr
-      | StructExpr { fields; _ } ->
+      | StructExpr { struct_name; fields; _ } ->
+          self#visit_path struct_name;
           fields#iter (fun (_, expr) -> self#visit_expr expr)
       | Call (expr, args) | MethodCall (expr, _, args) ->
           self#visit_expr expr;
           args#iter self#visit_expr
-      | Path path ->
-          let res = resolver#res#unsafe_get path.path_id in
-          dbg "res_map { %d -> %s }\n" path.path_id (print_res res);
-          assert (resolver#tcx#res_map#insert path.path_id res = None)
+      | Path path -> self#visit_path path
       | Lit _ -> ()
+
+    method visit_path path =
+      let res = resolver#res#unsafe_get path.path_id in
+      dbg "res_map { %d -> %s }\n" path.path_id (print_res res);
+      assert (resolver#tcx#res_map#insert path.path_id res = None)
 
     method visit_pat _ = ()
 
@@ -86,12 +89,27 @@ class type_lowering resolver modd =
       resolver#pop_segment
 
     method visit_impl _ = ()
-    method visit_type _ = ()
+
+    method visit_struct strukt =
+      resolver#append_segment strukt.ident;
+      let id = strukt.struct_id in
+      let def_id = def_id id 0 in
+      resolver#set_path def_id;
+      let fields =
+        map strukt.members (fun (ty, name) ->
+            Field { ty = resolver#tcx#ast_ty_to_ty ty; name })
+      in
+      let variants = new vec in
+      variants#push (Variant { def_id; fields });
+      let ty = resolver#tcx#adt def_id variants in
+      assert (resolver#tcx#node_id_to_def_id#insert id def_id = None);
+      assert (resolver#tcx#node_id_to_ty#insert id ty = None);
+      resolver#pop_segment
 
     method visit_item item =
       match item with
       | Ast.Fn (fn, _) -> self#visit_fn fn
-      | Type ty -> self#visit_type ty
+      | Type (Struct s) -> self#visit_struct s
       | Foreign fns -> fns#iter self#visit_fn
       | Impl impl -> self#visit_impl impl
       | Mod { resolved_mod; _ } ->

@@ -170,6 +170,8 @@ class tcx sess =
     method fn_ptr args ret is_variadic abi =
       self#intern (FnPtr { args; ret; is_variadic; abi })
 
+    method adt def_id variants = self#intern (Adt { def_id; variants })
+
     method sizeof_int_ty =
       function
       | I8 | U8 -> 1
