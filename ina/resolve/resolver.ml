@@ -323,6 +323,16 @@ class resolver tcx modd =
       | Def (id, _) -> tcx#set_main id
       | _ -> print_endline "main not found"
 
+    method not_found path =
+      let err =
+        Diagnostic.mk_err
+          (sprintf
+             "cannot find `%s` in this scope"
+             (path.segments#join "::" (fun s -> s.ident)))
+          path.span
+      in
+      tcx#emit err
+
     method resolve_paths (mdl : Module.t) (modd : modd) : unit =
       dbg "resolve_paths(module = %s)\n" (print_mkind mdl.mkind);
       let rec resolve_ty (ty : Ast.ty) =
@@ -352,21 +362,7 @@ class resolver tcx modd =
             visit_expr right mdl
         | Path path ->
             let resolved = self#resolve_path mdl path (Some Value) in
-            (match resolved with
-             | Err ->
-                 let err =
-                   self#sess.parse_sess.span_diagnostic#span_err
-                     path.span
-                     {
-                       msg =
-                         sprintf
-                           "cannot find `%s` in this scope"
-                           (path.segments#join "::" (fun s -> s.ident))
-                     ; style = NoStyle
-                     }
-                 in
-                 tcx#emit err
-             | _ -> ());
+            (match resolved with Err -> self#not_found path | _ -> ());
             (match res#insert path.path_id resolved with
              | Some _ -> assert false
              | None -> ())
@@ -381,7 +377,9 @@ class resolver tcx modd =
         | Lit _ -> ()
         | StructExpr { struct_name; fields; _ } ->
             let resolved = self#resolve_path mdl struct_name (Some Type) in
-            (match resolved with Err -> assert false | _ -> ());
+            (match resolved with
+             | Err -> self#not_found struct_name
+             | _ -> ());
             (match res#insert struct_name.path_id resolved with
              | Some _ -> assert false
              | None -> ());
@@ -420,6 +418,9 @@ class resolver tcx modd =
         func.fn_sig.args#iter (fun { ty; _ } -> resolve_ty ty);
         match func.body with Some body -> visit_block body | None -> ()
       in
+      let visit_struct strukt =
+        strukt.members#iter (fun (ty, _) -> resolve_ty ty)
+      in
       let visit_item (item : item) =
         match item with
         | Mod { resolved_mod; _ } ->
@@ -430,7 +431,7 @@ class resolver tcx modd =
                  self#resolve_paths mdl modd
              | None -> ())
         | Fn (func, _) -> visit_fn func
-        | Type (Struct _) -> assert false
+        | Type (Struct strukt) -> visit_struct strukt
         | Foreign fns -> fns#iter (fun f -> visit_fn f)
         | Impl { impl_items; _ } ->
             impl_items#iter (function AssocFn fn -> visit_fn fn)

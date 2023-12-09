@@ -94,7 +94,7 @@ class visitor resolver modd parent =
         if fn.is_extern then resolver#tcx#decl_extern name did else did
       in
       let res = Res (Def (did, Fn)) in
-      resolver#define mdl fn.fn_sig.name Value res;
+      resolver#define mdl name Value res;
       self#visit_fn_sig fn.fn_sig;
       match fn.body with
       | Some body ->
@@ -103,12 +103,18 @@ class visitor resolver modd parent =
       | None -> ()
 
     method visit_impl _ = ()
-    method visit_type _ = ()
+
+    method visit_struct strukt =
+      resolver#tcx#insert_span strukt.struct_id strukt.struct_span;
+      let name = strukt.ident in
+      let did = def_id strukt.struct_id 0 in
+      let res = Res (Def (did, Struct)) in
+      resolver#define mdl name Type res
 
     method visit_item item =
       match item with
       | Ast.Fn (fn, _) -> self#visit_fn fn
-      | Type ty -> self#visit_type ty
+      | Type (Struct s) -> self#visit_struct s
       | Foreign fns -> fns#iter self#visit_fn
       | Impl impl -> self#visit_impl impl
       | Mod { resolved_mod; _ } ->
