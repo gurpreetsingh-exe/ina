@@ -21,11 +21,14 @@ let () =
           let resolver = new Resolver.resolver tcx mdl in
           let visitor = new Module_graph.visitor resolver mdl None in
           visitor#visit_mod;
+          if sess.options.print_module_graph
+          then (
+            let printer = new Printer.printer in
+            Resolver.Module.print_modul "" printer visitor#mdl;
+            printer#print;
+            exit 0);
           resolver#init visitor#mdl;
           resolver#resolve;
-          (* let printer = new Printer.printer in *)
-          (* Resolver.Module.print_modul "" printer visitor#mdl; *)
-          (* printer#print; *)
           resolver)
     in
     sess.timings.resolve <- time;

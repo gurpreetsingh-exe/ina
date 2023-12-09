@@ -14,6 +14,7 @@ type t = {
   ; mutable backend: backend
   ; mutable print_ir: bool
   ; mutable print_ast: bool
+  ; mutable print_module_graph: bool
   ; mutable display_time: bool
   ; mutable display_type_vars: bool
   ; mutable ui_testing: bool
@@ -62,6 +63,7 @@ let config () : t =
   ; backend = C
   ; print_ir = false
   ; print_ast = false
+  ; print_module_graph = false
   ; display_time = false
   ; display_type_vars = false
   ; ui_testing = false

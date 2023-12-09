@@ -59,6 +59,7 @@ let parse_args () =
          | "--help" -> usage arg0
          | "--print-ast" -> config.print_ast <- true
          | "--print-ir" -> config.print_ir <- true
+         | "--print-module-graph" -> config.print_module_graph <- true
          | "--time" -> config.display_time <- true
          | "--type-vars" -> config.display_type_vars <- true
          | "--ui-testing" -> config.ui_testing <- true
