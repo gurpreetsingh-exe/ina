@@ -132,6 +132,14 @@ and ty =
 
 and t = ty
 
+let non_enum_variant ty =
+  !ty |> function
+  | Adt { variants; _ } ->
+      assert (variants#len = 1);
+      variants#get 0
+  | _ -> assert false
+;;
+
 let rec hash = function
   | FnPtr { args; ret; is_variadic; abi } ->
       fold_left (fun init ty -> Hashtbl.hash (init + hash !ty)) 0 args

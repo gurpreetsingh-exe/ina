@@ -3,6 +3,7 @@ open Middle.Ty
 open Middle.Ctx
 open Errors
 open Structures.Hashmap
+open Structures.Vec
 open Diagnostic
 open Printf
 open Utils.Panic
@@ -287,6 +288,12 @@ let tychk_fn cx fn =
     let ty = resolve_vars cx.infcx ty in
     write_ty expr.expr_id ty;
     ty
+  and check_path path =
+    tcx#res_map#unsafe_get path.path_id |> function
+    | Def (id, _) -> tcx#node_id_to_ty#unsafe_get id.inner
+    | Local id -> cx.locals#unsafe_get id
+    | Err -> tcx#types.err
+    | _ -> assert false
   and check_expr_kind expr expected =
     match expr.expr_kind with
     | Binary (kind, left, right) ->
@@ -327,16 +334,7 @@ let tychk_fn cx fn =
          | _ ->
              tcx#emit @@ invalid_call ty expr.expr_span;
              tcx#types.err)
-    | Path path ->
-        let res = tcx#res_map#unsafe_get path.path_id in
-        let ty =
-          match res with
-          | Def (id, _) -> tcx#node_id_to_ty#unsafe_get id.inner
-          | Local id -> cx.locals#unsafe_get id
-          | Err -> tcx#types.err
-          | _ -> assert false
-        in
-        ty
+    | Path path -> check_path path
     | Lit lit ->
         (match lit with
          | LitInt _ ->
@@ -390,7 +388,32 @@ let tychk_fn cx fn =
               (equate if_ty else_ty))
           ~none:tcx#types.unit
           else_block
-    | StructExpr _ | Field _ | Cast _ | MethodCall _ -> assert false
+    | StructExpr expr ->
+        let name = expr.struct_name.segments#join "::" (fun s -> s.ident) in
+        let ty = check_path expr.struct_name in
+        let (Variant variant) = non_enum_variant ty in
+        let remaining_fields = new hashmap in
+        variant.fields#iter (fun (Field { ty; name }) ->
+            remaining_fields#insert' name ty);
+        let check_field (ident, expr) =
+          match remaining_fields#remove ident with
+          | Some expected ->
+              let ty = check_expr expr (ExpectTy expected) in
+              (match equate expected ty with
+               | Ok _ -> ()
+               | Error e -> ty_err_emit tcx e expr.expr_span)
+          | None ->
+              let err = UnknownField (name, ident) in
+              ty_err_emit tcx err expr.expr_span
+        in
+        expr.fields#iter check_field;
+        (if remaining_fields#len <> 0
+         then
+           (* TODO: display all missing fields *)
+           let err = UninitializedFields name in
+           ty_err_emit tcx err expr.struct_expr_span);
+        ty
+    | Field _ | Cast _ | MethodCall _ -> assert false
   in
   let ty = tcx#node_id_to_ty#unsafe_get fn.func_id in
   let ret =

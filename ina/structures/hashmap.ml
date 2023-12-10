@@ -14,6 +14,14 @@ class ['k, 'v] hashmap =
         Hashtbl.add inner k v;
         None)
 
+    method remove k =
+      if self#has k
+      then (
+        let old_val = self#get k in
+        Hashtbl.remove inner k;
+        old_val)
+      else None
+
     method insert' k v = if not (self#has k) then Hashtbl.add inner k v
     method get k = Hashtbl.find_opt inner k
     method unsafe_get k = Hashtbl.find inner k
