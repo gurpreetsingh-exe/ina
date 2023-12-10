@@ -2,6 +2,7 @@ open Ast
 open Middle.Ty
 open Middle.Ctx
 open Errors
+open Structures.Vec
 open Structures.Hashmap
 open Diagnostic
 open Printf
@@ -412,7 +413,22 @@ let tychk_fn cx fn =
            let err = UninitializedFields name in
            ty_err_emit tcx err expr.struct_expr_span);
         ty
-    | Field _ | Cast _ | MethodCall _ -> assert false
+    | Field (expr, ident) ->
+        let ty = check_expr expr NoExpectation in
+        let (Variant variant) = non_enum_variant ty in
+        find
+          (fun (Field { name; ty }) ->
+            if name = ident then Some ty else None)
+          variant.fields
+        |> ( function
+        | Some ty -> ty
+        | None ->
+            let path = tcx#def_id_to_qpath#unsafe_get variant.def_id in
+            let name = Option.get path#last in
+            let err = UnknownField (name, ident) in
+            ty_err_emit tcx err expr.expr_span;
+            tcx#types.err )
+    | Cast _ | MethodCall _ -> assert false
   in
   let ty = tcx#node_id_to_ty#unsafe_get fn.func_id in
   let ret =

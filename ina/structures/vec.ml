@@ -13,7 +13,6 @@ class ['a] vec =
     method all f = Array.for_all f inner
     method any f = Array.exists f inner
     method copy (v : 'a vec) = inner <- Array.copy v#inner
-    method find f : 'a option = Array.find_map f inner
 
     method pop_front =
       let _, tl = self#split 1 in
@@ -106,5 +105,6 @@ let mapi v (f : int -> 'a -> 'b) =
   mapped
 ;;
 
+let find f vec = Array.find_map f vec#inner
 let fold_left f init vec = Array.fold_left f init vec#inner
 let ( / ) (v : 'a vec) (i : int) = v#get i
