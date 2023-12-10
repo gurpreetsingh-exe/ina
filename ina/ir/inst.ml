@@ -67,7 +67,7 @@ and const_kind =
   | Float of float
   | Str of string
   | Bool of bool
-  | Struct of value list
+  | Struct of value vec
   | Unit
 
 and basic_block = {
@@ -118,9 +118,7 @@ let rec render_const tcx = function
   | Str value -> sprintf "\"%s\"" (String.escaped value)
   | Bool value -> sprintf "%b" value
   | Struct values ->
-      sprintf
-        "{ %s }"
-        (String.concat ", " (List.map (tcx |> render_value) values))
+      sprintf "{ %s }" (values#join ", " (tcx |> render_value))
   | Unit -> "()"
 
 and render_value tcx = function

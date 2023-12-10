@@ -131,6 +131,9 @@ let rec lower_block (lcx : lcx) block =
                ; Label !last_else_bb, Option.get !false'
                ])
     | Block block -> lower_block lcx block
+    | StructExpr { fields; _ } ->
+        let f = map fields (fun (_, expr) -> lower expr) in
+        Const { kind = Struct f; ty }
     | _ -> assert false
   in
   lower_block' ()

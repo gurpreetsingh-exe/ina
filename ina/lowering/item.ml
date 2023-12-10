@@ -52,6 +52,7 @@ let rec lower (lcx : Context.lcx) mdl =
   let f : Ast.item -> unit = function
     | Fn (fn, _) -> lower_fn fn
     | Mod { resolved_mod = Some mdl; _ } -> lower lcx mdl
+    | Type _ -> ()
     | _ -> assert false
   in
   mdl.items#iter f

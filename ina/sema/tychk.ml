@@ -3,7 +3,6 @@ open Middle.Ty
 open Middle.Ctx
 open Errors
 open Structures.Hashmap
-open Structures.Vec
 open Diagnostic
 open Printf
 open Utils.Panic

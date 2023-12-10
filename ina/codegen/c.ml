@@ -73,6 +73,20 @@ let rec backend_ty cx ty =
               } str;\n\n";
            assert (cx.types#insert ty "str" = None);
            "str")
+  | Adt { def_id; _ } as ty' ->
+      (match cx.types#get ty' with
+       | Some ty -> ty
+       | None ->
+           let (Variant variant) = non_enum_variant ty in
+           let fields =
+             variant.fields#join "\n" (fun (Field { ty; name }) ->
+                 sprintf "  %s %s;" (backend_ty cx ty) name)
+           in
+           let name = mangle cx def_id in
+           assert (cx.types#insert ty' name = None);
+           prelude
+           ^ sprintf "typedef struct %s {\n%s\n} %s;\n\n" name fields name;
+           name)
   | _ ->
       print_endline @@ Middle.Ty.render_ty2 ty;
       assert false
@@ -84,7 +98,7 @@ let create tcx irmdl =
 
 let gen cx =
   let inst_name inst = sprintf "_%d" inst.id in
-  let get_const = function
+  let rec get_const ty = function
     | Int v -> string_of_int v
     | Float v -> string_of_float v
     | Bool v -> string_of_bool v
@@ -93,13 +107,23 @@ let gen cx =
           "(str) { .ptr = \"%s\", .length = %d }"
           (String.escaped v)
           (String.length v)
+    | Struct v ->
+        let ty' = backend_ty cx ty in
+        let (Variant variant) = non_enum_variant ty in
+        sprintf
+          "(%s) { %s }"
+          ty'
+          ((mapi variant.fields (fun i (Field { name; _ }) ->
+                sprintf ".%s = %s" name (get_value (v#get i))))
+             #join
+             ", "
+             (fun s -> s))
     | _ -> assert false
-  in
-  let get_value = function
+  and get_value = function
     | Param (_, name, _) -> name
     | VReg i -> inst_name i
     | Global id -> mangle cx id
-    | Const { kind; _ } -> get_const kind
+    | Const { kind; ty } -> get_const ty kind
     | Label bb -> sprintf "bb%d" bb.bid
   in
   let rec gen_bb bb =
@@ -115,7 +139,7 @@ let gen cx =
     then sprintf "  %s %s = " (backend_ty cx inst.ty) (inst_name inst)
     else "  ";
     match inst.kind with
-    | Alloca ty -> out ^ sprintf "alloca(%d);\n" (cx.tcx#sizeof ty)
+    | Alloca ty -> out ^ sprintf "alloca(sizeof(%s));\n" (backend_ty cx ty)
     | Binary (kind, left, right) ->
         let op =
           match kind with
