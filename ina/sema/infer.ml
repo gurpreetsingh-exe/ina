@@ -114,10 +114,12 @@ let fold_infer_ty infcx v =
   | TyVar _ -> None
 ;;
 
-let fold_ty infcx ty =
+let rec fold_ty infcx ty =
   match !ty with
   | Infer i ->
       (match fold_infer_ty infcx i with Some ty -> ty | None -> ty)
+  | Ptr ty -> infcx.tcx#ptr (fold_ty infcx ty)
+  | Ref ty -> infcx.tcx#ref (fold_ty infcx ty)
   | _ -> ty
 ;;
 

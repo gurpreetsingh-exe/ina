@@ -34,6 +34,7 @@ type ty_err =
   | FloatMismatch of float_ty expected_found
   | InvalidDeref of ty ref
   | InvalidCall of ty ref
+  | InvalidCast of ty ref * ty ref
 
 type 'a tyck_result = ('a, ty_err) result
 
@@ -136,6 +137,14 @@ let ty_err_emit (tcx : tcx) err span =
   | InvalidCall ty ->
       let msg = sprintf "`%s` is not callable" (tcx#render_ty ty) in
       tcx#emit (mk_err msg span)
+  | InvalidCast (of', to') ->
+      let msg =
+        sprintf
+          "invalid cast of `%s` to `%s`"
+          (tcx#render_ty of')
+          (tcx#render_ty to')
+      in
+      tcx#emit (mk_err msg span)
 ;;
 
 let tychk_fn cx fn =
@@ -220,6 +229,18 @@ let tychk_fn cx fn =
       (match opt_ty with
        | Some ty -> tcx#float_ty_to_ty ty
        | None -> tcx#types.f32)
+  in
+  let rec fold_ty ty =
+    match !ty with
+    | Infer (IntVar i) ->
+        fold_int_ty i ty;
+        tcx#types.i32
+    | Infer (FloatVar f) ->
+        fold_float_ty f ty;
+        tcx#types.f32
+    | Ptr ty -> tcx#ptr (fold_ty ty)
+    | Ref ty -> tcx#ref (fold_ty ty)
+    | _ -> ty
   in
   let rec check_block block =
     block.block_stmts#iter check_stmt;
@@ -420,7 +441,17 @@ let tychk_fn cx fn =
             let err = UnknownField (name, ident) in
             ty_err_emit tcx err expr.expr_span;
             tcx#types.err )
-    | Cast _ | MethodCall _ -> assert false
+    | Cast (expr, ty) ->
+        let cty = tcx#ast_ty_to_ty ty in
+        let ty = check_expr expr NoExpectation in
+        let ty = fold_ty ty in
+        (match !ty, !cty with
+         | Ref t0, Ptr t1 when t0 = t1 -> cty
+         | (FnPtr _ | Ptr _), Ptr _ -> cty
+         | _ ->
+             ty_err_emit tcx (InvalidCast (ty, cty)) expr.expr_span;
+             cty)
+    | MethodCall _ -> assert false
   in
   let ty = tcx#node_id_to_ty#unsafe_get fn.func_id in
   let ret =
