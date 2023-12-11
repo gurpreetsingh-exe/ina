@@ -37,7 +37,7 @@ class builder tcx block =
       self#add_inst_with_ty ty (Load ptr)
 
     method gep ty ptr ident =
-      let (Variant variant) = Middle.Ty.non_enum_variant ty in
+      let (Variant variant) = tcx#non_enum_variant ty in
       let index = ref (-1) in
       Structures.Vec.find
         (fun (Middle.Ty.Field { name; ty }) ->

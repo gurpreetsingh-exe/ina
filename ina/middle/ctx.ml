@@ -91,6 +91,7 @@ class tcx sess =
     val mutable err_count = 0
     val extern_decls : (string, def_id) hashmap = new hashmap
     val extern_def_ids : (def_id, unit) hashmap = new hashmap
+    val adt_def : (def_id, adt) hashmap = new hashmap
 
     initializer
       let ty =
@@ -170,7 +171,11 @@ class tcx sess =
     method fn_ptr args ret is_variadic abi =
       self#intern (FnPtr { args; ret; is_variadic; abi })
 
-    method adt def_id variants = self#intern (Adt { def_id; variants })
+    method adt def_id = self#intern (Adt def_id)
+
+    method adt_with_variants def_id variants =
+      adt_def#insert' def_id { variants };
+      self#adt def_id
 
     method sizeof_int_ty =
       function
@@ -189,6 +194,14 @@ class tcx sess =
       | Str -> 16
       | Unit -> 0
       | Bool -> 1
+      | _ -> assert false
+
+    method non_enum_variant ty =
+      match !ty with
+      | Adt def_id ->
+          let variants = (adt_def#unsafe_get def_id).variants in
+          assert (variants#len = 1);
+          variants#get 0
       | _ -> assert false
 
     method int_ty_to_ty =
@@ -241,7 +254,11 @@ class tcx sess =
                ; abi = Default
                })
       | Err -> assert false
-      | Path _ -> assert false
+      | Path path ->
+          let res = res_map#unsafe_get path.path_id in
+          res |> ( function
+          | Def (def_id, _) -> self#adt def_id
+          | _ -> assert false )
       | _ -> assert false
 
     method inner_ty ty : ty ref option =

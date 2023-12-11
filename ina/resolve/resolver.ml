@@ -136,7 +136,6 @@ class resolver tcx modd =
     val tcx : tcx = tcx
     val modd : modd = modd
     val modules : (def_id, Module.t) hashmap = new hashmap
-    val res : res nodemap = new hashmap
     val mutable current_qpath : string vec = new vec
 
     val binding_parent_module : (name_resolution, Module.t) hashmap =
@@ -150,7 +149,6 @@ class resolver tcx modd =
 
     method unit_root = unit_root
     method init mdl = unit_root <- mdl
-    method res = res
     method modules = modules
     method tcx = tcx
     method sess = tcx#sess
@@ -340,19 +338,18 @@ class resolver tcx modd =
         | FnPtr (args, ty, _) ->
             args#iter (fun ty -> resolve_ty ty);
             resolve_ty ty
-        | Path path ->
-            let resolved = self#resolve_path mdl path (Some Type) in
-            (match resolved with Err -> assert false | _ -> ());
-            (match res#insert path.path_id resolved with
-             | Some _ -> assert false
-             | None -> ())
+        | Path path -> visit_path path mdl (Some Type)
         | Ref ty | Ptr ty -> resolve_ty ty
         | ImplicitSelf | Int _ | Float _ | Bool | Str | Unit -> ()
         | _ ->
             print_endline (Front.Ast_printer.render_ty ty);
             assert false
-      in
-      let rec visit_expr expr (mdl : Module.t) =
+      and visit_path path mdl ns =
+        let resolved = self#resolve_path mdl path ns in
+        (match resolved with Err -> self#not_found path | _ -> ());
+        dbg "res_map { %d -> %s }\n" path.path_id (print_res resolved);
+        assert (tcx#res_map#insert path.path_id resolved = None)
+      and visit_expr expr (mdl : Module.t) =
         match expr.expr_kind with
         | Call (path, exprs) ->
             visit_expr path mdl;
@@ -360,12 +357,7 @@ class resolver tcx modd =
         | Binary (_, left, right) ->
             visit_expr left mdl;
             visit_expr right mdl
-        | Path path ->
-            let resolved = self#resolve_path mdl path (Some Value) in
-            (match resolved with Err -> self#not_found path | _ -> ());
-            (match res#insert path.path_id resolved with
-             | Some _ -> assert false
-             | None -> ())
+        | Path path -> visit_path path mdl (Some Value)
         | If { cond; then_block; else_block; _ } ->
             visit_expr cond mdl;
             visit_block then_block;
@@ -376,13 +368,7 @@ class resolver tcx modd =
         | Block block -> visit_block block
         | Lit _ -> ()
         | StructExpr { struct_name; fields; _ } ->
-            let resolved = self#resolve_path mdl struct_name (Some Type) in
-            (match resolved with
-             | Err -> self#not_found struct_name
-             | _ -> ());
-            (match res#insert struct_name.path_id resolved with
-             | Some _ -> assert false
-             | None -> ());
+            visit_path struct_name mdl (Some Type);
             fields#iter (fun (_, expr) -> visit_expr expr mdl)
         | Field (expr, _) -> visit_expr expr mdl
         | Cast (expr, ty) ->

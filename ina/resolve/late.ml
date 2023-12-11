@@ -25,27 +25,17 @@ class type_lowering resolver modd =
           (match else_block with Some e -> self#visit_expr e | None -> ())
       | Cast (expr, _) | Field (expr, _) | Ref expr | Deref expr ->
           self#visit_expr expr
-      | StructExpr { struct_name; fields; _ } ->
-          self#visit_path struct_name;
+      | StructExpr { fields; _ } ->
           fields#iter (fun (_, expr) -> self#visit_expr expr)
       | Call (expr, args) | MethodCall (expr, _, args) ->
           self#visit_expr expr;
           args#iter self#visit_expr
-      | Path path -> self#visit_path path
-      | Lit _ -> ()
-
-    method visit_path path =
-      let res = resolver#res#unsafe_get path.path_id in
-      dbg "res_map { %d -> %s }\n" path.path_id (print_res res);
-      assert (resolver#tcx#res_map#insert path.path_id res = None)
-
-    method visit_pat _ = ()
+      | Path _ | Lit _ -> ()
 
     method visit_stmt stmt =
       match stmt with
       | Stmt expr | Expr expr -> self#visit_expr expr
-      | Binding { binding_pat; binding_expr; binding_ty; _ } ->
-          self#visit_pat binding_pat;
+      | Binding { binding_expr; binding_ty; _ } ->
           self#visit_expr binding_expr;
           (match binding_ty with Some ty -> self#visit_ty ty | None -> ())
       | Assert (cond, _) -> self#visit_expr cond
@@ -101,7 +91,7 @@ class type_lowering resolver modd =
       in
       let variants = new vec in
       variants#push (Variant { def_id; fields });
-      let ty = resolver#tcx#adt def_id variants in
+      let ty = resolver#tcx#adt_with_variants def_id variants in
       assert (resolver#tcx#node_id_to_def_id#insert id def_id = None);
       assert (resolver#tcx#node_id_to_ty#insert id ty = None);
       resolver#pop_segment

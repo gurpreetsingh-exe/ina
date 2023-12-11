@@ -73,11 +73,11 @@ let rec backend_ty cx ty =
               } str;\n\n";
            assert (cx.types#insert ty "str" = None);
            "str")
-  | Adt { def_id; _ } as ty' ->
+  | Adt def_id as ty' ->
       (match cx.types#get ty' with
        | Some ty -> ty
        | None ->
-           let (Variant variant) = non_enum_variant ty in
+           let (Variant variant) = cx.tcx#non_enum_variant ty in
            let fields =
              variant.fields#join "\n" (fun (Field { ty; name }) ->
                  sprintf "  %s %s;" (backend_ty cx ty) name)
@@ -109,7 +109,7 @@ let gen cx =
           (String.length v)
     | Struct v ->
         let ty' = backend_ty cx ty in
-        let (Variant variant) = non_enum_variant ty in
+        let (Variant variant) = cx.tcx#non_enum_variant ty in
         sprintf
           "(%s) { %s }"
           ty'
@@ -157,7 +157,7 @@ let gen cx =
         out
         ^ sprintf "%s(%s);\n" (get_value value) (args#join ", " get_value)
     | Gep (ty, ptr, index) ->
-        let (Variant variant) = non_enum_variant ty in
+        let (Variant variant) = cx.tcx#non_enum_variant ty in
         let (Field { name; _ }) = variant.fields#get index in
         out ^ sprintf "&%s->%s;\n" (get_value ptr) name
     | _ ->

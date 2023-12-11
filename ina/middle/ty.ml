@@ -104,6 +104,8 @@ and variant =
       ; fields: field vec
     }
 
+and adt = { variants: variant vec }
+
 and abi =
   | Default
   | Intrinsic
@@ -116,10 +118,7 @@ and ty =
   | Str
   | Ptr of ty ref
   | Ref of ty ref
-  | Adt of {
-        def_id: def_id
-      ; variants: variant vec
-    }
+  | Adt of def_id
   | FnPtr of {
         args: ty ref vec
       ; ret: ty ref
@@ -132,14 +131,6 @@ and ty =
 
 and t = ty
 
-let non_enum_variant ty =
-  !ty |> function
-  | Adt { variants; _ } ->
-      assert (variants#len = 1);
-      variants#get 0
-  | _ -> assert false
-;;
-
 let rec hash = function
   | FnPtr { args; ret; is_variadic; abi } ->
       fold_left (fun init ty -> Hashtbl.hash (init + hash !ty)) 0 args
@@ -147,6 +138,7 @@ let rec hash = function
       + if is_variadic then 0 else 1 + Hashtbl.hash abi
   | Ptr ty -> 1 + hash !ty
   | Ref ty -> 2 + hash !ty
+  | Adt { inner; _ } -> inner
   | ty -> Hashtbl.hash ty
 ;;
 
@@ -177,7 +169,7 @@ let rec render_ty ty =
   | Ptr ty -> "*" ^ render_ty ty
   | Ref ty -> "&" ^ render_ty ty
   | Err -> "err"
-  | Adt { def_id; _ } -> print_def_id def_id
+  | Adt def_id -> print_def_id def_id
 ;;
 
 let rec render_ty2 ty =
@@ -201,12 +193,13 @@ let rec render_ty2 ty =
   | Err -> "err"
   | Ptr ty -> "*" ^ render_ty2 ty
   | Ref ty -> "&" ^ render_ty2 ty
-  | Adt { def_id; variants } ->
-      let render (Field { name; ty }) =
-        sprintf "%s: %s" name (render_ty2 ty)
-      in
-      let render (Variant { def_id; fields }) =
-        sprintf "%s { %s }" (print_def_id def_id) (fields#join ", " render)
-      in
-      sprintf "%s { %s }" (print_def_id def_id) (variants#join ", " render)
+  | Adt def_id -> print_def_id def_id
 ;;
+(* | Adt { def_id; variants } -> *)
+(*     let render (Field { name; ty }) = *)
+(*       sprintf "%s: %s" name (render_ty2 ty) *)
+(*     in *)
+(*     let render (Variant { def_id; fields }) = *)
+(*       sprintf "%s { %s }" (print_def_id def_id) (fields#join ", " render) *)
+(*     in *)
+(*     sprintf "%s { %s }" (print_def_id def_id) (variants#join ", " render) *)

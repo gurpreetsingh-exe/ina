@@ -391,7 +391,7 @@ let tychk_fn cx fn =
     | StructExpr expr ->
         let name = expr.struct_name.segments#join "::" (fun s -> s.ident) in
         let ty = check_path expr.struct_name in
-        let (Variant variant) = non_enum_variant ty in
+        let (Variant variant) = tcx#non_enum_variant ty in
         let remaining_fields = new hashmap in
         variant.fields#iter (fun (Field { ty; name }) ->
             remaining_fields#insert' name ty);
@@ -415,7 +415,7 @@ let tychk_fn cx fn =
         ty
     | Field (expr, ident) ->
         let ty = check_expr expr NoExpectation in
-        let (Variant variant) = non_enum_variant ty in
+        let (Variant variant) = tcx#non_enum_variant ty in
         find
           (fun (Field { name; ty }) ->
             if name = ident then Some ty else None)
