@@ -156,6 +156,10 @@ let gen cx =
     | Call (_, value, args) ->
         out
         ^ sprintf "%s(%s);\n" (get_value value) (args#join ", " get_value)
+    | Gep (ty, ptr, index) ->
+        let (Variant variant) = non_enum_variant ty in
+        let (Field { name; _ }) = variant.fields#get index in
+        out ^ sprintf "&%s->%s;\n" (get_value ptr) name
     | _ ->
         print_endline !out;
         newline ();

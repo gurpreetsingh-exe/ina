@@ -177,7 +177,7 @@ let rec render_ty ty =
   | Ptr ty -> "*" ^ render_ty ty
   | Ref ty -> "&" ^ render_ty ty
   | Err -> "err"
-  | _ -> assert false
+  | Adt { def_id; _ } -> print_def_id def_id
 ;;
 
 let rec render_ty2 ty =

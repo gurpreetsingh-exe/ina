@@ -36,6 +36,19 @@ class builder tcx block =
       let ty = Option.get @@ tcx#inner_ty ty in
       self#add_inst_with_ty ty (Load ptr)
 
+    method gep ty ptr ident =
+      let (Variant variant) = Middle.Ty.non_enum_variant ty in
+      let index = ref (-1) in
+      Structures.Vec.find
+        (fun (Middle.Ty.Field { name; ty }) ->
+          incr index;
+          if name = ident then Some (!index, ty) else None)
+        variant.fields
+      |> function
+      | Some (index, ty') ->
+          self#add_inst_with_ty (tcx#ptr ty') (Gep (ty, ptr, index))
+      | None -> assert false
+
     method call ty value args =
       let ret = Option.get @@ tcx#inner_ty ty in
       self#add_inst_with_ty ret (Call (ty, value, args))

@@ -32,7 +32,7 @@ and inst_kind =
   | Phi of ty ref * (value * value) list
   | Store of value * value
   | Load of value
-  | Gep of ty * value * int
+  | Gep of ty ref * value * int
   | Call of ty ref * value * value vec
   | Intrinsic of string * value list
   | Trap of value
