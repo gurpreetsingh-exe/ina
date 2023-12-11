@@ -29,6 +29,11 @@ let rec lower_block (lcx : lcx) block =
     | LitFloat value -> lcx#bx#const_float ty value
     | LitStr value -> lcx#bx#const_string ty value
     | LitBool value -> lcx#bx#const_bool ty value
+  and lower_field expr ident =
+    let ptr = lower_lvalue expr in
+    let ty = Ir.Inst.get_ty tcx ptr in
+    let ty = Option.get @@ tcx#inner_ty ty in
+    lcx#bx#gep ty ptr ident
   and lower_lvalue expr =
     match expr.expr_kind with
     | Path path ->
@@ -38,6 +43,7 @@ let rec lower_block (lcx : lcx) block =
          | Def (id, _) -> Global id
          | _ -> assert false)
     | Deref expr -> lower expr
+    | Field (expr, ident) -> lower_field expr ident
     | _ -> assert false
   and lower expr =
     let ty = tcx#node_id_to_ty#unsafe_get expr.expr_id in
@@ -135,10 +141,7 @@ let rec lower_block (lcx : lcx) block =
         let f = map fields (fun (_, expr) -> lower expr) in
         Const { kind = Struct f; ty }
     | Field (expr, ident) ->
-        let ptr = lower_lvalue expr in
-        let ty = Ir.Inst.get_ty tcx ptr in
-        let ty = Option.get @@ tcx#inner_ty ty in
-        let ptr = lcx#bx#gep ty ptr ident in
+        let ptr = lower_field expr ident in
         lcx#bx#load ptr
     | _ -> assert false
   in
