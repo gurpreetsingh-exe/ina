@@ -38,6 +38,6 @@ let render tcx { ty; def_id; args; basic_blocks; _ } =
     "fn %s(%s)%s {\n%s\n}\n"
     (qpath#join "::" (fun s -> s))
     (args#join ", " (tcx |> Inst.render_value))
-    (match !ret with Unit -> String.empty | _ -> " -> " ^ render_ty ret)
+    (match !ret with Unit -> String.empty | _ -> " -> " ^ tcx#render_ty ret)
     (basic_blocks.bbs#join "\n\n" (tcx |> Basicblock.render))
 ;;

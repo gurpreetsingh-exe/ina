@@ -131,46 +131,24 @@ and ty =
 
 and t = ty
 
+let pair a b =
+  let a' = 2 * a in
+  let b' = 2 * b in
+  Int.div (if a' >= b' then (a' * a') + a' + b' else a' + (b' * b')) 2
+;;
+
 let rec hash = function
   | FnPtr { args; ret; is_variadic; abi } ->
-      fold_left (fun init ty -> Hashtbl.hash (init + hash !ty)) 0 args
+      fold_left (fun init ty -> pair (hash !ty) init) 0 args
       + hash !ret
       + if is_variadic then 0 else 1 + Hashtbl.hash abi
-  | Ptr ty -> 1 + hash !ty
-  | Ref ty -> 2 + hash !ty
+  | Ptr ty -> pair (hash !ty) 1
+  | Ref ty -> pair (hash !ty) 2
   | Adt { inner; _ } -> inner
   | ty -> Hashtbl.hash ty
 ;;
 
 let equal t0 t1 = hash t0 = hash t1
-
-let rec render_ty ty =
-  match !ty with
-  | Int i -> display_int_ty i
-  | Float f -> display_float_ty f
-  | Infer i ->
-      (match i with
-       | IntVar _ -> "{int}"
-       | FloatVar _ -> "{float}"
-       | TyVar _ -> "infer")
-  | Unit -> "unit"
-  | Bool -> "bool"
-  | Str -> "str"
-  | FnPtr { args; ret; is_variadic; abi } ->
-      sprintf
-        "%sfn(%s) -> %s"
-        (abi |> function
-         | Default -> ""
-         | Intrinsic -> "\"intrinsic\" "
-         | C -> "\"C\" ")
-        (args#join ", " (fun ty -> render_ty ty)
-         ^ if is_variadic then ", ..." else String.empty)
-        (render_ty ret)
-  | Ptr ty -> "*" ^ render_ty ty
-  | Ref ty -> "&" ^ render_ty ty
-  | Err -> "err"
-  | Adt def_id -> print_def_id def_id
-;;
 
 let rec render_ty2 ty =
   match !ty with

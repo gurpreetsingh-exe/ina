@@ -265,4 +265,33 @@ class tcx sess =
       match !ty with
       | Ptr ty | Ref ty | FnPtr { ret = ty; _ } -> Some ty
       | _ -> None
+
+    method render_ty ty =
+      match !ty with
+      | Ty.Int i -> display_int_ty i
+      | Float f -> display_float_ty f
+      | Infer i ->
+          (match i with
+           | IntVar _ -> "{int}"
+           | FloatVar _ -> "{float}"
+           | TyVar _ -> "infer")
+      | Unit -> "unit"
+      | Bool -> "bool"
+      | Str -> "str"
+      | FnPtr { args; ret; is_variadic; abi } ->
+          sprintf
+            "%sfn(%s) -> %s"
+            (abi |> function
+             | Default -> ""
+             | Intrinsic -> "\"intrinsic\" "
+             | C -> "\"C\" ")
+            (args#join ", " (fun ty -> self#render_ty ty)
+             ^ if is_variadic then ", ..." else String.empty)
+            (self#render_ty ret)
+      | Ptr ty -> "*" ^ self#render_ty ty
+      | Ref ty -> "&" ^ self#render_ty ty
+      | Err -> "err"
+      | Adt def_id ->
+          let segments = def_id_to_qpath#unsafe_get def_id in
+          segments#join "::" (fun s -> s)
   end

@@ -32,6 +32,8 @@ type ty_err =
   | MethodNotFound of ty ref * string
   | IntMismatch of int_ty expected_found
   | FloatMismatch of float_ty expected_found
+  | InvalidDeref of ty ref
+  | InvalidCall of ty ref
 
 type 'a tyck_result = ('a, ty_err) result
 
@@ -40,13 +42,6 @@ type expectation =
   | ExpectTy of ty ref
 
 exception TypeError of ty_err
-
-let mismatch_ty expected ty span =
-  let msg =
-    sprintf "expected `%s`, found `%s`" (render_ty expected) (render_ty ty)
-  in
-  mk_err msg span
-;;
 
 let mismatch_int_ty expected ty span =
   let msg =
@@ -68,11 +63,6 @@ let mismatch_float_ty expected ty span =
   mk_err msg span
 ;;
 
-let invalid_deref ty span =
-  let msg = sprintf "`%s` cannot be dereferenced" (render_ty ty) in
-  mk_err msg span
-;;
-
 let mismatch_args expected found span =
   let msg =
     sprintf
@@ -80,24 +70,6 @@ let mismatch_args expected found span =
       expected
       (if expected = 1 then "" else "s")
       found
-  in
-  mk_err msg span
-;;
-
-let invalid_binary_expr kind left right span =
-  let msg =
-    sprintf
-      "cannot %s `%s` and `%s`"
-      (match kind with
-       | Add -> "add"
-       | Sub -> "subtract"
-       | Mul -> "multiply"
-       | Div -> "divide"
-       | Eq | NotEq | Gt | GtEq | Lt | LtEq -> "compare"
-       | BitAnd | And -> "and"
-       | BitOr | Or -> "or")
-      (render_ty left)
-      (render_ty right)
   in
   mk_err msg span
 ;;
@@ -114,39 +86,56 @@ let unknown_field strukt name span =
   mk_err msg span
 ;;
 
-let no_field_in_prim_ty ty span =
-  let msg = sprintf "primitive type `%s` has no fields" (render_ty ty) in
-  mk_err msg span
-;;
-
-let method_not_found ty name span =
-  let msg = sprintf "type `%s` has no method `%s`" (render_ty ty) name in
-  mk_err msg span
-;;
-
-let invalid_call ty span =
-  let msg = sprintf "`%s` is not callable" (render_ty ty) in
-  mk_err msg span
-;;
-
 let ty_err_emit (tcx : tcx) err span =
   match err with
   | MismatchTy (expected, ty) ->
+      let msg =
+        sprintf
+          "expected `%s`, found `%s`"
+          (tcx#render_ty expected)
+          (tcx#render_ty ty)
+      in
       if ty <> tcx#types.err && expected <> tcx#types.err
-      then tcx#emit (mismatch_ty expected ty span)
+      then tcx#emit (mk_err msg span)
   | UninitializedFields name -> tcx#emit (uninitialized_fields name span)
   | UnknownField (strukt, name) -> tcx#emit (unknown_field strukt name span)
   | NoFieldInPrimitiveType ty ->
-      if ty <> tcx#types.err then tcx#emit (no_field_in_prim_ty ty span)
+      let msg =
+        sprintf "primitive type `%s` has no fields" (tcx#render_ty ty)
+      in
+      if ty <> tcx#types.err then tcx#emit (mk_err msg span)
   | InvalidBinaryExpression (kind, left, right) ->
+      let msg =
+        sprintf
+          "cannot %s `%s` and `%s`"
+          (match kind with
+           | Add -> "add"
+           | Sub -> "subtract"
+           | Mul -> "multiply"
+           | Div -> "divide"
+           | Eq | NotEq | Gt | GtEq | Lt | LtEq -> "compare"
+           | BitAnd | And -> "and"
+           | BitOr | Or -> "or")
+          (tcx#render_ty left)
+          (tcx#render_ty right)
+      in
       if left <> tcx#types.err && right <> tcx#types.err
-      then tcx#emit (invalid_binary_expr kind left right span)
+      then tcx#emit (mk_err msg span)
   | MethodNotFound (ty, name) ->
-      if ty <> tcx#types.err then tcx#emit (method_not_found ty name span)
+      let msg =
+        sprintf "type `%s` has no method `%s`" (tcx#render_ty ty) name
+      in
+      if ty <> tcx#types.err then tcx#emit (mk_err msg span)
   | IntMismatch { expected; found } ->
       tcx#emit (mismatch_int_ty expected found span)
   | FloatMismatch { expected; found } ->
       tcx#emit (mismatch_float_ty expected found span)
+  | InvalidDeref ty ->
+      let msg = sprintf "`%s` cannot be dereferenced" (tcx#render_ty ty) in
+      tcx#emit (mk_err msg span)
+  | InvalidCall ty ->
+      let msg = sprintf "`%s` is not callable" (tcx#render_ty ty) in
+      tcx#emit (mk_err msg span)
 ;;
 
 let tychk_fn cx fn =
@@ -252,7 +241,10 @@ let tychk_fn cx fn =
     | None ->
         (match expected with
          | ExpectTy expected ->
-             tcx#emit @@ mismatch_ty expected tcx#types.unit block.block_span;
+             ty_err_emit
+               tcx
+               (MismatchTy (expected, tcx#types.unit))
+               block.block_span;
              expected
          | NoExpectation -> tcx#types.unit)
   and check_stmt stmt =
@@ -332,7 +324,7 @@ let tychk_fn cx fn =
              ret
          | Err -> ty
          | _ ->
-             tcx#emit @@ invalid_call ty expr.expr_span;
+             ty_err_emit tcx (InvalidCall ty) expr.expr_span;
              tcx#types.err)
     | Path path -> check_path path
     | Lit lit ->
@@ -342,7 +334,7 @@ let tychk_fn cx fn =
               | Some ({ contents = Int _ } as ty) -> ty
               | Some ty ->
                   let found = infcx_new_int_var cx.infcx in
-                  tcx#emit @@ mismatch_ty ty found expr.expr_span;
+                  ty_err_emit tcx (MismatchTy (ty, found)) expr.expr_span;
                   ty
               | None -> infcx_new_int_var cx.infcx)
          | LitFloat _ ->
@@ -350,7 +342,7 @@ let tychk_fn cx fn =
               | Some ({ contents = Float _ } as ty) -> ty
               | Some ty ->
                   let found = infcx_new_float_var cx.infcx in
-                  tcx#emit @@ mismatch_ty ty found expr.expr_span;
+                  ty_err_emit tcx (MismatchTy (ty, found)) expr.expr_span;
                   ty
               | None -> infcx_new_float_var cx.infcx)
          | LitStr _ -> tcx#types.str
@@ -361,7 +353,7 @@ let tychk_fn cx fn =
         (match !ty with
          | Ptr ty | Ref ty -> ty
          | _ ->
-             tcx#emit @@ invalid_deref ty expr.expr_span;
+             ty_err_emit tcx (InvalidDeref ty) expr.expr_span;
              tcx#types.err)
     | Ref expr ->
         (match resolve_expected expected with
@@ -435,7 +427,7 @@ let tychk_fn cx fn =
     match !ty with
     | FnPtr { ret; _ } -> ret
     | _ ->
-        dbg "expected function, found `%s`\n" (render_ty ty);
+        dbg "expected function, found `%s`\n" (tcx#render_ty ty);
         assert false
   in
   (* TODO: display better error span *)

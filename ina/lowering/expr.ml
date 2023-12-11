@@ -136,7 +136,8 @@ let rec lower_block (lcx : lcx) block =
         Const { kind = Struct f; ty }
     | Field (expr, ident) ->
         let ptr = lower_lvalue expr in
-        let ty = Option.get @@ tcx#inner_ty @@ Ir.Inst.get_ty tcx ptr in
+        let ty = Ir.Inst.get_ty tcx ptr in
+        let ty = Option.get @@ tcx#inner_ty ty in
         let ptr = lcx#bx#gep ty ptr ident in
         lcx#bx#load ptr
     | _ -> assert false

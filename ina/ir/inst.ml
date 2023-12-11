@@ -123,10 +123,10 @@ let rec render_const tcx = function
 
 and render_value tcx = function
   | Const const ->
-      sprintf "%s %s" (render_ty const.ty) (render_const tcx const.kind)
-  | VReg inst -> sprintf "%s %%%i" (render_ty inst.ty) inst.id
+      sprintf "%s %s" (tcx#render_ty const.ty) (render_const tcx const.kind)
+  | VReg inst -> sprintf "%s %%%i" (tcx#render_ty inst.ty) inst.id
   | Label bb -> sprintf "label %%bb%d" bb.bid
-  | Param (ty, name, _) -> sprintf "%s %%%s" (render_ty ty) name
+  | Param (ty, name, _) -> sprintf "%s %%%s" (tcx#render_ty ty) name
   | Global id ->
       sprintf
         "@%s"
@@ -162,7 +162,7 @@ let render_inst tcx inst : string =
   (if has_value inst then sprintf "    %%%d = " inst.id else "    ")
   ^
   match inst.kind with
-  | Alloca ty -> sprintf "alloca %s" (render_ty ty)
+  | Alloca ty -> sprintf "alloca %s" (tcx#render_ty ty)
   | Binary (kind, left, right) ->
       sprintf
         "%s %s, %s"
@@ -172,7 +172,7 @@ let render_inst tcx inst : string =
   | Phi (ty, args) ->
       sprintf
         "phi %s, %s"
-        (render_ty ty)
+        (tcx#render_ty ty)
         (String.concat
            ", "
            (List.map
@@ -188,8 +188,8 @@ let render_inst tcx inst : string =
       sprintf
         "load %s, %s"
         (match !(get_ty tcx ptr) with
-         | Ptr ty -> render_ty ty
-         | Ref ty -> render_ty ty
+         | Ptr ty -> tcx#render_ty ty
+         | Ref ty -> tcx#render_ty ty
          | _ -> assert false)
         (render_value tcx ptr)
   | Gep (_, value, index) ->
@@ -200,7 +200,7 @@ let render_inst tcx inst : string =
       in
       sprintf
         "call %s %s(%s)"
-        (render_ty ty)
+        (tcx#render_ty ty)
         (render_value tcx fn)
         (args#join ", " (tcx |> render_value))
   | Intrinsic (name, args) ->
@@ -212,12 +212,12 @@ let render_inst tcx inst : string =
       sprintf
         "ptrtoint %s to %s"
         (render_value tcx value)
-        (render_ty (ref ty))
+        (tcx#render_ty (ref ty))
   | IntToPtr (value, ty) ->
       sprintf
         "inttoptr %s to %s"
         (render_value tcx value)
-        (render_ty (ref ty))
+        (tcx#render_ty (ref ty))
   | Trap _ -> "trap"
   | Nop -> "nop"
 ;;
