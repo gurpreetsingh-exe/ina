@@ -17,7 +17,6 @@ test*.*
 *.cmx
 *.cmxa
 *.txt
-*.opam
 *.o
 *.asm
 *.s
