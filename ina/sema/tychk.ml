@@ -495,7 +495,9 @@ let rec tychk cx (modd : modd) =
         impl_items#iter (function AssocFn f -> tychk_fn cx f)
     | Type _ | Unit _ -> ()
     | Mod m ->
-        (match m.resolved_mod with Some modd -> tychk cx modd | None -> ())
+        (match m.resolved_mod with
+         | Some modd -> tychk cx modd
+         | None -> assert false)
   in
   modd.items#iter f
 ;;

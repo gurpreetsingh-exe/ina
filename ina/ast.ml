@@ -109,6 +109,7 @@ and item =
         name: string
       ; mutable resolved_mod: modd option
       ; inline: bool
+      ; span: Span.t
     }
   | Unit of string
 

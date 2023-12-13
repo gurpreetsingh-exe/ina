@@ -415,13 +415,13 @@ class resolver tcx modd =
                  let id = def_id modd.mod_id 0 in
                  let mdl = modules#unsafe_get id in
                  self#resolve_paths mdl modd
-             | None -> ())
+             | None -> assert false)
         | Fn (func, _) -> visit_fn func
         | Type (Struct strukt) -> visit_struct strukt
         | Foreign fns -> fns#iter (fun f -> visit_fn f)
         | Impl { impl_items; _ } ->
             impl_items#iter (function AssocFn fn -> visit_fn fn)
-        | Unit _ -> ()
+        | Unit _ -> assert false
       in
       modd.items#iter visit_item
   end

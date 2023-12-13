@@ -169,7 +169,8 @@ class parser pcx file tokenizer =
 
     method mk_span start =
       match prev_token with
-      | Some t -> Span.make start t.span.hi
+      | Some t ->
+          Span.make (file#start_pos + start) (file#start_pos + t.span.hi)
       | None -> assert false
 
     method id =
@@ -917,6 +918,7 @@ class parser pcx file tokenizer =
           let* _ = self#expect Semi in
           Ok (Ast.Unit name)
       | Mod ->
+          let s = token.span.lo in
           self#bump;
           let* name = self#parse_ident in
           let* modd, inline =
@@ -932,7 +934,9 @@ class parser pcx file tokenizer =
                 Ok (Some modd, true)
             | _ -> Error (self#err token.span "unexpected_token")
           in
-          let modd : item = Mod { name; resolved_mod = modd; inline } in
+          let modd : item =
+            Mod { name; resolved_mod = modd; inline; span = self#mk_span s }
+          in
           Ok modd
       | t ->
           self#unexpected_token t ~line:__LINE__;

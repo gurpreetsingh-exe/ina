@@ -3,8 +3,70 @@ open Resolver
 open Middle.Def_id
 open Structures.Hashmap
 open Module
+open Front
+open Printf
 
-class visitor resolver modd parent =
+type mod_path = {
+    path: string
+  ; ownership: ownership
+}
+
+and ownership =
+  | Owned of string option
+  | Unowned
+
+type mod_error =
+  | ModNotFound of string * string * string
+  | MultipleCandidates of string * string * string
+
+let mod_error_emit tcx span = function
+  | ModNotFound (name, _, _) ->
+      let msg = sprintf "file for `%s` not found" name in
+      tcx#emit (Errors.Diagnostic.mk_err msg span)
+  | MultipleCandidates (name, def, sec) ->
+      let msg = sprintf "file for `%s` at `%s` and `%s`" name def sec in
+      tcx#emit (Errors.Diagnostic.mk_err msg span)
+;;
+
+let print_mod_path { path; ownership } =
+  sprintf
+    "%s %s"
+    path
+    (match ownership with Owned (Some ident) -> ident | _ -> "None")
+;;
+
+let default_submodule_path ident relative dir =
+  let sep = Filename.dir_sep in
+  let relative_prefix =
+    match relative with
+    | Some relative -> sprintf "%s%s" relative sep
+    | None -> ""
+  in
+  let default_path =
+    Utils.Path.join [dir; sprintf "%s%s.ina" relative_prefix ident]
+  in
+  let secondary_path =
+    Utils.Path.join [dir; sprintf "%s%s%smod.ina" relative_prefix ident sep]
+  in
+  let default_exists = Sys.file_exists default_path in
+  let secondary_exists = Sys.file_exists secondary_path in
+  match default_exists, secondary_exists with
+  | true, false -> Ok { path = default_path; ownership = Owned (Some ident) }
+  | false, true -> Ok { path = secondary_path; ownership = Owned None }
+  | false, false -> Error (ModNotFound (ident, default_path, secondary_path))
+  | true, true ->
+      Error (MultipleCandidates (ident, default_path, secondary_path))
+;;
+
+let mod_file_path name ownership dir =
+  let relative =
+    match ownership with Owned relative -> relative | _ -> None
+  in
+  let result = default_submodule_path name relative dir in
+  match ownership with Owned _ -> result | _ -> assert false
+;;
+
+class visitor resolver modd parent dir_ownership =
   let create_modul () =
     let id = def_id modd.mod_id 0 in
     let m =
@@ -23,6 +85,7 @@ class visitor resolver modd parent =
     val parent = parent
     val mutable mdl = create_modul ()
     val mutable curr_fn = None
+    val dir_ownership = dir_ownership
     method mdl = mdl
     method visit_ty _ = ()
     method visit_fn_sig _ = ()
@@ -117,15 +180,31 @@ class visitor resolver modd parent =
       | Type (Struct s) -> self#visit_struct s
       | Foreign fns -> fns#iter self#visit_fn
       | Impl impl -> self#visit_impl impl
-      | Mod { resolved_mod; _ } ->
-          (match resolved_mod with
-           | Some m ->
-               let visitor = new visitor resolver m (Some mdl) in
-               visitor#visit_mod;
-               let res = Module visitor#mdl in
-               resolver#define mdl m.mod_name Type res
-           | None -> ())
-      | Unit _ -> ()
+      | Mod m ->
+          let f m o =
+            let visitor = new visitor resolver m (Some mdl) o in
+            visitor#visit_mod;
+            let res = Module visitor#mdl in
+            resolver#define mdl m.mod_name Type res
+          in
+          (match m.resolved_mod with
+           | Some m -> f m dir_ownership
+           | None ->
+               let dir = Filename.dirname modd.mod_path in
+               (match mod_file_path m.name dir_ownership dir with
+                | Ok mod_path ->
+                    let res =
+                      Parser.parse_mod_from_file
+                        resolver#tcx#sess.parse_sess
+                        mod_path.path
+                    in
+                    (match res with
+                     | Ok parsed_module ->
+                         m.resolved_mod <- Some parsed_module;
+                         f parsed_module mod_path.ownership
+                     | Error e -> resolver#tcx#emit e)
+                | Error e -> mod_error_emit resolver#tcx m.span e))
+      | Unit _ -> assert false
 
     method visit_mod = modd.items#iter self#visit_item
   end

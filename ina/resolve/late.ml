@@ -3,7 +3,6 @@ open Middle.Ctx
 open Middle.Ty
 open Middle.Def_id
 open Structures.Vec
-open Utils.Panic
 open Resolver
 
 class type_lowering resolver modd =

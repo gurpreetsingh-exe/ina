@@ -19,7 +19,9 @@ let () =
     let time, resolver =
       Timer.time (fun () ->
           let resolver = new Resolver.resolver tcx mdl in
-          let visitor = new Module_graph.visitor resolver mdl None in
+          let visitor =
+            new Module_graph.visitor resolver mdl None (Owned None)
+          in
           visitor#visit_mod;
           if sess.options.print_module_graph
           then (
