@@ -72,14 +72,18 @@ let mismatch_args expected found span =
       (if expected = 1 then "" else "s")
       found
   in
-  mk_err msg span
+  new diagnostic Err ~multi_span:(multi_span span)
+  |> message "mismatch arguments"
+  |> label { msg; style = NoStyle } span
 ;;
 
 let unused_value span = mk_err "expression result unused" span
 
 let uninitialized_fields name span =
   let msg = sprintf "`%s` has uninitialized fields" name in
-  mk_err msg span
+  new diagnostic Err ~multi_span:(multi_span span)
+  |> message "uninitialized fields"
+  |> label { msg; style = NoStyle } span
 ;;
 
 let unknown_field strukt name span =
@@ -97,7 +101,11 @@ let ty_err_emit (tcx : tcx) err span =
           (tcx#render_ty ty)
       in
       if ty <> tcx#types.err && expected <> tcx#types.err
-      then tcx#emit (mk_err msg span)
+      then
+        new diagnostic Err ~multi_span:(multi_span span)
+        |> message "mismatch types"
+        |> label { msg; style = NoStyle } span
+        |> tcx#emit
   | UninitializedFields name -> tcx#emit (uninitialized_fields name span)
   | UnknownField (strukt, name) -> tcx#emit (unknown_field strukt name span)
   | NoFieldInPrimitiveType ty ->
@@ -133,10 +141,16 @@ let ty_err_emit (tcx : tcx) err span =
       tcx#emit (mismatch_float_ty expected found span)
   | InvalidDeref ty ->
       let msg = sprintf "`%s` cannot be dereferenced" (tcx#render_ty ty) in
-      tcx#emit (mk_err msg span)
+      new diagnostic Err ~multi_span:(multi_span span)
+      |> message "invalid dereference"
+      |> label { msg; style = NoStyle } span
+      |> tcx#emit
   | InvalidCall ty ->
       let msg = sprintf "`%s` is not callable" (tcx#render_ty ty) in
-      tcx#emit (mk_err msg span)
+      new diagnostic Err ~multi_span:(multi_span span)
+      |> message "invalid function call"
+      |> label { msg; style = NoStyle } span
+      |> tcx#emit
   | InvalidCast (of', to') ->
       let msg =
         sprintf
@@ -495,9 +509,7 @@ let rec tychk cx (modd : modd) =
         impl_items#iter (function AssocFn f -> tychk_fn cx f)
     | Type _ | Unit _ -> ()
     | Mod m ->
-        (match m.resolved_mod with
-         | Some modd -> tychk cx modd
-         | None -> assert false)
+        (match m.resolved_mod with Some modd -> tychk cx modd | None -> ())
   in
   modd.items#iter f
 ;;

@@ -2,11 +2,15 @@ open Printf
 open Diagnostic
 open Source.Source_map
 open Styled_buffer
+open Structures.Vec
 
 type t = {
     sm: source_map option
   ; ui_testing: bool
 }
+
+let repeat n c = String.make n c
+let empty n = repeat n ' '
 
 class emitter sm ui_testing =
   object (self)
@@ -15,8 +19,25 @@ class emitter sm ui_testing =
 
     (* public methods *)
     method emit_diagnostic (diag : diagnostic) =
-      let max_line_num_len = 2 in
+      let max_line_num_len =
+        if ui_testing
+        then 2
+        else string_of_int @@ self#max_line_num diag#span |> String.length
+      in
       self#emit_messages diag#span diag#message diag#level max_line_num_len
+
+    method max_line_num (ms : multi_span) =
+      let open Source.Span in
+      match sm with
+      | Some sm ->
+          let find_max acc span =
+            let file = sm#lookup_file span.hi in
+            let line, _ = file#lookup_file_pos span.hi in
+            max (line + 1) acc
+          in
+          map ms#labels (fun (span, _) -> span)
+          |> (fold_left find_max 0 ms#primary_spans |> fold_left find_max)
+      | None -> 0
 
     (* private methods *)
     method private emit_messages span msg level max_line_num_len =
@@ -54,7 +75,43 @@ class emitter sm ui_testing =
                in
                buf#append i msg Header
              in
-             List.iteri f lines));
+             List.iteri f lines);
+         let i = ref 1 in
+         let emit_label sm sp =
+           let open Source.Span in
+           let file = sm#lookup_file sp.hi in
+           (*
+            * LL |
+            * ^^    <--- max_line_num_len
+            *^  ^^  <--- extra 3 for spacing and bar
+            *)
+           let emit_sidebar ?(newline = true) () =
+             let prefix = empty max_line_num_len in
+             buf#append !i (" " ^ prefix ^ " |") LineNum;
+             if newline then i += 1
+           in
+           let emit_sidebar_with_line line_no =
+             emit_sidebar ~newline:false ();
+             buf#puts !i 1 (string_of_int (line_no + 1)) LineNum
+           in
+           emit_sidebar ();
+           let line_no, col = sm#lookup_line_pos sp.lo in
+           emit_sidebar_with_line line_no;
+           let line = file#lookup_line_src line_no in
+           buf#append !i (" " ^ line) NoStyle;
+           emit_sidebar ~newline:false ();
+           buf#append !i (empty col) NoStyle;
+           let underline = repeat (sp.hi - sp.lo) '^' in
+           buf#append !i (" " ^ underline) (Level level)
+         in
+         match sm with
+         | Some sm ->
+             (match span#labels#first with
+              | Some (sp, msg) ->
+                  emit_label sm sp;
+                  buf#append !i ("  " ^ msg.msg) (Level level)
+              | None -> emit_label sm sp)
+         | None -> ());
       self#emit_to_destination buf
 
     (* method private msg_to_buffer *)
@@ -88,6 +145,7 @@ class emitter sm ui_testing =
                 | NoStyle -> ""
               in
               fprintf stderr "%s%s%s" col part.text e);
-          fprintf stderr "\n";
-          flush stderr)
+          fprintf stderr "\n");
+      fprintf stderr "\n";
+      flush stderr
   end

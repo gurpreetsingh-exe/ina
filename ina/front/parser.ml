@@ -133,11 +133,7 @@ class parser pcx file tokenizer =
       self#bump;
       Error e
 
-    method err span msg =
-      let messages = new vec in
-      messages#push { msg; style = NoStyle };
-      new diagnostic Err messages (multi_span span)
-
+    method err span msg = mk_err msg span
     method emit_err e = pcx.span_diagnostic#emit_diagnostic e
 
     method expect_one_of edible inedible =

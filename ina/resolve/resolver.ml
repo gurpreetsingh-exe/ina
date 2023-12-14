@@ -7,6 +7,7 @@ open Middle.Def_id
 open Utils.Printer
 open Utils.Panic
 open Errors
+open Diagnostic
 
 let pcmp (a : 'a) (b : 'a) = Obj.magic a = Obj.magic b
 
@@ -322,12 +323,14 @@ class resolver tcx modd =
       | _ -> print_endline "main not found"
 
     method not_found path =
+      let msg =
+        sprintf
+          "cannot find `%s` in this scope"
+          (path.segments#join "::" (fun s -> s.ident))
+      in
       let err =
-        Diagnostic.mk_err
-          (sprintf
-             "cannot find `%s` in this scope"
-             (path.segments#join "::" (fun s -> s.ident)))
-          path.span
+        new diagnostic Err ~multi_span:(multi_span path.span)
+        |> message msg
       in
       tcx#emit err
 
@@ -415,7 +418,7 @@ class resolver tcx modd =
                  let id = def_id modd.mod_id 0 in
                  let mdl = modules#unsafe_get id in
                  self#resolve_paths mdl modd
-             | None -> assert false)
+             | None -> ())
         | Fn (func, _) -> visit_fn func
         | Type (Struct strukt) -> visit_struct strukt
         | Foreign fns -> fns#iter (fun f -> visit_fn f)

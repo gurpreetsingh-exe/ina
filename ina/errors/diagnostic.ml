@@ -52,6 +52,8 @@ class multi_span ?(primary_spans = new vec) ?(labels = new vec) () =
   object (self)
     val primary_spans : Span.t vec = primary_spans
     val span_labels : (Span.t * message) vec = labels
+    method primary_spans = primary_spans
+    method labels = span_labels
     method dummy = primary_spans#all (fun s -> s.lo = 0 && s.hi = 0)
     method has_primary_span = not self#dummy
     method primary_span = primary_spans#first
@@ -67,7 +69,8 @@ let multi_span span =
   ms
 ;;
 
-class diagnostic level message multi_span =
+class diagnostic ?(multi_span = new multi_span ()) ?(message = new vec) level
+  =
   object
     val level : level = level
     val message : message vec = message
@@ -79,8 +82,16 @@ class diagnostic level message multi_span =
     method span = span
   end
 
+let message msg diag =
+  diag#message#push { msg; style = NoStyle };
+  diag
+;;
+
+let label msg span diag =
+  diag#span#labels#push (span, msg);
+  diag
+;;
+
 let mk_err msg span =
-  let messages = new vec in
-  messages#push { msg; style = NoStyle };
-  new diagnostic Err messages (multi_span span)
+  new diagnostic Err ~multi_span:(multi_span span) |> message msg
 ;;

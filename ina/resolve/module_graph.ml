@@ -2,6 +2,7 @@ open Ast
 open Resolver
 open Middle.Def_id
 open Structures.Hashmap
+open Errors.Diagnostic
 open Module
 open Front
 open Printf
@@ -22,7 +23,10 @@ type mod_error =
 let mod_error_emit tcx span = function
   | ModNotFound (name, _, _) ->
       let msg = sprintf "file for `%s` not found" name in
-      tcx#emit (Errors.Diagnostic.mk_err msg span)
+      let diag =
+        new diagnostic Err ~multi_span:(multi_span span) |> message msg
+      in
+      tcx#emit diag
   | MultipleCandidates (name, def, sec) ->
       let msg = sprintf "file for `%s` at `%s` and `%s`" name def sec in
       tcx#emit (Errors.Diagnostic.mk_err msg span)

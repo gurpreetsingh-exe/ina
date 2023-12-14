@@ -26,8 +26,16 @@ class file (name : string) (src : string) =
     method end_pos = String.length src + start_pos
 
     method lookup_line_src line =
-      let s = lines#get (line - 1) in
-      let e = lines#get line in
+      let s, e =
+        if line = 0
+        then
+          let e = lines#get line in
+          0, e
+        else
+          let s = lines#get (line - 1) in
+          let e = lines#get line in
+          s, e
+      in
       String.sub src s (e - s)
 
     method lookup_line pos =
@@ -102,6 +110,10 @@ class source_map =
     method lookup_file pos =
       let i = self#lookup_file_index pos in
       source_files#get i
+
+    method lookup_line_pos pos =
+      let file = self#lookup_file pos in
+      file#lookup_file_pos pos
 
     method span_to_string pos =
       let file = self#lookup_file pos in
