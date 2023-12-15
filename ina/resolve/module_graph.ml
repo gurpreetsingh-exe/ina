@@ -6,6 +6,7 @@ open Errors.Diagnostic
 open Module
 open Front
 open Printf
+open Utils.Path
 
 type mod_path = {
     path: string
@@ -21,10 +22,19 @@ type mod_error =
   | MultipleCandidates of string * string * string
 
 let mod_error_emit tcx span = function
-  | ModNotFound (name, _, _) ->
+  | ModNotFound (name, def, sec) ->
       let msg = sprintf "file for `%s` not found" name in
+      let sugg =
+        sprintf
+          "to create module `%s`, create one of `%s` or `%s`"
+          name
+          def
+          sec
+      in
       let diag =
-        new diagnostic Err ~multi_span:(multi_span span) |> message msg
+        new diagnostic Err ~multi_span:(multi_span span)
+        |> message msg
+        |> help sugg
       in
       tcx#emit diag
   | MultipleCandidates (name, def, sec) ->
@@ -46,11 +56,9 @@ let default_submodule_path ident relative dir =
     | Some relative -> sprintf "%s%s" relative sep
     | None -> ""
   in
-  let default_path =
-    Utils.Path.join [dir; sprintf "%s%s.ina" relative_prefix ident]
-  in
+  let default_path = join [dir; sprintf "%s%s.ina" relative_prefix ident] in
   let secondary_path =
-    Utils.Path.join [dir; sprintf "%s%s%smod.ina" relative_prefix ident sep]
+    join [dir; sprintf "%s%s%smod.ina" relative_prefix ident sep]
   in
   let default_exists = Sys.file_exists default_path in
   let secondary_exists = Sys.file_exists secondary_path in

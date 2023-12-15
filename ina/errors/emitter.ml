@@ -24,7 +24,10 @@ class emitter sm ui_testing =
         then 2
         else string_of_int @@ self#max_line_num diag#span |> String.length
       in
-      self#emit_messages diag#span diag#message diag#level max_line_num_len
+      self#emit_messages diag#span diag#message diag#level max_line_num_len;
+      diag#children#iter self#emit_diagnostic;
+      fprintf stderr "\n";
+      flush stderr
 
     method max_line_num (ms : multi_span) =
       let open Source.Span in
@@ -44,10 +47,13 @@ class emitter sm ui_testing =
       let ( += ) (x : int ref) (y : int) = x := !x + y in
       let buf = new styled_buffer in
       (if (not span#has_primary_span) && not span#has_span_labels
-       then
-         for _ = 0 to max_line_num_len do
-           buf#prepend 0 " " NoStyle
-         done
+       then (
+         buf#append 0 (empty (max_line_num_len + 2)) NoStyle;
+         buf#append 0 "= " LineNum;
+         buf#append 0 (render_level level) (Level level);
+         buf#append 0 ": " Header;
+         self#msg_to_buffer buf msg (max_line_num_len + 1) "note";
+         ())
        else
          let label_width = ref 0 in
          let level_str = render_level level in
@@ -112,30 +118,27 @@ class emitter sm ui_testing =
                   buf#append !i ("  " ^ msg.msg) (Level level)
               | None -> emit_label sm sp)
          | None -> ());
-      self#emit_to_destination buf
+      self#emit_to_destination level buf
 
-    (* method private msg_to_buffer *)
-    (*     (buf : styled_buffer) *)
-    (*     (msg : message vec) *)
-    (*     pad = *)
-    (*   let padding = String.make (pad + 5) ' ' in *)
-    (*   let line_no = ref 0 in *)
-    (*   msg#iter (fun m -> *)
-    (*       let lines = String.split_on_char '\n' m.msg in *)
-    (*       let f i line = *)
-    (*         if i <> 0 *)
-    (*         then ( *)
-    (*           incr line_no; *)
-    (*           buf#append !line_no padding NoStyle); *)
-    (*         buf#append !line_no line NoStyle *)
-    (*       in *)
-    (*       if List.length lines > 1 *)
-    (*       then List.iteri f lines *)
-    (*       else buf#append !line_no m.msg NoStyle) *)
+    method private msg_to_buffer buf msg padding label =
+      let padding = String.make (padding + String.length label + 5) ' ' in
+      let line_no = ref 0 in
+      msg#iter (fun m ->
+          let lines = String.split_on_char '\n' m.msg in
+          let f i line =
+            if i <> 0
+            then (
+              incr line_no;
+              buf#append !line_no padding NoStyle);
+            buf#append !line_no line NoStyle
+          in
+          if List.length lines > 1
+          then List.iteri f lines
+          else buf#append !line_no m.msg NoStyle)
 
-    method private emit_to_destination (buf : styled_buffer) =
+    method private emit_to_destination level buf =
       let styled_string = buf#render in
-      styled_string#iter (fun line ->
+      styled_string#iteri (fun i line ->
           line#iter (fun part ->
               let col =
                 match part.style with
@@ -145,7 +148,7 @@ class emitter sm ui_testing =
                 | NoStyle -> ""
               in
               fprintf stderr "%s%s%s" col part.text e);
-          fprintf stderr "\n");
-      fprintf stderr "\n";
-      flush stderr
+          match level with
+          | (Note | Help) when i = styled_string#len - 1 -> ()
+          | _ -> fprintf stderr "\n")
   end

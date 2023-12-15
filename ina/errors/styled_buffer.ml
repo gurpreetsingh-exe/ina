@@ -56,26 +56,18 @@ class styled_buffer =
       self#puts line 0 str style
 
     method render =
-      let output = new vec in
-      let styled_vec = ref (new vec) in
-      let process_line line =
-        let curr_style = ref NoStyle in
-        let curr_text = ref String.empty in
-        let process_char (chr : styled_char) =
-          if chr.style <> !curr_style
-          then (
-            if String.length !curr_text <> 0
-            then !styled_vec#push { text = !curr_text; style = !curr_style };
-            curr_style := chr.style;
-            curr_text := String.empty);
-          curr_text := String.concat "" [!curr_text; String.make 1 chr.chr]
-        in
-        line#iter process_char;
-        if String.length !curr_text <> 0
-        then !styled_vec#push { text = !curr_text; style = !curr_style };
-        output#push !styled_vec;
-        styled_vec := new vec
+      let fold_line acc { chr; style } =
+        let text = String.make 1 chr in
+        (match acc#last with
+         | Some str when str.style = style ->
+             str.text <- String.concat "" [str.text; text]
+         | _ -> acc#push { text; style });
+        acc
       in
-      lines#iter process_line;
-      output
+      fold_left
+        (fun acc str ->
+          acc#push (fold_left fold_line (new vec) str);
+          acc)
+        (new vec)
+        lines
   end
