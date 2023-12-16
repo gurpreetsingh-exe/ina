@@ -1,6 +1,8 @@
 open Printf
 open Structures.Vec
 open Def_id
+open Metadata.Encoder
+open Metadata.Decoder
 
 type int_ty =
   | I8
@@ -161,8 +163,33 @@ let rec decode tcx dec =
        let abi = dec#read_usize |> abi_of_enum |> Option.get in
        FnPtr { args; ret; is_variadic; abi }
    | 9 -> Unit
-   | _ -> assert false)
+   | i ->
+       printf "%d\n" i;
+       assert false)
   |> tcx#intern
+;;
+
+let encode_field enc (Field { ty; name }) =
+  encode enc ty;
+  enc#emit_str name
+;;
+
+let decode_field tcx dec =
+  let ty = decode tcx dec in
+  let name = dec#read_str in
+  Field { ty; name }
+;;
+
+let encode_variant enc (Variant { def_id; fields }) =
+  Def_id.encode enc def_id;
+  encode_vec enc fields encode_field
+;;
+
+let decode_variant tcx dec =
+  let def_id = Def_id.decode dec in
+  let fields = new vec in
+  decode_vec dec fields (tcx |> decode_field);
+  Variant { def_id; fields }
 ;;
 
 let pair a b =

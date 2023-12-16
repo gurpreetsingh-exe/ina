@@ -33,6 +33,7 @@ let () =
             exit 0);
           resolver#init visitor#mdl;
           resolver#resolve;
+          if tcx#has_errors then exit 1;
           resolver, visitor#mdl)
     in
     sess.timings.resolve <- time;

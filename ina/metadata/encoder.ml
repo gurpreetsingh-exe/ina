@@ -19,6 +19,18 @@ class encoder =
         (fun _ -> Buffer.add_string buf str)
   end
 
+let encode_vec enc vec f =
+  enc#emit_usize vec#len;
+  vec#iter (fun v -> f enc v)
+;;
+
+let encode_hashmap enc map kf vf =
+  enc#emit_usize map#len;
+  map#iter (fun k v ->
+      kf enc k;
+      vf enc v)
+;;
+
 module type Encodable = sig
   type t
 

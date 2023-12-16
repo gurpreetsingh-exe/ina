@@ -137,7 +137,7 @@ let get_ty tcx = function
   | Param (ty, _, _) -> ty
   | Const c -> c.ty
   | VReg v -> v.ty
-  | Global id -> tcx#node_id_to_ty#unsafe_get id.inner
+  | Global id -> tcx#def_id_to_ty#unsafe_get id
   | _ -> assert false
 ;;
 

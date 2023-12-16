@@ -102,7 +102,7 @@ let dummy_types =
 class tcx sess =
   object (self)
     val types : ty ref TypeMap.t = TypeMap.create 0
-    val node_id_to_ty : ty ref nodemap = new hashmap
+    val def_id_to_ty : (def_id, ty ref) hashmap = new hashmap
     val node_id_to_def_id : def_id nodemap = new hashmap
     val res_map : res nodemap = new hashmap
     val def_id_to_qpath : (def_id, string vec) hashmap = new hashmap
@@ -141,7 +141,7 @@ class tcx sess =
 
     method sess = sess
     method types = _types
-    method node_id_to_ty = node_id_to_ty
+    method def_id_to_ty = def_id_to_ty
     method node_id_to_def_id = node_id_to_def_id
     method res_map = res_map
     method def_id_to_qpath = def_id_to_qpath
@@ -162,18 +162,17 @@ class tcx sess =
 
     method encode_metadata =
       let enc = sess.enc in
-      enc#emit_usize node_id_to_ty#len;
-      node_id_to_ty#iter (fun k v ->
-          enc#emit_u32 k;
-          Ty.encode enc v)
+      encode_hashmap enc def_id_to_ty Def_id.encode Ty.encode;
+      encode_hashmap enc adt_def Def_id.encode (fun e adt ->
+          encode_vec e adt.variants Ty.encode_variant)
 
     method decode_metadata (dec : decoder) =
-      let size = dec#read_usize in
-      for _ = 0 to size - 1 do
-        let node_id = dec#read_u32 in
-        let ty = Ty.decode self dec in
-        node_id_to_ty#insert' node_id ty
-      done
+      decode_hashmap dec def_id_to_ty Def_id.decode (fun dec ->
+          Ty.decode self dec);
+      decode_hashmap dec adt_def Def_id.decode (fun dec ->
+          let variants = new vec in
+          decode_vec dec variants (self |> Ty.decode_variant);
+          { variants })
 
     method unit name =
       match units#get name with
@@ -191,6 +190,8 @@ class tcx sess =
           dbg "intern(type = %s)\n" @@ render_ty2 rty;
           ignore (TypeMap.add types ty rty);
           rty
+
+    method create_def id ty = assert (def_id_to_ty#insert id ty = None)
 
     method invalidate old_ty new_ty =
       let ty = self#intern old_ty in

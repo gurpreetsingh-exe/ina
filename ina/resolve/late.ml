@@ -69,7 +69,7 @@ class type_lowering resolver modd =
       let def_id = def_id fn.func_id 0 in
       resolver#set_path def_id;
       assert (resolver#tcx#node_id_to_def_id#insert fn.func_id def_id = None);
-      assert (resolver#tcx#node_id_to_ty#insert fn.func_id ty = None);
+      resolver#tcx#create_def def_id ty;
       (match fn.body with
        | Some body ->
            curr_fn <- Some fn;
@@ -92,7 +92,7 @@ class type_lowering resolver modd =
       variants#push (Variant { def_id; fields });
       let ty = resolver#tcx#adt_with_variants def_id variants in
       assert (resolver#tcx#node_id_to_def_id#insert id def_id = None);
-      assert (resolver#tcx#node_id_to_ty#insert id ty = None);
+      resolver#tcx#create_def def_id ty;
       resolver#pop_segment
 
     method visit_item item =

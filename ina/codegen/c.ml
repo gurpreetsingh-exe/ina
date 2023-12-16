@@ -123,7 +123,27 @@ let gen cx =
   and get_value = function
     | Param (_, name, _) -> name
     | VReg i -> inst_name i
-    | Global id -> mangle cx id
+    | Global id ->
+        let name = mangle cx id in
+        (match cx.gen'd_fns#get id with
+         | None when id.unit_id <> 0 ->
+             cx.gen'd_fns#insert' id ();
+             let ty = cx.tcx#def_id_to_ty#unsafe_get id in
+             let args, ret =
+               match !ty with
+               | FnPtr { args; ret; _ } -> args, ret
+               | _ -> assert false
+             in
+             let header =
+               sprintf
+                 "extern %s %s(%s);\n"
+                 (backend_ty cx ret)
+                 name
+                 (args#join ", " (cx |> backend_ty))
+             in
+             prelude ^ header
+         | Some () | None -> ());
+        name
     | Const { kind; ty } -> get_const ty kind
     | Label bb -> sprintf "bb%d" bb.bid
   in
@@ -221,18 +241,24 @@ let gen cx =
         gen_function f));
   (match cx.tcx#main with
    | Some id -> gen_main id
-   | _ -> out ^ "int main() { (void)__ina_metadata; }\n");
-  let data =
-    cx.tcx#sess.enc#render
-    |> Bytes.to_seq
-    |> Array.of_seq
-    |> Array.fold_left (fun acc c -> sprintf "%s %i," acc (int_of_char c)) ""
-  in
-  prelude
-  ^ sprintf
-      "const uint8_t __ina_metadata[] %s = { %s };\n"
-      metadata
-      data;
+   | _ when cx.tcx#sess.options.output_type = Exe -> assert false
+   | _ -> ());
+  (match cx.tcx#sess.options.output_type with
+   | Unit ->
+       let data =
+         cx.tcx#sess.enc#render
+         |> Bytes.to_seq
+         |> Array.of_seq
+         |> Array.fold_left
+              (fun acc c -> sprintf "%s %i," acc (int_of_char c))
+              ""
+       in
+       prelude
+       ^ sprintf
+           "const uint8_t __ina_metadata[] %s = { %s };\n"
+           metadata
+           data
+   | _ -> ());
   out := String.cat !prelude !out
 ;;
 

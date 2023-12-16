@@ -6,7 +6,9 @@ open Structures.Vec
 let rec lower (lcx : Context.lcx) mdl =
   let tcx = lcx#tcx in
   let lower_fn fn =
-    let ty = tcx#node_id_to_ty#unsafe_get fn.func_id in
+    let ty =
+      tcx#def_id_to_ty#unsafe_get { inner = fn.func_id; unit_id = 0 }
+    in
     let arg_tys =
       match !ty with FnPtr { args; _ } -> args | _ -> assert false
     in

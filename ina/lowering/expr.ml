@@ -9,7 +9,9 @@ let rec lower_block (lcx : lcx) block =
       match stmt with
       | Binding binding ->
           let { binding_expr; binding_id; _ } = binding in
-          let ty = tcx#node_id_to_ty#unsafe_get binding_id in
+          let ty =
+            tcx#def_id_to_ty#unsafe_get { inner = binding_id; unit_id = 0 }
+          in
           let ptr = lcx#bx#alloca ty in
           assert (lcx#locals#insert binding_id ptr = None);
           let src = lower binding_expr in
@@ -46,7 +48,9 @@ let rec lower_block (lcx : lcx) block =
     | Field (expr, ident) -> lower_field expr ident
     | _ -> assert false
   and lower expr =
-    let ty = tcx#node_id_to_ty#unsafe_get expr.expr_id in
+    let ty =
+      tcx#def_id_to_ty#unsafe_get { inner = expr.expr_id; unit_id = 0 }
+    in
     match expr.expr_kind with
     | Binary (kind, left, right) ->
         let lazy_eval value =

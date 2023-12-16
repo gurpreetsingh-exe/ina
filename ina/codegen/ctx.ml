@@ -37,9 +37,24 @@ let codegen (tcx : tcx) mdl =
            | Default -> "-O0"
            | Agressive -> "-O3")
       in
+      let units = Array.init tcx#units#len (fun _ -> String.empty) in
+      let i = ref 0 in
+      tcx#units#iter (fun name _ ->
+          units.(!i) <- name;
+          incr i);
+      let objs =
+        Array.fold_left
+          (fun acc name -> sprintf "%s lib%s.o" acc name)
+          String.empty
+          units
+      in
       let command =
         match tcx#sess.options.output_type with
-        | Exe -> sprintf "%s -o %s %s" command output input
+        | Exe when !i = 0 -> sprintf "%s -o %s %s" command output input
+        | Exe ->
+            let cmd = sprintf "%s -c %s -o %s.o" command input output in
+            assert (Sys.command cmd = 0);
+            sprintf "%s -o %s %s.o %s" command output output objs
         | Object -> sprintf "%s -c %s -o %s.o" command input output
         | Asm -> sprintf "%s -S -masm=intel %s" command input
         | Unit -> sprintf "%s -c %s -o lib%s.o" command input output

@@ -164,7 +164,7 @@ let ty_err_emit (tcx : tcx) err span =
 let tychk_fn cx fn =
   let tcx = cx.infcx.tcx in
   let define id ty =
-    ignore (tcx#node_id_to_ty#insert id ty);
+    tcx#create_def { inner = id; unit_id = 0 } ty;
     ignore (cx.locals#insert id ty)
   in
   let resolve_expected = function
@@ -173,7 +173,7 @@ let tychk_fn cx fn =
   in
   let write_ty id ty =
     dbg "write_ty(id = %d, ty = %s)\n" id (render_ty2 ty);
-    ignore (tcx#node_id_to_ty#insert id ty)
+    tcx#create_def { inner = id; unit_id = 0 } ty
   in
   let int_unification_error (v : IntVid.e) =
     let expected, found = v in
@@ -317,7 +317,7 @@ let tychk_fn cx fn =
     ty
   and check_path path =
     tcx#res_map#unsafe_get path.path_id |> function
-    | Def (id, _) -> tcx#node_id_to_ty#unsafe_get id.inner
+    | Def (id, _) -> tcx#def_id_to_ty#unsafe_get id
     | Local id -> cx.locals#unsafe_get id
     | Err -> tcx#types.err
     | _ -> assert false
@@ -390,16 +390,16 @@ let tychk_fn cx fn =
          | _ ->
              ty_err_emit tcx (InvalidDeref ty) expr.expr_span;
              tcx#types.err)
-    | Ref expr ->
+    | Ref expr' ->
         (match resolve_expected expected with
          | Some expected ->
-             let ty = check_expr expr NoExpectation in
+             let ty = check_expr expr' NoExpectation in
              (match equate expected (tcx#ref ty) with
               | Ok _ -> ()
               | Error e -> ty_err_emit tcx e expr.expr_span);
              expected
          | None ->
-             let ty = check_expr expr NoExpectation in
+             let ty = check_expr expr' NoExpectation in
              tcx#ref ty)
     | If { cond; then_block; else_block; if_span; _ } ->
         ignore (check_expr cond (ExpectTy tcx#types.bool));
@@ -467,7 +467,7 @@ let tychk_fn cx fn =
              cty)
     | MethodCall _ -> assert false
   in
-  let ty = tcx#node_id_to_ty#unsafe_get fn.func_id in
+  let ty = tcx#def_id_to_ty#unsafe_get { inner = fn.func_id; unit_id = 0 } in
   let ret =
     match !ty with
     | FnPtr { ret; _ } -> ret
@@ -490,7 +490,7 @@ let tychk_fn cx fn =
         | Ok _ -> ()
         | Error e -> ty_err_emit tcx e span)
    | None -> ());
-  tcx#node_id_to_ty#iter (fun _ v ->
+  tcx#def_id_to_ty#iter (fun _ v ->
       match !v with
       | Infer (IntVar i) -> fold_int_ty i v
       | Infer (FloatVar f) -> fold_float_ty f v

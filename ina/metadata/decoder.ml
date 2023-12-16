@@ -29,3 +29,19 @@ class decoder buf unit_id =
       pos <- pos + len;
       str
   end
+
+let decode_vec dec vec f =
+  let size = dec#read_usize in
+  for _ = 0 to size - 1 do
+    vec#push (f dec)
+  done
+;;
+
+let decode_hashmap dec map kf vf =
+  let size = dec#read_usize in
+  for _ = 0 to size - 1 do
+    let k = kf dec in
+    let v = vf dec in
+    assert (map#insert k v = None)
+  done
+;;
