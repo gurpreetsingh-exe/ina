@@ -1,4 +1,6 @@
 (library
  (name middle)
  (modules ty ctx def_id)
+ (preprocess
+  (pps ppx_deriving.enum))
  (libraries structures utils session))

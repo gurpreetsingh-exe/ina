@@ -13,34 +13,7 @@ type int_ty =
   | U32
   | U64
   | Usize
-(* [@@deriving enum] *)
-
-let int_ty_to_enum = function
-  | I8 -> 0
-  | I16 -> 1
-  | I32 -> 2
-  | I64 -> 3
-  | Isize -> 4
-  | U8 -> 5
-  | U16 -> 6
-  | U32 -> 7
-  | U64 -> 8
-  | Usize -> 9
-;;
-
-let int_ty_of_enum = function
-  | 0 -> Some I8
-  | 1 -> Some I16
-  | 2 -> Some I32
-  | 3 -> Some I64
-  | 4 -> Some Isize
-  | 5 -> Some U8
-  | 6 -> Some U16
-  | 7 -> Some U32
-  | 8 -> Some U64
-  | 9 -> Some Usize
-  | _ -> None
-;;
+[@@deriving enum]
 
 let display_int_ty = function
   | I8 -> "i8"
@@ -58,10 +31,8 @@ let display_int_ty = function
 type float_ty =
   | F64
   | F32
-(* [@@deriving enum] *)
+[@@deriving enum]
 
-let float_ty_to_enum = function F32 -> 0 | F64 -> 1
-let float_ty_of_enum = function 0 -> Some F32 | 1 -> Some F64 | _ -> None
 let display_float_ty = function F32 -> "f32" | F64 -> "f64"
 
 type tyvid = { index: int }
@@ -92,6 +63,12 @@ let render_infer_ty ty dbg =
     | TyVar _ -> "T"
 ;;
 
+type abi =
+  | Default
+  | Intrinsic
+  | C
+[@@deriving enum]
+
 type field =
   | Field of {
         ty: ty ref
@@ -105,11 +82,6 @@ and variant =
     }
 
 and adt = { variants: variant vec }
-
-and abi =
-  | Default
-  | Intrinsic
-  | C
 
 and ty =
   | Int of int_ty
@@ -130,6 +102,68 @@ and ty =
   | Err
 
 and t = ty
+
+let discriminator = function
+  | Int _ -> 0L
+  | Float _ -> 1L
+  | Bool -> 2L
+  | Str -> 3L
+  | Ptr _ -> 4L
+  | Ref _ -> 5L
+  | Adt _ -> 6L
+  | FnPtr _ -> 7L
+  | Infer _ -> 8L
+  | Unit -> 9L
+  | Err -> assert false
+;;
+
+let _render_ty2 = ref (fun _ -> "")
+let render_ty ty = !_render_ty2 ty
+
+let rec encode enc ty =
+  let disc = discriminator !ty in
+  match !ty with
+  | Int i -> enc#emit_with disc (fun e -> int_ty_to_enum i |> e#emit_usize)
+  | Float f ->
+      enc#emit_with disc (fun e -> float_ty_to_enum f |> e#emit_usize)
+  | Bool | Str | Unit -> enc#emit_with disc (fun _ -> ())
+  | Ptr ty | Ref ty -> enc#emit_with disc (fun e -> encode e ty)
+  | Adt id -> enc#emit_with disc (fun e -> Def_id.encode e id)
+  | FnPtr { args; ret; is_variadic; abi } ->
+      enc#emit_with disc (fun e ->
+          e#emit_usize args#len;
+          args#iter (fun ty -> encode e ty);
+          encode e ret;
+          e#emit_bool is_variadic;
+          abi_to_enum abi |> e#emit_usize)
+  | _ ->
+      print_endline @@ render_ty ty;
+      assert false
+;;
+
+let rec decode tcx dec =
+  (match dec#read_usize with
+   | 0 -> Int (dec#read_usize |> int_ty_of_enum |> Option.get)
+   | 1 -> Float (dec#read_usize |> float_ty_of_enum |> Option.get)
+   | 2 -> Bool
+   | 3 -> Str
+   | 4 -> Ptr (decode tcx dec)
+   | 5 -> Ref (decode tcx dec)
+   | 6 -> Adt (Def_id.decode dec)
+   | 7 ->
+       let args = new vec in
+       let nargs = dec#read_usize in
+       for _ = 0 to nargs - 1 do
+         args#push (decode tcx dec)
+       done;
+       let ret = decode tcx dec in
+       let is_variadic = dec#read_bool in
+       let abi = dec#read_usize |> abi_of_enum |> Option.get in
+       FnPtr { args; ret; is_variadic; abi }
+   | 9 -> Unit
+   | _ -> assert false)
+  |> tcx#intern
+;;
 
 let pair a b =
   let a' = 2 * a in
@@ -173,6 +207,9 @@ let rec render_ty2 ty =
   | Ref ty -> "&" ^ render_ty2 ty
   | Adt def_id -> print_def_id def_id
 ;;
+
+_render_ty2 := render_ty2
+
 (* | Adt { def_id; variants } -> *)
 (*     let render (Field { name; ty }) = *)
 (*       sprintf "%s: %s" name (render_ty2 ty) *)

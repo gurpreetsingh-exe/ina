@@ -6,6 +6,9 @@ open Def_id
 open Utils.Panic
 open Source
 open Printf
+open Metadata
+open Encoder
+open Decoder
 module TypeMap = Hashtbl.Make (Ty)
 
 type 'a nodemap = (int, 'a) hashmap
@@ -21,6 +24,25 @@ and res =
   | PrimTy of prim_ty
   | Local of int
   | Err
+
+let encode_res enc res =
+  match res with
+  | Def (id, kind) ->
+      enc#emit_with 0L (fun e ->
+          Def_id.encode e id;
+          Def_id.def_kind_to_enum kind |> e#emit_usize)
+  | _ -> assert false
+;;
+
+let decode_res resolver dec =
+  match dec#read_usize with
+  | 0 ->
+      let id = Def_id.decode dec in
+      resolver#set_path id;
+      let kind = Option.get @@ Def_id.def_kind_of_enum dec#read_usize in
+      Def (id, kind)
+  | _ -> assert false
+;;
 
 let print_prim_ty : prim_ty -> string = function
   | Int _ -> "int"
@@ -92,6 +114,7 @@ class tcx sess =
     val extern_decls : (string, def_id) hashmap = new hashmap
     val extern_def_ids : (def_id, unit) hashmap = new hashmap
     val adt_def : (def_id, adt) hashmap = new hashmap
+    val units : (string, int) hashmap = new hashmap
 
     initializer
       let ty =
@@ -127,6 +150,7 @@ class tcx sess =
     method set_main id = main <- Some id
     method main = main
     method is_extern did = extern_def_ids#has did
+    method units = units
 
     method decl_extern name did =
       extern_def_ids#insert' did ();
@@ -135,6 +159,29 @@ class tcx sess =
       | None ->
           assert (extern_decls#insert name did = None);
           did
+
+    method encode_metadata =
+      let enc = sess.enc in
+      enc#emit_usize node_id_to_ty#len;
+      node_id_to_ty#iter (fun k v ->
+          enc#emit_u32 k;
+          Ty.encode enc v)
+
+    method decode_metadata (dec : decoder) =
+      let size = dec#read_usize in
+      for _ = 0 to size - 1 do
+        let node_id = dec#read_u32 in
+        let ty = Ty.decode self dec in
+        node_id_to_ty#insert' node_id ty
+      done
+
+    method unit name =
+      match units#get name with
+      | Some id -> id
+      | None ->
+          let id = units#len + 1 in
+          units#insert' name id;
+          id
 
     method intern ty : ty ref =
       match TypeMap.find_opt types ty with

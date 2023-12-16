@@ -6,6 +6,8 @@ open Errors.Diagnostic
 open Module
 open Front
 open Printf
+open Metadata.Decoder
+open Utils
 open Utils.Path
 
 type mod_path = {
@@ -216,7 +218,30 @@ class visitor resolver modd parent dir_ownership =
                          f parsed_module mod_path.ownership
                      | Error e -> resolver#tcx#emit e)
                 | Error e -> mod_error_emit resolver#tcx m.span e))
-      | Unit _ -> assert false
+      | Unit name ->
+          (match resolver#tcx#units#has name with
+           | true -> ()
+           | _ ->
+               let unit_id = resolver#tcx#unit name in
+               let lib = sprintf "lib%s.o" name in
+               let obj = Object.read_obj lib in
+               let metadata =
+                 Option.get @@ Object.read_section_by_name obj ".ina\000"
+               in
+               let dec = new decoder metadata unit_id in
+               let dummy =
+                 {
+                   mkind =
+                     Def
+                       (Mod, def_id (-1) unit_id, sprintf "__%s_wrapper" name)
+                 ; parent = None
+                 ; resolutions = new hashmap
+                 }
+               in
+               let mdl' = Module.decode resolver dec None in
+               resolver#tcx#decode_metadata dec;
+               resolver#define dummy name Type (Module mdl');
+               resolver#units#push dummy)
 
     method visit_mod = modd.items#iter self#visit_item
   end

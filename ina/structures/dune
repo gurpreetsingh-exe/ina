@@ -1,3 +1,4 @@
 (library
  (name structures)
- (modules vec hashmap))
+ (modules vec hashmap)
+ (libraries metadata))

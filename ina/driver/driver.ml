@@ -16,25 +16,31 @@ let () =
         Parser.parse_mod_from_file sess.parse_sess sess.options.input)
   in
   let resolve_and_sema mdl =
-    let time, resolver =
+    let time, (resolver, mdl') =
       Timer.time (fun () ->
           let resolver = new Resolver.resolver tcx mdl in
           let visitor =
             new Module_graph.visitor resolver mdl None (Owned None)
           in
           visitor#visit_mod;
+          resolver#units#push visitor#mdl;
           if sess.options.print_module_graph
           then (
             let printer = new Printer.printer in
-            Resolver.Module.print_modul "" printer visitor#mdl;
+            resolver#units#iter (fun mdl ->
+                Resolver.Module.print_modul "" printer mdl);
             printer#print;
             exit 0);
           resolver#init visitor#mdl;
           resolver#resolve;
-          resolver)
+          resolver, visitor#mdl)
     in
     sess.timings.resolve <- time;
     (new Late.type_lowering resolver mdl)#lower;
+    if sess.options.output_type = Unit
+    then (
+      Resolver.Module.encode tcx#sess.enc mdl';
+      tcx#encode_metadata);
     let time, _ =
       Timer.time (fun () ->
           let infcx = Infer.infer_ctx_create tcx in

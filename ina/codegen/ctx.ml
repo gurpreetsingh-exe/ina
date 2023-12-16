@@ -40,9 +40,9 @@ let codegen (tcx : tcx) mdl =
       let command =
         match tcx#sess.options.output_type with
         | Exe -> sprintf "%s -o %s %s" command output input
-        | Object -> sprintf "%s -c %s -o %s" command input (output ^ ".o")
+        | Object -> sprintf "%s -c %s -o %s.o" command input output
         | Asm -> sprintf "%s -S -masm=intel %s" command input
-        | Unit -> ""
+        | Unit -> sprintf "%s -c %s -o lib%s.o" command input output
       in
       if Sys.command command <> 0 then eprintf "command failed\n"
       (* assert (Sys.command (sprintf "rm -f %s" input) = 0) *)

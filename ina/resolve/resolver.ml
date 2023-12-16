@@ -8,6 +8,7 @@ open Utils.Printer
 open Utils.Panic
 open Errors
 open Diagnostic
+open Metadata.Encoder
 
 let pcmp (a : 'a) (b : 'a) = Obj.magic a = Obj.magic b
 
@@ -37,6 +38,63 @@ module Module = struct
   }
 
   and resolutions = (binding_key, name_resolution) hashmap
+
+  let rec encode enc mdl =
+    (match mdl.mkind with
+     | Def (_, id, name) ->
+         enc#emit_with 0L (fun e ->
+             Middle.Def_id.encode e id;
+             e#emit_str name)
+     | Block -> assert false);
+    enc#emit_usize mdl.resolutions#len;
+    mdl.resolutions#iter (fun key binding ->
+        enc#emit_str key.ident;
+        enc#emit_u32 key.disambiguator;
+        enc#emit_u8 (match key.ns with Type -> 0 | Value -> 1);
+        match binding with
+        | Res res -> enc#emit_with 0L (fun e -> encode_res e res)
+        | Module m -> enc#emit_with 1L (fun e -> encode e m))
+  ;;
+
+  let rec decode resolver dec parent =
+    let mkind =
+      match dec#read_usize with
+      | 0 ->
+          let def_id = Middle.Def_id.decode dec in
+          let name = dec#read_str in
+          resolver#append_segment name;
+          resolver#set_path def_id;
+          Def (Mod, def_id, name)
+      | i ->
+          printf "%i\n" i;
+          assert false
+    in
+    let nmdl = dec#read_usize in
+    let mdl = { mkind; parent; resolutions = new hashmap } in
+    (match mkind with
+     | Def (Mod, id, _) -> resolver#modules#insert' id mdl
+     | _ -> assert false);
+    for _ = 0 to nmdl - 1 do
+      let ident = dec#read_str in
+      let (_ : int) = dec#read_u32 in
+      let ns =
+        dec#read_u8 |> function 0 -> Type | 1 -> Value | _ -> assert false
+      in
+      let binding =
+        match dec#read_usize with
+        | 0 ->
+            resolver#append_segment ident;
+            let res = Res (decode_res resolver dec) in
+            resolver#pop_segment;
+            res
+        | 1 -> Module (decode resolver dec (Some mdl))
+        | _ -> assert false
+      in
+      resolver#define mdl ident ns binding
+    done;
+    resolver#pop_segment;
+    mdl
+  ;;
 
   let res_to_def_kind : res -> string = function
     | Def (_, def_kind) -> print_def_kind def_kind
@@ -112,6 +170,12 @@ module Module = struct
     ^ "\n";
     print_resolution prefix printer mdl.resolutions
   ;;
+
+  let print mdl =
+    let printer = new Utils.Printer.printer in
+    print_modul "" printer mdl;
+    printer#print
+  ;;
 end
 
 type 'a nodemap = (node_id, 'a) hashmap
@@ -137,6 +201,7 @@ class resolver tcx modd =
     val tcx : tcx = tcx
     val modd : modd = modd
     val modules : (def_id, Module.t) hashmap = new hashmap
+    val units : Module.t vec = new vec
     val mutable current_qpath : string vec = new vec
 
     val binding_parent_module : (name_resolution, Module.t) hashmap =
@@ -151,6 +216,7 @@ class resolver tcx modd =
     method unit_root = unit_root
     method init mdl = unit_root <- mdl
     method modules = modules
+    method units = units
     method tcx = tcx
     method sess = tcx#sess
     method append_segment segment = current_qpath#push segment
@@ -203,9 +269,10 @@ class resolver tcx modd =
 
     method get_root_mod mdl : Module.t =
       match mdl.mkind with
-      | Def (kind, id, _) ->
+      | Def (kind, _, _) ->
+          dbg "get_root_mod(module = %s)\n" (Module.print_mkind mdl.mkind);
           assert (kind = Mod);
-          Option.get @@ modules#get id
+          mdl
       | Block ->
           (match mdl.parent with
            | Some m -> self#get_root_mod m
@@ -317,10 +384,12 @@ class resolver tcx modd =
 
     method resolve =
       self#resolve_paths unit_root modd;
-      let main = self#resolve_main in
-      match main with
-      | Def (id, _) -> tcx#set_main id
-      | _ -> print_endline "main not found"
+      if tcx#sess.options.output_type == Exe
+      then
+        let main = self#resolve_main in
+        match main with
+        | Def (id, _) -> tcx#set_main id
+        | _ -> print_endline "main not found"
 
     method not_found path =
       let msg =
@@ -329,8 +398,7 @@ class resolver tcx modd =
           (path.segments#join "::" (fun s -> s.ident))
       in
       let err =
-        new diagnostic Err ~multi_span:(multi_span path.span)
-        |> message msg
+        new diagnostic Err ~multi_span:(multi_span path.span) |> message msg
       in
       tcx#emit err
 
@@ -348,8 +416,22 @@ class resolver tcx modd =
             print_endline (Front.Ast_printer.render_ty ty);
             assert false
       and visit_path path mdl ns =
-        let resolved = self#resolve_path mdl path ns in
-        (match resolved with Err -> self#not_found path | _ -> ());
+        let resolved =
+          match self#resolve_path mdl path ns with
+          | Err ->
+              let resolved =
+                fold_left
+                  (fun resolved mdl ->
+                    match resolved with
+                    | Middle.Ctx.Err -> self#resolve_path mdl path ns
+                    | _ -> resolved)
+                  Err
+                  units
+              in
+              (match resolved with Err -> self#not_found path | _ -> ());
+              resolved
+          | res -> res
+        in
         dbg "res_map { %d -> %s }\n" path.path_id (print_res resolved);
         assert (tcx#res_map#insert path.path_id resolved = None)
       and visit_expr expr (mdl : Module.t) =
@@ -424,7 +506,7 @@ class resolver tcx modd =
         | Foreign fns -> fns#iter (fun f -> visit_fn f)
         | Impl { impl_items; _ } ->
             impl_items#iter (function AssocFn fn -> visit_fn fn)
-        | Unit _ -> assert false
+        | Unit _ -> ()
       in
       modd.items#iter visit_item
   end

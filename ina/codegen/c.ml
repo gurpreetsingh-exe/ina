@@ -14,6 +14,7 @@ let prelude =
      #include <stdbool.h>\n\n"
 ;;
 
+let metadata = "__attribute__((section(\".ina\")))"
 let out = ref ""
 
 let ( ^ ) s rest =
@@ -220,7 +221,18 @@ let gen cx =
         gen_function f));
   (match cx.tcx#main with
    | Some id -> gen_main id
-   | _ -> out ^ "int main() {}\n");
+   | _ -> out ^ "int main() { (void)__ina_metadata; }\n");
+  let data =
+    cx.tcx#sess.enc#render
+    |> Bytes.to_seq
+    |> Array.of_seq
+    |> Array.fold_left (fun acc c -> sprintf "%s %i," acc (int_of_char c)) ""
+  in
+  prelude
+  ^ sprintf
+      "const uint8_t __ina_metadata[] %s = { %s };\n"
+      metadata
+      data;
   out := String.cat !prelude !out
 ;;
 

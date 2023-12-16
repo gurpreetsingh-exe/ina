@@ -1,4 +1,5 @@
 open Printf
+open Metadata.Encoder
 
 class ['k, 'v] hashmap =
   object (self)
@@ -41,3 +42,16 @@ class ['k, 'v] hashmap =
       |> Array.to_list
       |> String.concat "\n"
   end
+
+module EncodableHashmap (K : Encodable) (V : Encodable) : Encodable = struct
+  type k = K.t
+  type v = V.t
+  type t = (k, v) hashmap
+
+  let encode (enc : encoder) (map : t) =
+    enc#emit_usize map#len;
+    map#iter (fun k v ->
+        K.encode enc k;
+        V.encode enc v)
+  ;;
+end

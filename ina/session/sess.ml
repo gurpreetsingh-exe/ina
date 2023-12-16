@@ -1,4 +1,5 @@
-open Metadata
+open Metadata.Encoder
+open Metadata.Decoder
 open Source.Source_map
 open Front.Parser
 open Errors
@@ -32,7 +33,7 @@ let display timings =
 type t = {
     options: Config.t
   ; timings: timings
-  ; enc: Encoder.t
+  ; enc: encoder
   ; parse_sess: parse_sess
 }
 
@@ -51,7 +52,7 @@ let create options =
       ; llvm = 0.
       ; gen_and_link = 0.
       }
-  ; enc = Encoder.create ()
+  ; enc = new encoder
   ; parse_sess =
       {
         sm

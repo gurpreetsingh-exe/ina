@@ -1,20 +1,26 @@
-type t = { buf: Buffer.t }
+class encoder =
+  object (self)
+    val buf : Buffer.t = Buffer.create 0
 
-let create _ = { buf = Buffer.create 0 }
-let data enc = String.of_bytes @@ Buffer.to_bytes enc.buf
-let emit_usize enc n = Buffer.add_int64_be enc.buf @@ Int64.of_int n
-let emit_u8 enc n = Buffer.add_uint8 enc.buf n
-let emit_bool enc b = emit_u8 enc (if b then 1 else 0)
-let emit_u32 enc n = Buffer.add_int32_be enc.buf @@ Int32.of_int n
+    (* method render = String.of_bytes @@ Buffer.to_bytes buf *)
+    method render = Buffer.to_bytes buf
+    method emit_usize n = Buffer.add_int64_be buf @@ Int64.of_int n
+    method emit_u8 n = Buffer.add_uint8 buf n
+    method emit_bool b = self#emit_u8 (if b then 1 else 0)
+    method emit_u32 n = Buffer.add_int32_be buf @@ Int32.of_int n
 
-let emit_with (enc : t) (n : int64) (f : t -> unit) =
-  Buffer.add_int64_be enc.buf n;
-  f enc
-;;
+    method emit_with n f =
+      Buffer.add_int64_be buf n;
+      f self
 
-let emit_str enc str =
-  emit_with
-    enc
-    (String.length str |> Int64.of_int)
-    (fun e -> Buffer.add_string e.buf str)
-;;
+    method emit_str str =
+      self#emit_with
+        (String.length str |> Int64.of_int)
+        (fun _ -> Buffer.add_string buf str)
+  end
+
+module type Encodable = sig
+  type t
+
+  val encode : encoder -> t -> unit
+end
