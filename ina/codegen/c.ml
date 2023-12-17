@@ -135,6 +135,7 @@ let gen cx =
              (fun s -> s))
     | _ -> assert false
   and get_value = function
+    | Param (_, name, id) when name = "_" -> sprintf "_p%d" id
     | Param (_, name, _) -> name
     | VReg i -> inst_name i
     | Global id ->
@@ -204,6 +205,10 @@ let gen cx =
         let (Variant variant) = cx.tcx#non_enum_variant ty in
         let (Field { name; _ }) = variant.fields#get index in
         out ^ sprintf "&%s->%s;\n" (get_value ptr) name
+    | BitCast (value, ty) ->
+        if inst.ty = ty
+        then out ^ sprintf "%s;\n" (get_value value)
+        else out ^ sprintf "(%s)%s;\n" (backend_ty cx ty) (get_value value)
     | _ ->
         print_endline !out;
         newline ();

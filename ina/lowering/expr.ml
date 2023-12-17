@@ -101,7 +101,7 @@ let rec lower_block (lcx : lcx) block =
     | Deref expr ->
         let ptr = lower expr in
         lcx#bx#load ptr
-    | Ref expr -> lower_lvalue expr
+    | Ref expr -> lcx#bx#bitcast (lower_lvalue expr) ty
     | If { cond; then_block; else_block; _ } ->
         let open Ir in
         let open Inst in
@@ -141,6 +141,15 @@ let rec lower_block (lcx : lcx) block =
     | Field (expr, ident) ->
         let ptr = lower_field expr ident in
         lcx#bx#load ptr
+    | Cast (expr, cty) ->
+        let cty = tcx#ast_ty_to_ty cty in
+        let value = lower expr in
+        let ty = Ir.Inst.get_ty tcx value in
+        (match !ty, !cty with
+         | _ when ty = cty -> value
+         | Ref t0, Ptr t1 when t0 = t1 -> lcx#bx#bitcast value cty
+         | FnPtr _, Ptr _ -> lcx#bx#bitcast value cty
+         | _ -> assert false)
     | _ -> assert false
   in
   lower_block' ()

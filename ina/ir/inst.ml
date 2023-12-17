@@ -36,7 +36,7 @@ and inst_kind =
   | Call of ty ref * value * value vec
   | Intrinsic of string * value list
   | Trap of value
-  (* Bitcast of ty * value *)
+  | BitCast of value * ty ref
   (* Zext of ty * value *)
   (* Sext of ty * value *)
   (* Trunc of ty * value *)
@@ -203,6 +203,8 @@ let render_inst tcx inst : string =
         "intrinsic %s(%s)"
         name
         (String.concat ", " (List.map (tcx |> render_value) args))
+  | BitCast (value, ty) ->
+      sprintf "bitcast %s to %s" (render_value tcx value) (tcx#render_ty ty)
   | PtrToInt (value, ty) ->
       sprintf
         "ptrtoint %s to %s"

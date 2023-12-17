@@ -70,6 +70,11 @@ class builder tcx blocks block =
 
     method phi ty args = self#add_inst_with_ty ty (Phi (ty, args))
 
+    method bitcast value ty =
+      assert (tcx#sizeof (get_ty tcx value) = tcx#sizeof ty);
+      let inst = BitCast (value, ty) in
+      self#add_inst_with_ty ty inst
+
     method nop =
       let inst = { kind = Nop; ty = tcx#types.unit; id = -1 } in
       VReg inst
