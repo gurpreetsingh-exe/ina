@@ -43,7 +43,7 @@ let rec lower (lcx : Context.lcx) mdl =
          (match ret with
           | VReg inst ->
               (match inst.kind, inst.ty with
-               | Nop, _ -> lcx#bx#ret_unit
+               | Nop, _ | _, { contents = Unit } -> lcx#bx#ret_unit
                | _ -> lcx#bx#ret ret)
           | Const _ | Global _ -> lcx#bx#ret ret
           | _ -> lcx#bx#ret_unit)

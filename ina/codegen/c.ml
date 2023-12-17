@@ -88,6 +88,20 @@ let rec backend_ty cx ty =
            prelude
            ^ sprintf "typedef struct %s {\n%s\n} %s;\n\n" name fields name;
            name)
+  | FnPtr { args; ret; is_variadic; _ } as ty ->
+      (match cx.types#get ty with
+       | Some ty -> ty
+       | None ->
+           let name = sprintf "__fn_%d" cx.types#len in
+           prelude
+           ^ sprintf
+               "typedef %s (*%s)(%s%s);\n\n"
+               (backend_ty cx ret)
+               name
+               (args#join ", " (cx |> backend_ty))
+               (if is_variadic then ", ..." else "");
+           assert (cx.types#insert ty name = None);
+           name)
   | _ ->
       print_endline @@ Middle.Ty.render_ty2 ty;
       assert false
