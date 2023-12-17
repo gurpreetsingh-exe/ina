@@ -3,7 +3,17 @@ open Middle.Def_id
 open Structures.Vec
 open Printf
 
-type blocks = { bbs: Inst.basic_block vec }
+type blocks = {
+    locals: Inst.t vec
+  ; bbs: Inst.basic_block vec
+}
+
+let render_blocks tcx { locals; bbs } =
+  sprintf
+    "{\nlocals:\n%s\n\n%s\n}"
+    (locals#join "\n" (tcx |> Inst.render_inst))
+    (bbs#join "\n\n" (tcx |> Basicblock.render))
+;;
 
 type t = {
     ty: ty ref
@@ -16,7 +26,7 @@ type t = {
 let gen_id blocks =
   let open Inst in
   let bb_id = ref 0 in
-  let inst_id = ref 0 in
+  let inst_id = ref blocks.locals#len in
   let f inst =
     if Inst.has_value inst
     then (
@@ -35,9 +45,9 @@ let render tcx { ty; def_id; args; basic_blocks; _ } =
   let qpath = tcx#def_id_to_qpath#unsafe_get def_id in
   let ret = !ty |> function FnPtr { ret; _ } -> ret | _ -> assert false in
   sprintf
-    "fn %s(%s)%s {\n%s\n}\n"
+    "fn %s(%s)%s %s\n"
     (qpath#join "::" (fun s -> s))
     (args#join ", " (tcx |> Inst.render_value))
     (match !ret with Unit -> String.empty | _ -> " -> " ^ tcx#render_ty ret)
-    (basic_blocks.bbs#join "\n\n" (tcx |> Basicblock.render))
+    (render_blocks tcx basic_blocks)
 ;;

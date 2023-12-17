@@ -8,7 +8,6 @@ open Utils.Printer
 open Utils.Panic
 open Errors
 open Diagnostic
-open Metadata.Encoder
 
 let pcmp (a : 'a) (b : 'a) = Obj.magic a = Obj.magic b
 

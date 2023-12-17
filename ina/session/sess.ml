@@ -1,5 +1,4 @@
 open Metadata.Encoder
-open Metadata.Decoder
 open Source.Source_map
 open Front.Parser
 open Errors

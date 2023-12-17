@@ -23,7 +23,7 @@ let rec lower (lcx : Context.lcx) mdl =
           ty
         ; def_id
         ; args
-        ; basic_blocks = { bbs = new vec }
+        ; basic_blocks = { locals = new vec; bbs = new vec }
         ; decl = fn.is_extern
         }
     in

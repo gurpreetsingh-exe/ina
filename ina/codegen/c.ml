@@ -231,6 +231,7 @@ let gen cx =
     then out ^ ";\n"
     else (
       out ^ " {\n";
+      func.basic_blocks.locals#iter gen_inst;
       func.basic_blocks.bbs#iter gen_bb;
       out ^ "}\n\n")
   in

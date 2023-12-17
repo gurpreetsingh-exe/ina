@@ -39,6 +39,6 @@ let dot_graph_func tcx name bbs out_dir =
 
 let dot_graph tcx modulee =
   (try Sys.mkdir ".dots" 0o775 with Sys_error _ -> ());
-  modulee.items#iter (fun Func.{ def_id; basic_blocks = { bbs }; _ } ->
+  modulee.items#iter (fun Func.{ def_id; basic_blocks = { bbs; _ }; _ } ->
       dot_graph_func tcx (Middle.Def_id.print_def_id def_id) bbs ".dots")
 ;;

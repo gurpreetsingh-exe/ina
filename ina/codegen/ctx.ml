@@ -31,7 +31,7 @@ let codegen (tcx : tcx) mdl =
       let open Printf in
       let command =
         sprintf
-          "%s -std=c17 %s"
+          "%s -ggdb -std=c17 %s"
           compiler
           (match tcx#sess.options.opt_level with
            | Default -> "-O0"

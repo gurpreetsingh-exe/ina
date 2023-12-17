@@ -2,9 +2,10 @@ open Ir
 open Middle.Ctx
 open Inst
 
-class builder tcx block =
+class builder tcx blocks block =
   object (self)
     val tcx : tcx = tcx
+    val blocks : Func.blocks = blocks
     val block : Inst.basic_block = block
     method block = block
 
@@ -20,9 +21,11 @@ class builder tcx block =
       VReg inst
 
     method alloca ty =
-      let inst = Alloca ty in
+      let kind = Alloca ty in
       let ty = tcx#ptr ty in
-      self#add_inst_with_ty ty inst
+      let inst = { kind; ty; id = blocks.locals#len } in
+      blocks.locals#push inst;
+      VReg inst
 
     method binary kind left right =
       let ty = get_ty tcx right in

@@ -4,7 +4,12 @@ open Structures.Vec
 open Ir
 
 class lcx tcx =
-  let dummy_builder () = new Builder.builder tcx (Basicblock.create ()) in
+  let dummy_builder () =
+    new Builder.builder
+      tcx
+      { locals = new vec; bbs = new vec }
+      (Basicblock.create ())
+  in
   object (self)
     val tcx : tcx = tcx
     val mutable fn : Func.t option = None
@@ -14,13 +19,15 @@ class lcx tcx =
     method tcx = tcx
     method bx = builder
     method set_active_fn f = fn <- Some f
-    method builder_at_end bb = builder <- new Builder.builder tcx bb
+
+    method builder_at_end bb =
+      builder <- new Builder.builder tcx (Option.get fn).basic_blocks bb
+
     method locals = locals
     method define fn = mdl.items#push fn
     method mdl = mdl
 
     method entry_block =
-      let open Func in
       match fn with
       | Some fn ->
           let bb = Basicblock.create () in
@@ -30,7 +37,6 @@ class lcx tcx =
       | None -> assert false
 
     method append_block bb =
-      let open Func in
       match fn with
       | Some fn -> fn.basic_blocks.bbs#push bb
       | None -> assert false
@@ -40,7 +46,6 @@ class lcx tcx =
       self#builder_at_end bb
 
     method append_block' =
-      let open Func in
       match fn with
       | Some fn ->
           let bb = Basicblock.create () in
