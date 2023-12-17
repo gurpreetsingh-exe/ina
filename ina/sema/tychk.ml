@@ -324,8 +324,13 @@ let tychk_fn cx fn =
   and check_expr_kind expr expected =
     match expr.expr_kind with
     | Binary (kind, left, right) ->
-        let left = check_expr left NoExpectation in
-        let right = check_expr right NoExpectation in
+        let expected =
+          match kind with
+          | And | Or -> ExpectTy tcx#types.bool
+          | _ -> NoExpectation
+        in
+        let left = check_expr left expected in
+        let right = check_expr right expected in
         let ty =
           match equate left right with
           | Ok ty -> ty

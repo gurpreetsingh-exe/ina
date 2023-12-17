@@ -91,8 +91,10 @@ let binary_kind_to_inst = function
   | NotEq -> NotEq
   | GtEq -> GtEq
   | LtEq -> LtEq
-  | BitAnd | And -> And
-  | BitOr | Or -> Or
+  | BitAnd -> BitAnd
+  | And -> And
+  | BitOr -> BitOr
+  | Or -> Or
 ;;
 
 let render_binary = function

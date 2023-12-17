@@ -166,9 +166,18 @@ let gen cx =
           match kind with
           | Add -> "+"
           | Sub -> "-"
-          | And -> "&&"
+          | Mul -> "*"
+          | Div -> "/"
           | Eq -> "=="
-          | _ -> assert false
+          | NotEq -> "!="
+          | And -> "&&"
+          | BitAnd -> "&"
+          | Or -> "||"
+          | BitOr -> "|"
+          | Gt -> ">"
+          | GtEq -> ">="
+          | Lt -> "<"
+          | LtEq -> "<="
         in
         out ^ sprintf "%s %s %s;\n" (get_value left) op (get_value right)
     | Store (src, dst) ->
