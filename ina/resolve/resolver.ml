@@ -411,7 +411,7 @@ class resolver tcx modd =
             resolve_ty ty
         | Path path -> visit_path path mdl (Some Type)
         | Ref ty | Ptr ty -> resolve_ty ty
-        | ImplicitSelf | Int _ | Float _ | Bool | Str | Unit -> ()
+        | ImplicitSelf | Int _ | Float _ | Bool | Str | Unit | CVarArgs -> ()
         | _ ->
             print_endline (Front.Ast_printer.render_ty ty);
             assert false

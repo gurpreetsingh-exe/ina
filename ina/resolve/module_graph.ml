@@ -222,8 +222,9 @@ class visitor resolver modd parent dir_ownership =
           (match resolver#tcx#units#has name with
            | true -> ()
            | _ ->
+               let dir = Filename.dirname modd.mod_path in
                let unit_id = resolver#tcx#unit name in
-               let lib = sprintf "lib%s.o" name in
+               let lib = join [dir; sprintf "lib%s.o" name] in
                let obj = Object.read_obj lib in
                let metadata =
                  Option.get @@ Object.read_section_by_name obj ".ina\000"

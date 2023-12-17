@@ -70,14 +70,10 @@ let rec lower_block (lcx : lcx) block =
           let right_bb = lcx#bx#block in
           lcx#bx#jmp join_label;
           lcx#append_block_with_builder join_bb;
-          let phi =
-            lcx#bx#phi
-              ty
-              [
-                Label bb, lcx#bx#const_bool tcx#types.bool value
-              ; Label right_bb, right
-              ]
-          in
+          let branches = new vec in
+          branches#push (Label bb, lcx#bx#const_bool tcx#types.bool value);
+          branches#push (Label right_bb, right);
+          let phi = lcx#bx#phi ty branches in
           phi
         in
         let inst_kind = Ir.Inst.binary_kind_to_inst kind in
@@ -134,12 +130,10 @@ let rec lower_block (lcx : lcx) block =
         (match !ty with
          | Unit -> lcx#bx#nop
          | _ ->
-             lcx#bx#phi
-               ty
-               [
-                 Label !last_then_bb, true'
-               ; Label !last_else_bb, Option.get !false'
-               ])
+             let branches = new vec in
+             branches#push (Label !last_then_bb, true');
+             branches#push (Label !last_else_bb, Option.get !false');
+             lcx#bx#phi ty branches)
     | Block block -> lower_block lcx block
     | StructExpr { fields; _ } ->
         let f = map fields (fun (_, expr) -> lower expr) in

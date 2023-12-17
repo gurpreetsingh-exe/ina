@@ -29,7 +29,7 @@ and inst_kind =
   | Alloca of ty ref
   | Binary of binary_kind * value * value
   (* (bb * inst) *)
-  | Phi of ty ref * (value * value) list
+  | Phi of ty ref * (value * value) vec
   | Store of value * value
   | Load of value
   | Gep of ty ref * value * int
@@ -173,15 +173,8 @@ let render_inst tcx inst : string =
       sprintf
         "phi %s, %s"
         (tcx#render_ty ty)
-        (String.concat
-           ", "
-           (List.map
-              (fun (bb, inst) ->
-                sprintf
-                  "[%s, %s]"
-                  (render_value tcx bb)
-                  (render_value tcx inst))
-              args))
+        (args#join ", " (fun (bb, inst) ->
+             sprintf "[%s, %s]" (render_value tcx bb) (render_value tcx inst)))
   | Store (src, dst) ->
       sprintf "store %s, %s" (render_value tcx src) (render_value tcx dst)
   | Load ptr ->
