@@ -179,7 +179,24 @@ class visitor resolver modd parent dir_ownership =
           self#visit_block body
       | None -> ()
 
-    method visit_impl _ = ()
+    method visit_assoc_fn impl fn =
+      resolver#tcx#insert_span fn.func_id fn.fn_sig.fn_span;
+      let name = fn.fn_sig.name in
+      let did = def_id fn.func_id 0 in
+      assert (not fn.is_extern);
+      resolver#tcx#define_assoc_fn impl name did;
+      self#visit_fn_sig fn.fn_sig;
+      match fn.body with
+      | Some body ->
+          curr_fn <- Some fn;
+          self#visit_block body
+      | None -> assert false
+
+    method visit_impl impl =
+      let did = def_id impl.impl_id 0 in
+      let res = Middle.Ctx.Def (did, Impl) in
+      impl.impl_items#iter (function AssocFn fn ->
+          self#visit_assoc_fn res fn)
 
     method visit_struct strukt =
       resolver#tcx#insert_span strukt.struct_id strukt.struct_span;

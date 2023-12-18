@@ -29,7 +29,24 @@ class type_lowering resolver modd =
       | Call (expr, args) | MethodCall (expr, _, args) ->
           self#visit_expr expr;
           args#iter self#visit_expr
-      | Path _ | Lit _ -> ()
+      | Path path ->
+          let tcx = resolver#tcx in
+          let res = tcx#res_map#unsafe_get path.path_id in
+          (match res with
+           | Def (_, Struct) ->
+               let open Middle.Ctx in
+               let name = (Option.get path.segments#last).ident in
+               (match tcx#lookup_assoc_fn res name with
+                | Some did ->
+                    ignore (tcx#res_map#insert path.path_id (Def (did, Fn)))
+                | None ->
+                    ignore (tcx#res_map#insert path.path_id Err);
+                    resolver#not_found path)
+           | PrimTy _ -> assert false
+           | Local _ -> ()
+           | Def (_, _) -> ()
+           | Err -> ())
+      | Lit _ -> ()
 
     method visit_stmt stmt =
       match stmt with
@@ -77,7 +94,11 @@ class type_lowering resolver modd =
        | None -> ());
       resolver#pop_segment
 
-    method visit_impl _ = ()
+    method visit_impl impl =
+      let ty = resolver#tcx#ast_ty_to_ty impl.impl_ty in
+      resolver#append_segment (resolver#tcx#render_ty ty);
+      impl.impl_items#iter (function AssocFn fn -> self#visit_fn fn);
+      resolver#pop_segment
 
     method visit_struct strukt =
       resolver#append_segment strukt.ident;

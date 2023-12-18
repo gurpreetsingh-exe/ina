@@ -202,6 +202,7 @@ class resolver tcx modd =
     val modules : (def_id, Module.t) hashmap = new hashmap
     val units : Module.t vec = new vec
     val mutable current_qpath : string vec = new vec
+    val impl_map : (res, (def_id, unit) hashmap) hashmap = new hashmap
 
     val binding_parent_module : (name_resolution, Module.t) hashmap =
       new hashmap
@@ -242,6 +243,7 @@ class resolver tcx modd =
       | Some old_modul -> if not @@ pcmp old_modul mdl then assert false
       | None -> ()
 
+    method find_impls res = impl_map#unsafe_get res
     method resolutions mdl = mdl.resolutions
 
     method resolution mdl key =
@@ -410,7 +412,8 @@ class resolver tcx modd =
             resolve_ty ty
         | Path path -> visit_path path mdl (Some Type)
         | Ref ty | Ptr ty -> resolve_ty ty
-        | ImplicitSelf | Int _ | Float _ | Bool | Str | Unit | CVarArgs -> ()
+        | Int _ | Float _ | Bool | Str | Unit | CVarArgs -> ()
+        | ImplicitSelf -> assert false
         | _ ->
             print_endline (Front.Ast_printer.render_ty ty);
             assert false
@@ -486,7 +489,15 @@ class resolver tcx modd =
       in
       let visit_fn (func : func) =
         func.fn_sig.args#iter (fun { ty; _ } -> resolve_ty ty);
+        (match func.fn_sig.ret_ty with
+         | Some ty -> resolve_ty ty
+         | None -> ());
         match func.body with Some body -> visit_block body | None -> ()
+      in
+      let visit_assoc_fn ty fn =
+        let did = def_id fn.func_id 0 in
+        tcx#define_assoc_fn ty fn.fn_sig.name did;
+        visit_fn fn
       in
       let visit_struct strukt =
         strukt.members#iter (fun (ty, _) -> resolve_ty ty)
@@ -503,8 +514,23 @@ class resolver tcx modd =
         | Fn (func, _) -> visit_fn func
         | Type (Struct strukt) -> visit_struct strukt
         | Foreign fns -> fns#iter (fun f -> visit_fn f)
-        | Impl { impl_items; _ } ->
-            impl_items#iter (function AssocFn fn -> visit_fn fn)
+        | Impl { impl_ty; impl_items; impl_id; _ } ->
+            let did = def_id impl_id 0 in
+            resolve_ty impl_ty;
+            (match tcx#ast_ty_to_res impl_ty with
+             | Some res ->
+                 let impls =
+                   match impl_map#get res with
+                   | Some impls -> impls
+                   | None ->
+                       let impls = new hashmap in
+                       impl_map#insert' res impls;
+                       impls
+                 in
+                 assert (impls#insert did () = None);
+                 impl_items#iter (function AssocFn fn ->
+                     visit_assoc_fn res fn)
+             | None -> assert false)
         | Unit _ -> ()
       in
       modd.items#iter visit_item

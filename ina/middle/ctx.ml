@@ -114,6 +114,7 @@ class tcx sess =
     val extern_decls : (string, def_id) hashmap = new hashmap
     val extern_def_ids : (def_id, unit) hashmap = new hashmap
     val adt_def : (def_id, adt) hashmap = new hashmap
+    val assoc_fn : (def_id, (string, def_id) hashmap) hashmap = new hashmap
     val units : (string, int) hashmap = new hashmap
 
     initializer
@@ -192,6 +193,39 @@ class tcx sess =
           rty
 
     method create_def id ty = assert (def_id_to_ty#insert id ty = None)
+
+    method define_assoc_fn res name fn =
+      match res with
+      | Def (id, (Struct | Impl)) ->
+          assoc_fn#insert' id (new hashmap);
+          (assoc_fn#unsafe_get id)#insert' name fn
+      | PrimTy _ -> assert false
+      | Def _ | Local _ | Err -> assert false
+
+    method lookup_assoc_fn res name =
+      match res with
+      | Def (id, Struct) -> (assoc_fn#unsafe_get id)#get name
+      | PrimTy _ -> assert false
+      | Def _ | Local _ | Err -> assert false
+
+    method print_assoc_fns =
+      let open Utils.Printer in
+      let printer = new printer in
+      assoc_fn#iter (fun did fns ->
+          print_def_id did ^ "\n" |> green |> printer#append;
+          render_children printer fns (fun (k, v) _ ->
+              k |> cyan |> printer#append;
+              printer#append " ";
+              print_def_id v
+              |> q
+              |> green ?bold:(Some false)
+              |> printer#append));
+      printer#print
+
+    method ast_ty_to_res (ty : Ast.ty) =
+      match ty.kind with
+      | Path path -> Some (res_map#unsafe_get path.path_id)
+      | _ -> None
 
     method invalidate old_ty new_ty =
       let ty = self#intern old_ty in
@@ -307,7 +341,8 @@ class tcx sess =
           res |> ( function
           | Def (def_id, _) -> self#adt def_id
           | _ -> assert false )
-      | _ -> assert false
+      | ImplicitSelf -> assert false
+      | CVarArgs -> assert false
 
     method inner_ty ty : ty ref option =
       match !ty with
