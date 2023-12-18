@@ -66,7 +66,6 @@ class type_lowering resolver modd =
       | None -> ()
 
     method visit_fn fn =
-      resolver#append_segment fn.fn_sig.name;
       let abi : abi =
         match fn.abi with
         | "intrinsic" -> Intrinsic
@@ -84,27 +83,24 @@ class type_lowering resolver modd =
       in
       let ty = resolver#tcx#fn_ptr args ret false abi in
       let def_id = def_id fn.func_id 0 in
-      resolver#set_path def_id;
       assert (resolver#tcx#node_id_to_def_id#insert fn.func_id def_id = None);
       resolver#tcx#create_def def_id ty;
-      (match fn.body with
-       | Some body ->
-           curr_fn <- Some fn;
-           self#visit_block body
-       | None -> ());
-      resolver#pop_segment
+      match fn.body with
+      | Some body ->
+          curr_fn <- Some fn;
+          self#visit_block body
+      | None -> ()
 
     method visit_impl impl =
       let ty = resolver#tcx#ast_ty_to_ty impl.impl_ty in
-      resolver#append_segment (resolver#tcx#render_ty ty);
+      let segments = resolver#tcx#render_ty_segments ty in
+      resolver#append_segments segments;
       impl.impl_items#iter (function AssocFn fn -> self#visit_fn fn);
-      resolver#pop_segment
+      resolver#pop_segments (segments#len - 1)
 
     method visit_struct strukt =
-      resolver#append_segment strukt.ident;
       let id = strukt.struct_id in
       let def_id = def_id id 0 in
-      resolver#set_path def_id;
       let fields =
         map strukt.members (fun (ty, name) ->
             Field { ty = resolver#tcx#ast_ty_to_ty ty; name })
@@ -113,8 +109,7 @@ class type_lowering resolver modd =
       variants#push (Variant { def_id; fields });
       let ty = resolver#tcx#adt_with_variants def_id variants in
       assert (resolver#tcx#node_id_to_def_id#insert id def_id = None);
-      resolver#tcx#create_def def_id ty;
-      resolver#pop_segment
+      resolver#tcx#create_def def_id ty
 
     method visit_item item =
       match item with
@@ -129,12 +124,9 @@ class type_lowering resolver modd =
       | Unit _ -> ()
 
     method visit_mod =
-      resolver#append_segment modd.mod_name;
       let def_id = def_id modd.mod_id 0 in
-      resolver#set_path def_id;
       assert (resolver#tcx#node_id_to_def_id#insert modd.mod_id def_id = None);
-      modd.items#iter self#visit_item;
-      resolver#pop_segment
+      modd.items#iter self#visit_item
 
     method lower = self#visit_mod
   end

@@ -220,7 +220,13 @@ class resolver tcx modd =
     method tcx = tcx
     method sess = tcx#sess
     method append_segment segment = current_qpath#push segment
+    method append_segments segments = current_qpath#append segments
     method pop_segment = current_qpath#pop
+
+    method pop_segments n =
+      for _ = 0 to n do
+        self#pop_segment
+      done
 
     method set_path def_id =
       let path = new vec in

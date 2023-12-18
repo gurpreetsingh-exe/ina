@@ -157,7 +157,22 @@ let gen cx =
                  (args#join ", " (cx |> backend_ty))
              in
              prelude ^ header
-         | Some () | None -> ());
+         | None ->
+             let ty = cx.tcx#def_id_to_ty#unsafe_get id in
+             let args, ret =
+               match !ty with
+               | FnPtr { args; ret; _ } -> args, ret
+               | _ -> assert false
+             in
+             let header =
+               sprintf
+                 "%s %s(%s);\n"
+                 (backend_ty cx ret)
+                 name
+                 (args#join ", " (cx |> backend_ty))
+             in
+             prelude ^ header
+         | Some () -> ());
         name
     | Const { kind; ty } -> get_const ty kind
     | Label bb -> sprintf "bb%d" bb.bid

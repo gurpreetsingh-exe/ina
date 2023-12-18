@@ -164,33 +164,39 @@ class visitor resolver modd parent dir_ownership =
           | None -> ())
 
     method visit_fn fn =
+      resolver#append_segment fn.fn_sig.name;
       resolver#tcx#insert_span fn.func_id fn.fn_sig.fn_span;
       let name = fn.fn_sig.name in
       let did = def_id fn.func_id 0 in
       let did =
         if fn.is_extern then resolver#tcx#decl_extern name did else did
       in
+      resolver#set_path did;
       let res = Res (Def (did, Fn)) in
       resolver#define mdl name Value res;
       self#visit_fn_sig fn.fn_sig;
-      match fn.body with
-      | Some body ->
-          curr_fn <- Some fn;
-          self#visit_block body
-      | None -> ()
+      (match fn.body with
+       | Some body ->
+           curr_fn <- Some fn;
+           self#visit_block body
+       | None -> ());
+      resolver#pop_segment
 
     method visit_assoc_fn impl fn =
+      resolver#append_segment fn.fn_sig.name;
       resolver#tcx#insert_span fn.func_id fn.fn_sig.fn_span;
       let name = fn.fn_sig.name in
       let did = def_id fn.func_id 0 in
+      resolver#set_path did;
       assert (not fn.is_extern);
       resolver#tcx#define_assoc_fn impl name did;
       self#visit_fn_sig fn.fn_sig;
-      match fn.body with
-      | Some body ->
-          curr_fn <- Some fn;
-          self#visit_block body
-      | None -> assert false
+      (match fn.body with
+       | Some body ->
+           curr_fn <- Some fn;
+           self#visit_block body
+       | None -> assert false);
+      resolver#pop_segment
 
     method visit_impl impl =
       let did = def_id impl.impl_id 0 in
@@ -198,12 +204,14 @@ class visitor resolver modd parent dir_ownership =
       impl.impl_items#iter (function AssocFn fn ->
           self#visit_assoc_fn res fn)
 
-    method visit_struct strukt =
-      resolver#tcx#insert_span strukt.struct_id strukt.struct_span;
-      let name = strukt.ident in
-      let did = def_id strukt.struct_id 0 in
+    method visit_struct { ident; struct_id; struct_span; _ } =
+      resolver#append_segment ident;
+      resolver#tcx#insert_span struct_id struct_span;
+      let did = def_id struct_id 0 in
+      resolver#set_path did;
       let res = Res (Def (did, Struct)) in
-      resolver#define mdl name Type res
+      resolver#define mdl ident Type res;
+      resolver#pop_segment
 
     method visit_item item =
       match item with
@@ -261,5 +269,8 @@ class visitor resolver modd parent dir_ownership =
                resolver#define dummy name Type (Module mdl');
                resolver#units#push dummy)
 
-    method visit_mod = modd.items#iter self#visit_item
+    method visit_mod =
+      resolver#append_segment modd.mod_name;
+      modd.items#iter self#visit_item;
+      resolver#pop_segment
   end

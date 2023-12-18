@@ -349,6 +349,11 @@ class tcx sess =
       | Ptr ty | Ref ty | FnPtr { ret = ty; _ } -> Some ty
       | _ -> None
 
+    method render_ty_segments ty =
+      match !ty with
+      | Adt def_id -> def_id_to_qpath#unsafe_get def_id
+      | _ -> assert false
+
     method render_ty ty =
       match !ty with
       | Ty.Int i -> display_int_ty i
