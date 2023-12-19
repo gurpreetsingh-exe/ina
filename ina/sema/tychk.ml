@@ -457,19 +457,22 @@ let tychk_fn cx fn =
     | Field (expr, ident) ->
         let ty = check_expr expr NoExpectation in
         let ty = tcx#autoderef ty in
-        let (Variant variant) = tcx#non_enum_variant ty in
-        find
-          (fun (Field { name; ty }) ->
-            if name = ident then Some ty else None)
-          variant.fields
-        |> ( function
-        | Some ty -> ty
-        | None ->
-            let path = tcx#def_id_to_qpath#unsafe_get variant.def_id in
-            let name = Option.get path#last in
-            let err = UnknownField (name, ident) in
-            ty_err_emit tcx err expr.expr_span;
-            tcx#types.err )
+        (match !ty with
+         | Err -> ty
+         | _ ->
+             let (Variant variant) = tcx#non_enum_variant ty in
+             find
+               (fun (Field { name; ty }) ->
+                 if name = ident then Some ty else None)
+               variant.fields
+             |> ( function
+             | Some ty -> ty
+             | None ->
+                 let path = tcx#def_id_to_qpath#unsafe_get variant.def_id in
+                 let name = Option.get path#last in
+                 let err = UnknownField (name, ident) in
+                 ty_err_emit tcx err expr.expr_span;
+                 tcx#types.err ))
     | Cast (expr, ty) ->
         let cty = tcx#ast_ty_to_ty ty in
         let ty = check_expr expr NoExpectation in

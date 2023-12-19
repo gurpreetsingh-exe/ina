@@ -4,6 +4,9 @@ open Structures.Vec
 
 let rec lower_block (lcx : lcx) block =
   let tcx = lcx#tcx in
+  let expr_ty expr =
+    tcx#def_id_to_ty#unsafe_get { inner = expr.expr_id; unit_id = 0 }
+  in
   let rec lower_block' () =
     let f stmt =
       match stmt with
@@ -32,9 +35,12 @@ let rec lower_block (lcx : lcx) block =
     | LitStr value -> lcx#bx#const_string ty value
     | LitBool value -> lcx#bx#const_bool ty value
   and lower_field expr ident =
-    let ptr = lower_lvalue expr in
-    let ty = Ir.Inst.get_ty tcx ptr in
-    let ty = Option.get @@ tcx#inner_ty ty in
+    let ty = expr_ty expr in
+    let ptr, ty =
+      match !ty with
+      | Ptr ty | Ref ty -> lower expr, ty
+      | _ -> lower_lvalue expr, ty
+    in
     lcx#bx#gep ty ptr ident
   and lower_lvalue expr =
     match expr.expr_kind with
@@ -48,9 +54,7 @@ let rec lower_block (lcx : lcx) block =
     | Field (expr, ident) -> lower_field expr ident
     | _ -> assert false
   and lower expr =
-    let ty =
-      tcx#def_id_to_ty#unsafe_get { inner = expr.expr_id; unit_id = 0 }
-    in
+    let ty = expr_ty expr in
     match expr.expr_kind with
     | Binary (kind, left, right) ->
         let lazy_eval value =
@@ -94,8 +98,8 @@ let rec lower_block (lcx : lcx) block =
          | Def (id, _) -> Global id
          | _ -> assert false)
     | Call (expr, args) ->
+        let ty = expr_ty expr in
         let fn = lower expr in
-        let ty = Ir.Inst.get_ty tcx fn in
         let args = map args (fun arg -> lower arg) in
         lcx#bx#call ty fn args
     | Deref expr ->
@@ -142,25 +146,34 @@ let rec lower_block (lcx : lcx) block =
         let ptr = lower_field expr ident in
         lcx#bx#load ptr
     | Cast (expr, cty) ->
+        let ty = expr_ty expr in
         let cty = tcx#ast_ty_to_ty cty in
         let value = lower expr in
-        let ty = Ir.Inst.get_ty tcx value in
         (match !ty, !cty with
          | _ when ty = cty -> value
          | Ref t0, Ptr t1 when t0 = t1 -> lcx#bx#bitcast value cty
          | FnPtr _, Ptr _ -> lcx#bx#bitcast value cty
          | _ -> assert false)
     | MethodCall (expr, name, args) ->
-        let first_arg = lower expr in
-        let ty = Ir.Inst.get_ty tcx first_arg in
+        let first = lower_lvalue expr in
+        let ty =
+          tcx#def_id_to_ty#unsafe_get (Middle.Def_id.def_id expr.expr_id 0)
+        in
+        let first, ty =
+          match !(tcx#lookup_method ty name) with
+          | FnPtr { args; _ } when args#empty -> assert false
+          | FnPtr { args; _ } ->
+              (match !(args#get 0) with
+               | Ptr ty | Ref ty -> first, ty
+               | _ -> lcx#bx#load first, ty)
+          | _ -> assert false
+        in
         let fn = Ir.Inst.Global (tcx#lookup_method_def_id ty name) in
         let ty = tcx#lookup_method ty name in
         let args' = new vec in
-        args'#push expr;
-        args'#append args;
-        let args = args' in
-        let args = map args (fun arg -> lower arg) in
-        lcx#bx#call ty fn args
+        args'#push first;
+        args'#append @@ map args (fun arg -> lower arg);
+        lcx#bx#call ty fn args'
   in
   lower_block' ()
 ;;

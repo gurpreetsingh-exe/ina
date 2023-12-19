@@ -187,8 +187,14 @@ let render_inst tcx inst : string =
          | Ref ty -> tcx#render_ty ty
          | _ -> assert false)
         (render_value tcx ptr)
-  | Gep (_, value, index) ->
-      sprintf "gep %s, %d" (render_value tcx value) index
+  | Gep (ty, value, index) ->
+      let (Variant variant) = tcx#non_enum_variant ty in
+      let (Field { ty; _ }) = variant.fields#get index in
+      sprintf
+        "gep %s, %s, %d"
+        (tcx#render_ty ty)
+        (render_value tcx value)
+        index
   | Call (ty, fn, args) ->
       let ty =
         match !ty with FnPtr { ret; _ } -> ret | _ -> assert false
