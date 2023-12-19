@@ -150,7 +150,17 @@ let rec lower_block (lcx : lcx) block =
          | Ref t0, Ptr t1 when t0 = t1 -> lcx#bx#bitcast value cty
          | FnPtr _, Ptr _ -> lcx#bx#bitcast value cty
          | _ -> assert false)
-    | _ -> assert false
+    | MethodCall (expr, name, args) ->
+        let first_arg = lower expr in
+        let ty = Ir.Inst.get_ty tcx first_arg in
+        let fn = Ir.Inst.Global (tcx#lookup_method_def_id ty name) in
+        let ty = tcx#lookup_method ty name in
+        let args' = new vec in
+        args'#push expr;
+        args'#append args;
+        let args = args' in
+        let args = map args (fun arg -> lower arg) in
+        lcx#bx#call ty fn args
   in
   lower_block' ()
 ;;

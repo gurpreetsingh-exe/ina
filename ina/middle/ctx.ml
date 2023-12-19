@@ -212,10 +212,11 @@ class tcx sess =
       | Def _ | Local _ | Err -> assert false
 
     method lookup_method ty name =
+      self#lookup_method_def_id ty name |> def_id_to_ty#unsafe_get
+
+    method lookup_method_def_id ty name =
       match !ty with
-      | Adt did ->
-          let did = (assoc_fn#unsafe_get did)#unsafe_get name in
-          def_id_to_ty#unsafe_get did
+      | Adt did -> (assoc_fn#unsafe_get did)#unsafe_get name
       | _ -> assert false
 
     method print_assoc_fns =
