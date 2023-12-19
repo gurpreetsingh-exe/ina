@@ -202,6 +202,7 @@ class resolver tcx modd =
     val modules : (def_id, Module.t) hashmap = new hashmap
     val units : Module.t vec = new vec
     val mutable current_qpath : string vec = new vec
+    val mutable current_impl : res option = None
     val impl_map : (res, (def_id, unit) hashmap) hashmap = new hashmap
 
     val binding_parent_module : (name_resolution, Module.t) hashmap =
@@ -419,7 +420,10 @@ class resolver tcx modd =
         | Path path -> visit_path path mdl (Some Type)
         | Ref ty | Ptr ty -> resolve_ty ty
         | Int _ | Float _ | Bool | Str | Unit | CVarArgs -> ()
-        | ImplicitSelf -> assert false
+        | ImplicitSelf ->
+            (match current_impl with
+             | Some res -> assert (tcx#res_map#insert ty.ty_id res = None)
+             | None -> assert false)
         | _ ->
             print_endline (Front.Ast_printer.render_ty ty);
             assert false
@@ -525,6 +529,7 @@ class resolver tcx modd =
             resolve_ty impl_ty;
             (match tcx#ast_ty_to_res impl_ty with
              | Some res ->
+                 current_impl <- Some res;
                  let impls =
                    match impl_map#get res with
                    | Some impls -> impls
@@ -535,7 +540,8 @@ class resolver tcx modd =
                  in
                  assert (impls#insert did () = None);
                  impl_items#iter (function AssocFn fn ->
-                     visit_assoc_fn res fn)
+                     visit_assoc_fn res fn);
+                 current_impl <- None
              | None -> assert false)
         | Unit _ -> ()
       in

@@ -341,7 +341,11 @@ class tcx sess =
           res |> ( function
           | Def (def_id, _) -> self#adt def_id
           | _ -> assert false )
-      | ImplicitSelf -> assert false
+      | ImplicitSelf ->
+          let res = res_map#unsafe_get ty.ty_id in
+          res |> ( function
+          | Def (def_id, _) -> self#adt def_id
+          | _ -> assert false )
       | CVarArgs -> assert false
 
     method inner_ty ty : ty ref option =
