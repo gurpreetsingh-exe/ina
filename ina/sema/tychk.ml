@@ -485,6 +485,7 @@ let tychk_fn cx fn =
              cty)
     | MethodCall (expr', name, args) ->
         let ty = check_expr expr' NoExpectation in
+        let ty = tcx#autoderef ty in
         let method' = tcx#lookup_method ty name in
         (match !method' with
          | FnPtr { args = arg_tys; ret; _ } when arg_tys#empty ->

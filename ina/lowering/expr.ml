@@ -34,13 +34,13 @@ let rec lower_block (lcx : lcx) block =
     | LitFloat value -> lcx#bx#const_float ty value
     | LitStr value -> lcx#bx#const_string ty value
     | LitBool value -> lcx#bx#const_bool ty value
-  and lower_field expr ident =
+  and lower_autoderef expr =
     let ty = expr_ty expr in
-    let ptr, ty =
-      match !ty with
-      | Ptr ty | Ref ty -> lower expr, ty
-      | _ -> lower_lvalue expr, ty
-    in
+    match !ty with
+    | Ptr ty | Ref ty -> lower expr, ty
+    | _ -> lower_lvalue expr, ty
+  and lower_field expr ident =
+    let ptr, ty = lower_autoderef expr in
     lcx#bx#gep ty ptr ident
   and lower_lvalue expr =
     match expr.expr_kind with
@@ -155,10 +155,7 @@ let rec lower_block (lcx : lcx) block =
          | FnPtr _, Ptr _ -> lcx#bx#bitcast value cty
          | _ -> assert false)
     | MethodCall (expr, name, args) ->
-        let first = lower_lvalue expr in
-        let ty =
-          tcx#def_id_to_ty#unsafe_get (Middle.Def_id.def_id expr.expr_id 0)
-        in
+        let first, ty = lower_autoderef expr in
         let first, ty =
           match !(tcx#lookup_method ty name) with
           | FnPtr { args; _ } when args#empty -> assert false
