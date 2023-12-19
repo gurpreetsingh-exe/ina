@@ -260,6 +260,7 @@ class tcx sess =
 
     method ptr ty = self#intern (Ptr ty)
     method ref ty = self#intern (Ref ty)
+    method autoderef ty = match !ty with Ptr ty | Ref ty -> ty | _ -> ty
 
     method fn_ptr args ret is_variadic abi =
       self#intern (FnPtr { args; ret; is_variadic; abi })
@@ -396,5 +397,5 @@ class tcx sess =
       | Err -> "err"
       | Adt def_id ->
           let segments = def_id_to_qpath#unsafe_get def_id in
-          segments#join "::" (fun s -> s)
+          segments#last |> Option.get
   end

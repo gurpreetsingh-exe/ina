@@ -35,6 +35,7 @@ type ty_err =
   | InvalidDeref of ty ref
   | InvalidCall of ty ref
   | InvalidCast of ty ref * ty ref
+  | AssocFnAsMethod of ty ref * string
 
 type 'a tyck_result = ('a, ty_err) result
 
@@ -159,6 +160,14 @@ let ty_err_emit (tcx : tcx) err span =
           (tcx#render_ty to')
       in
       tcx#emit (mk_err msg span)
+  | AssocFnAsMethod (ty, name) ->
+      let msg =
+        sprintf "`%s::%s` is an associated function" (tcx#render_ty ty) name
+      in
+      new diagnostic Err ~multi_span:(multi_span span)
+      |> message "invalid function call"
+      |> label { msg; style = NoStyle } span
+      |> tcx#emit
 ;;
 
 let tychk_fn cx fn =
@@ -447,6 +456,7 @@ let tychk_fn cx fn =
         ty
     | Field (expr, ident) ->
         let ty = check_expr expr NoExpectation in
+        let ty = tcx#autoderef ty in
         let (Variant variant) = tcx#non_enum_variant ty in
         find
           (fun (Field { name; ty }) ->
@@ -472,22 +482,26 @@ let tychk_fn cx fn =
              cty)
     | MethodCall (expr', name, args) ->
         let ty = check_expr expr' NoExpectation in
-        let ty = tcx#lookup_method ty name in
-        let args' = new vec in
-        args'#push expr';
-        args'#append args;
-        let args = args' in
-        (match !ty with
+        let method' = tcx#lookup_method ty name in
+        (match !method' with
+         | FnPtr { args = arg_tys; ret; _ } when arg_tys#empty ->
+             ty_err_emit tcx (AssocFnAsMethod (ty, name)) expr.expr_span;
+             ret
          | FnPtr { args = arg_tys; ret; _ } ->
-             if args#len <> arg_tys#len
-             then
-               tcx#emit @@ mismatch_args arg_tys#len args#len expr.expr_span;
+             let args' = new vec in
+             args'#copy arg_tys;
+             let first = tcx#autoderef (args'#get 0) in
+             args'#pop_front;
+             if first <> ty
+             then ty_err_emit tcx (AssocFnAsMethod (ty, name)) expr.expr_span;
+             if args#len <> args'#len
+             then tcx#emit @@ mismatch_args args'#len args#len expr.expr_span;
              args#iteri (fun i arg ->
-                 let expected = arg_tys#get i in
+                 let expected = args'#get i in
                  let ty =
                    check_expr
                      arg
-                     (if i < arg_tys#len
+                     (if i < args'#len
                       then ExpectTy expected
                       else NoExpectation)
                  in
