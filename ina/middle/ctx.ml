@@ -192,7 +192,10 @@ class tcx sess =
           ignore (TypeMap.add types ty rty);
           rty
 
-    method create_def id ty = assert (def_id_to_ty#insert id ty = None)
+    method create_def id ty =
+      match def_id_to_ty#insert id ty with
+      | Some ty' -> assert (ty = ty')
+      | None -> ()
 
     method define_assoc_fn res name fn =
       match res with
@@ -207,6 +210,13 @@ class tcx sess =
       | Def (id, Struct) -> (assoc_fn#unsafe_get id)#get name
       | PrimTy _ -> assert false
       | Def _ | Local _ | Err -> assert false
+
+    method lookup_method ty name =
+      match !ty with
+      | Adt did ->
+          let did = (assoc_fn#unsafe_get did)#unsafe_get name in
+          def_id_to_ty#unsafe_get did
+      | _ -> assert false
 
     method print_assoc_fns =
       let open Utils.Printer in

@@ -470,7 +470,35 @@ let tychk_fn cx fn =
          | _ ->
              ty_err_emit tcx (InvalidCast (ty, cty)) expr.expr_span;
              cty)
-    | MethodCall _ -> assert false
+    | MethodCall (expr', name, args) ->
+        let ty = check_expr expr' NoExpectation in
+        let ty = tcx#lookup_method ty name in
+        let args' = new vec in
+        args'#push expr';
+        args'#append args;
+        let args = args' in
+        (match !ty with
+         | FnPtr { args = arg_tys; ret; _ } ->
+             if args#len <> arg_tys#len
+             then
+               tcx#emit @@ mismatch_args arg_tys#len args#len expr.expr_span;
+             args#iteri (fun i arg ->
+                 let expected = arg_tys#get i in
+                 let ty =
+                   check_expr
+                     arg
+                     (if i < arg_tys#len
+                      then ExpectTy expected
+                      else NoExpectation)
+                 in
+                 match equate expected ty with
+                 | Ok _ -> ()
+                 | Error e -> ty_err_emit tcx e arg.expr_span);
+             ret
+         | Err -> ty
+         | _ ->
+             ty_err_emit tcx (InvalidCall ty) expr.expr_span;
+             tcx#types.err)
   in
   let ty = tcx#def_id_to_ty#unsafe_get { inner = fn.func_id; unit_id = 0 } in
   let ret =
