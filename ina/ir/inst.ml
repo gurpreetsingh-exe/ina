@@ -31,7 +31,8 @@ and inst_kind =
   (* (bb * inst) *)
   | Phi of ty ref * (value * value) vec
   | Store of value * value
-  | Load of value
+  | Copy of value
+  | Move of value
   | Gep of ty ref * value * int
   | Call of ty ref * value * value vec
   | Intrinsic of string * value list
@@ -179,9 +180,17 @@ let render_inst tcx inst : string =
              sprintf "[%s, %s]" (render_value tcx bb) (render_value tcx inst)))
   | Store (src, dst) ->
       sprintf "store %s, %s" (render_value tcx src) (render_value tcx dst)
-  | Load ptr ->
+  | Copy ptr ->
       sprintf
-        "load %s, %s"
+        "copy %s, %s"
+        (match !(get_ty tcx ptr) with
+         | Ptr ty -> tcx#render_ty ty
+         | Ref ty -> tcx#render_ty ty
+         | _ -> assert false)
+        (render_value tcx ptr)
+  | Move ptr ->
+      sprintf
+        "move %s, %s"
         (match !(get_ty tcx ptr) with
          | Ptr ty -> tcx#render_ty ty
          | Ref ty -> tcx#render_ty ty

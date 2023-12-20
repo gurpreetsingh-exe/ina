@@ -94,7 +94,7 @@ let rec lower_block (lcx : lcx) block =
         (match res with
          | Local id ->
              let ptr = lcx#locals#unsafe_get id in
-             lcx#bx#load ptr
+             lcx#bx#move ptr
          | Def (id, _) -> Global id
          | _ -> assert false)
     | Call (expr, args) ->
@@ -104,7 +104,7 @@ let rec lower_block (lcx : lcx) block =
         lcx#bx#call ty fn args
     | Deref expr ->
         let ptr = lower expr in
-        lcx#bx#load ptr
+        lcx#bx#move ptr
     | Ref expr -> lcx#bx#bitcast (lower_lvalue expr) ty
     | If { cond; then_block; else_block; _ } ->
         let open Ir in
@@ -144,7 +144,7 @@ let rec lower_block (lcx : lcx) block =
         Const { kind = Struct f; ty }
     | Field (expr, ident) ->
         let ptr = lower_field expr ident in
-        lcx#bx#load ptr
+        lcx#bx#move ptr
     | Cast (expr, cty) ->
         let ty = expr_ty expr in
         let cty = tcx#ast_ty_to_ty cty in
@@ -162,7 +162,7 @@ let rec lower_block (lcx : lcx) block =
           | FnPtr { args; _ } ->
               (match !(args#get 0) with
                | Ptr ty | Ref ty -> first, ty
-               | _ -> lcx#bx#load first, ty)
+               | _ -> lcx#bx#move first, ty)
           | _ -> assert false
         in
         let fn = Ir.Inst.Global (tcx#lookup_method_def_id ty name) in

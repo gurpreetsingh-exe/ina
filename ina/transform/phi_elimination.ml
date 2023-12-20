@@ -23,7 +23,7 @@ let run_pass (tcx : Middle.Ctx.tcx) (blocks : Func.blocks) =
                 let bx = new Builder.builder tcx blocks bb in
                 bx#store value ptr
             | _ -> assert false);
-        phi.kind <- Load ptr
+        phi.kind <- Move ptr
     | _ -> assert false
   in
   blocks.bbs#iter_if Basicblock.is_phi remove_phis

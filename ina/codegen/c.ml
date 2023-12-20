@@ -212,7 +212,7 @@ let gen cx =
         out ^ sprintf "%s %s %s;\n" (get_value left) op (get_value right)
     | Store (src, dst) ->
         out ^ sprintf "*%s = %s;\n" (get_value dst) (get_value src)
-    | Load ptr -> out ^ sprintf "*%s;\n" (get_value ptr)
+    | Copy ptr | Move ptr -> out ^ sprintf "*%s;\n" (get_value ptr)
     | Call (_, value, args) ->
         out
         ^ sprintf "%s(%s);\n" (get_value value) (args#join ", " get_value)

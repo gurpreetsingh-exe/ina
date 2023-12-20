@@ -34,10 +34,15 @@ class builder tcx blocks block =
 
     method store src dst = self#add_inst (Store (src, dst))
 
-    method load ptr =
+    method copy ptr =
       let ty = get_ty tcx ptr in
       let ty = Option.get @@ tcx#inner_ty ty in
-      self#add_inst_with_ty ty (Load ptr)
+      self#add_inst_with_ty ty (Copy ptr)
+
+    method move ptr =
+      let ty = get_ty tcx ptr in
+      let ty = Option.get @@ tcx#inner_ty ty in
+      self#add_inst_with_ty ty (Move ptr)
 
     method gep ty ptr ident =
       let (Variant variant) = tcx#non_enum_variant ty in
