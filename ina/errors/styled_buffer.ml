@@ -1,11 +1,5 @@
 open Structures.Vec
-
-type style =
-  | LineCol
-  | LineNum
-  | NoStyle
-  | Header
-  | Level of Diagnostic.level
+open Diagnostic
 
 type styled_char = {
     mutable chr: char

@@ -49,23 +49,23 @@ class emitter sm ui_testing =
       (if (not span#has_primary_span) && not span#has_span_labels
        then (
          buf#append 0 (empty (max_line_num_len + 2)) NoStyle;
-         buf#append 0 "= " LineNum;
-         buf#append 0 (render_level level) (Level level);
-         buf#append 0 ": " Header;
+         buf#append 0 "= " LineNumber;
+         buf#append 0 (render_level level) Level;
+         buf#append 0 ": " HeaderMsg;
          self#msg_to_buffer buf msg (max_line_num_len + 1) "note";
          ())
        else
          let label_width = ref 0 in
          let level_str = render_level level in
-         buf#append 0 level_str (Level level);
-         buf#append 0 ": " Header;
+         buf#append 0 level_str Level;
+         buf#append 0 ": " HeaderMsg;
          label_width += (String.length (display_level level) + 2);
          let sp = Option.get span#primary_span in
          (match sm with
           | Some sm ->
               let loc = sm#span_to_string sp.lo in
-              buf#append 0 loc Header;
-              buf#append 0 ": " Header;
+              buf#append 0 loc HeaderMsg;
+              buf#append 0 ": " HeaderMsg;
               label_width += (String.length loc + 2)
           | None -> ());
          msg#iter (fun m ->
@@ -79,11 +79,11 @@ class emitter sm ui_testing =
                     else String.make !label_width ' ')
                    line
                in
-               buf#append i msg Header
+               buf#append i msg HeaderMsg
              in
              List.iteri f lines);
          let i = ref 1 in
-         let emit_label sm sp =
+         let emit_label sm sp is_secondary =
            let open Source.Span in
            let file = sm#lookup_file sp.hi in
            (*
@@ -93,12 +93,12 @@ class emitter sm ui_testing =
             *)
            let emit_sidebar ?(newline = true) () =
              let prefix = empty max_line_num_len in
-             buf#append !i (" " ^ prefix ^ " |") LineNum;
+             buf#append !i (" " ^ prefix ^ " |") LineNumber;
              if newline then i += 1
            in
            let emit_sidebar_with_line line_no =
              emit_sidebar ~newline:false ();
-             buf#puts !i 1 (string_of_int (line_no + 1)) LineNum
+             buf#puts !i 1 (string_of_int (line_no + 1)) LineNumber
            in
            emit_sidebar ();
            let line_no, col = sm#lookup_line_pos sp.lo in
@@ -107,16 +107,34 @@ class emitter sm ui_testing =
            buf#append !i (" " ^ line) NoStyle;
            emit_sidebar ~newline:false ();
            buf#append !i (empty col) NoStyle;
-           let underline = repeat (sp.hi - sp.lo) '^' in
-           buf#append !i (" " ^ underline) (Level level)
+           let c = if is_secondary then '~' else '^' in
+           let underline = repeat (sp.hi - sp.lo) c in
+           buf#append
+             !i
+             (" " ^ underline)
+             (if is_secondary then LabelSecondary else Level)
          in
          match sm with
          | Some sm ->
              (match span#labels#first with
               | Some (sp, msg) ->
-                  emit_label sm sp;
-                  buf#append !i ("  " ^ msg.msg) (Level level)
-              | None -> emit_label sm sp)
+                  emit_label sm sp false;
+                  buf#append !i (" " ^ msg.msg) Level;
+                  i += 1;
+                  span#labels#pop_front
+              | None -> emit_label sm sp false);
+             span#labels#sort (fun (sp1, _) (sp2, _) ->
+                 if sp1 = sp2
+                 then 0
+                 else
+                   let l1, _ = sm#lookup_line_pos sp1.lo in
+                   let l2, _ = sm#lookup_line_pos sp2.lo in
+                   if l1 < l2 then -1 else 1);
+             let labels = span#labels in
+             labels#iter (fun (sp', msg) ->
+                 emit_label sm sp' true;
+                 buf#append !i (" " ^ msg.msg) LabelSecondary;
+                 incr i)
          | None -> ());
       self#emit_to_destination level buf
 
@@ -142,10 +160,12 @@ class emitter sm ui_testing =
           line#iter (fun part ->
               let col =
                 match part.style with
-                | Level level -> Diagnostic.level_to_color level
-                | Header | LineCol -> "\x1b[1m"
-                | LineNum -> "\x1b[1;34m"
+                | Level -> Diagnostic.level_to_color level
+                | HeaderMsg | LineAndColumn -> "\x1b[1m"
+                | LineNumber -> "\x1b[1;34m"
                 | NoStyle -> ""
+                | LabelSecondary -> "\x1b[1;34m"
+                | _ -> assert false
               in
               fprintf stderr "%s%s%s" col part.text e);
           match level with
