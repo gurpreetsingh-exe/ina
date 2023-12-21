@@ -63,6 +63,8 @@ class ['a] vec =
         size := !right - !left
       done;
       !left
+
+    method sort f = Array.sort f inner
   end
 
 let map v (f : 'a -> 'b) =

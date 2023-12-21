@@ -187,7 +187,6 @@ class visitor resolver modd parent dir_ownership =
       resolver#tcx#insert_span fn.func_id fn.fn_sig.fn_span;
       let name = fn.fn_sig.name in
       let did = def_id fn.func_id 0 in
-      resolver#set_path did;
       assert (not fn.is_extern);
       resolver#tcx#define_assoc_fn impl name did;
       self#visit_fn_sig fn.fn_sig;

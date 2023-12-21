@@ -42,7 +42,7 @@ class type_lowering resolver modd =
                 | None ->
                     ignore (tcx#res_map#insert path.path_id Err);
                     resolver#not_found path)
-           | PrimTy _ -> assert false
+           | Ty _ -> assert false
            | Local _ -> ()
            | Def (_, _) -> ()
            | Err -> ())
@@ -65,7 +65,8 @@ class type_lowering resolver modd =
       | Some expr -> self#visit_expr expr
       | None -> ()
 
-    method visit_fn fn =
+    method visit_fn fn assoc =
+      resolver#append_segment fn.fn_sig.name;
       let abi : abi =
         match fn.abi with
         | "intrinsic" -> Intrinsic
@@ -83,19 +84,21 @@ class type_lowering resolver modd =
       in
       let ty = resolver#tcx#fn_ptr args ret false abi in
       let def_id = def_id fn.func_id 0 in
+      if assoc then resolver#set_path def_id;
       assert (resolver#tcx#node_id_to_def_id#insert fn.func_id def_id = None);
       resolver#tcx#create_def def_id ty;
-      match fn.body with
-      | Some body ->
-          curr_fn <- Some fn;
-          self#visit_block body
-      | None -> ()
+      (match fn.body with
+       | Some body ->
+           curr_fn <- Some fn;
+           self#visit_block body
+       | None -> ());
+      resolver#pop_segment
 
     method visit_impl impl =
       let ty = resolver#tcx#ast_ty_to_ty impl.impl_ty in
       let segments = resolver#tcx#render_ty_segments ty in
       resolver#append_segments segments;
-      impl.impl_items#iter (function AssocFn fn -> self#visit_fn fn);
+      impl.impl_items#iter (function AssocFn fn -> self#visit_fn fn true);
       resolver#pop_segments (segments#len - 1)
 
     method visit_struct strukt =
@@ -113,9 +116,9 @@ class type_lowering resolver modd =
 
     method visit_item item =
       match item with
-      | Ast.Fn (fn, _) -> self#visit_fn fn
+      | Ast.Fn (fn, _) -> self#visit_fn fn false
       | Type (Struct s) -> self#visit_struct s
-      | Foreign fns -> fns#iter self#visit_fn
+      | Foreign fns -> fns#iter (fun f -> self#visit_fn f false)
       | Impl impl -> self#visit_impl impl
       | Mod { resolved_mod; _ } ->
           (match resolved_mod with
@@ -124,9 +127,11 @@ class type_lowering resolver modd =
       | Unit _ -> ()
 
     method visit_mod =
+      resolver#append_segment modd.mod_name;
       let def_id = def_id modd.mod_id 0 in
       assert (resolver#tcx#node_id_to_def_id#insert modd.mod_id def_id = None);
-      modd.items#iter self#visit_item
+      modd.items#iter self#visit_item;
+      resolver#pop_segment
 
     method lower = self#visit_mod
   end

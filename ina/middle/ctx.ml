@@ -13,15 +13,9 @@ module TypeMap = Hashtbl.Make (Ty)
 
 type 'a nodemap = (int, 'a) hashmap
 
-type prim_ty =
-  | Int of int_ty
-  | Float of float_ty
-  | Bool
-  | Str
-
 and res =
   | Def of (def_id * def_kind)
-  | PrimTy of prim_ty
+  | Ty of ty ref
   | Local of int
   | Err
 
@@ -44,17 +38,10 @@ let decode_res resolver dec =
   | _ -> assert false
 ;;
 
-let print_prim_ty : prim_ty -> string = function
-  | Int _ -> "int"
-  | Float _ -> "float"
-  | Bool -> "bool"
-  | Str -> "str"
-;;
-
 let print_res : res -> string = function
   | Def (id, kind) ->
       sprintf "(%s~%s)" (print_def_kind kind) (print_def_id id)
-  | PrimTy ty -> print_prim_ty ty
+  | Ty ty -> render_ty ty
   | Local id -> "local#" ^ string_of_int id
   | Err -> "err"
 ;;
@@ -115,6 +102,10 @@ class tcx sess =
     val extern_def_ids : (def_id, unit) hashmap = new hashmap
     val adt_def : (def_id, adt) hashmap = new hashmap
     val assoc_fn : (def_id, (string, def_id) hashmap) hashmap = new hashmap
+
+    val prim_ty_assoc_fn : (ty ref, (string, def_id) hashmap) hashmap =
+      new hashmap
+
     val units : (string, int) hashmap = new hashmap
 
     initializer
@@ -202,13 +193,15 @@ class tcx sess =
       | Def (id, (Struct | Impl)) ->
           assoc_fn#insert' id (new hashmap);
           (assoc_fn#unsafe_get id)#insert' name fn
-      | PrimTy _ -> assert false
+      | Ty ty ->
+          prim_ty_assoc_fn#insert' ty (new hashmap);
+          (prim_ty_assoc_fn#unsafe_get ty)#insert' name fn
       | Def _ | Local _ | Err -> assert false
 
     method lookup_assoc_fn res name =
       match res with
       | Def (id, Struct) -> (assoc_fn#unsafe_get id)#get name
-      | PrimTy _ -> assert false
+      | Ty _ -> assert false
       | Def _ | Local _ | Err -> assert false
 
     method lookup_method ty name =
@@ -236,7 +229,8 @@ class tcx sess =
     method ast_ty_to_res (ty : Ast.ty) =
       match ty.kind with
       | Path path -> Some (res_map#unsafe_get path.path_id)
-      | _ -> None
+      | Err -> None
+      | _ -> Some (Ty (self#ast_ty_to_ty ty))
 
     method invalidate old_ty new_ty =
       let ty = self#intern old_ty in
@@ -357,6 +351,7 @@ class tcx sess =
           let res = res_map#unsafe_get ty.ty_id in
           res |> ( function
           | Def (def_id, _) -> self#adt def_id
+          | Ty ty -> ty
           | _ -> assert false )
       | CVarArgs -> assert false
 
@@ -367,8 +362,14 @@ class tcx sess =
 
     method render_ty_segments ty =
       match !ty with
+      | Int _ ->
+          let segments = new vec in
+          segments#push (render_ty ty);
+          segments
       | Adt def_id -> def_id_to_qpath#unsafe_get def_id
-      | _ -> assert false
+      | _ ->
+          print_endline @@ self#render_ty ty;
+          assert false
 
     method render_ty ty =
       match !ty with
