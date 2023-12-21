@@ -9,6 +9,7 @@ open Ir.Inst
 let prelude =
   ref
     "#include <alloca.h>\n\
+     #include <sys/types.h>\n\
      #include <stdint.h>\n\
      #include <stdlib.h>\n\
      #include <stdbool.h>\n\n"

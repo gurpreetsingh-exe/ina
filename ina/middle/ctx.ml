@@ -210,7 +210,8 @@ class tcx sess =
     method lookup_method_def_id ty name =
       match !ty with
       | Adt did -> (assoc_fn#unsafe_get did)#unsafe_get name
-      | _ -> assert false
+      | Err -> assert false
+      | _ -> (prim_ty_assoc_fn#unsafe_get ty)#unsafe_get name
 
     method print_assoc_fns =
       let open Utils.Printer in
@@ -361,15 +362,18 @@ class tcx sess =
       | _ -> None
 
     method render_ty_segments ty =
-      match !ty with
-      | Int _ ->
-          let segments = new vec in
-          segments#push (render_ty ty);
-          segments
-      | Adt def_id -> def_id_to_qpath#unsafe_get def_id
-      | _ ->
-          print_endline @@ self#render_ty ty;
-          assert false
+      let segments = new vec in
+      (match !ty with
+       | Ptr ty ->
+           segments#push "p";
+           segments#append (self#render_ty_segments ty)
+       | Ref ty ->
+           segments#push "r";
+           segments#append (self#render_ty_segments ty)
+       | Adt def_id -> segments#append (def_id_to_qpath#unsafe_get def_id)
+       | Err -> assert false
+       | _ -> segments#push (render_ty ty));
+      segments
 
     method render_ty ty =
       match !ty with
