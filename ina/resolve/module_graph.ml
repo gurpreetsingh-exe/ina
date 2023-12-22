@@ -241,6 +241,11 @@ class visitor resolver modd parent dir_ownership =
                let dir = Filename.dirname modd.mod_path in
                let unit_id = resolver#tcx#unit name in
                let lib = join [dir; sprintf "lib%s.o" name] in
+               let lib =
+                 if Sys.file_exists lib
+                 then lib
+                 else join ["library"; sprintf "lib%s.o" name]
+               in
                let obj = Object.read_obj lib in
                let metadata =
                  Option.get @@ Object.read_section_by_name obj ".ina\000"
