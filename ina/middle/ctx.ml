@@ -156,7 +156,16 @@ class tcx sess =
       let enc = sess.enc in
       encode_hashmap enc def_id_to_ty Def_id.encode Ty.encode;
       encode_hashmap enc adt_def Def_id.encode (fun e adt ->
-          encode_vec e adt.variants Ty.encode_variant)
+          encode_vec e adt.variants Ty.encode_variant);
+      encode_hashmap enc assoc_fn Def_id.encode (fun e methods ->
+          encode_hashmap
+            e
+            methods
+            (fun e s -> e#emit_str s)
+            (fun e did ->
+              Def_id.encode e did;
+              let path = def_id_to_qpath#unsafe_get did in
+              encode_vec e path (fun e s -> e#emit_str s)))
 
     method decode_metadata (dec : decoder) =
       decode_hashmap dec def_id_to_ty Def_id.decode (fun dec ->
@@ -164,7 +173,20 @@ class tcx sess =
       decode_hashmap dec adt_def Def_id.decode (fun dec ->
           let variants = new vec in
           decode_vec dec variants (self |> Ty.decode_variant);
-          { variants })
+          { variants });
+      decode_hashmap dec assoc_fn Def_id.decode (fun dec ->
+          let methods = new hashmap in
+          decode_hashmap
+            dec
+            methods
+            (fun dec -> dec#read_str)
+            (fun dec ->
+              let did = Def_id.decode dec in
+              let path = new vec in
+              decode_vec dec path (fun dec -> dec#read_str);
+              def_id_to_qpath#insert' did path;
+              did);
+          methods)
 
     method unit name =
       match units#get name with
@@ -370,7 +392,9 @@ class tcx sess =
        | Ref ty ->
            segments#push "r";
            segments#append (self#render_ty_segments ty)
-       | Adt def_id -> segments#append (def_id_to_qpath#unsafe_get def_id)
+       | Adt def_id ->
+           let name = Option.get (def_id_to_qpath#unsafe_get def_id)#last in
+           segments#push name
        | Err -> assert false
        | _ -> segments#push (render_ty ty));
       segments

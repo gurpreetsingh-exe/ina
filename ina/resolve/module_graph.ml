@@ -182,26 +182,18 @@ class visitor resolver modd parent dir_ownership =
        | None -> ());
       resolver#pop_segment
 
-    method visit_assoc_fn impl fn =
-      resolver#append_segment fn.fn_sig.name;
+    method visit_assoc_fn fn =
       resolver#tcx#insert_span fn.func_id fn.fn_sig.fn_span;
-      let name = fn.fn_sig.name in
-      let did = def_id fn.func_id 0 in
       assert (not fn.is_extern);
-      resolver#tcx#define_assoc_fn impl name did;
       self#visit_fn_sig fn.fn_sig;
-      (match fn.body with
-       | Some body ->
-           curr_fn <- Some fn;
-           self#visit_block body
-       | None -> assert false);
-      resolver#pop_segment
+      match fn.body with
+      | Some body ->
+          curr_fn <- Some fn;
+          self#visit_block body
+      | None -> assert false
 
     method visit_impl impl =
-      let did = def_id impl.impl_id 0 in
-      let res = Middle.Ctx.Def (did, Impl) in
-      impl.impl_items#iter (function AssocFn fn ->
-          self#visit_assoc_fn res fn)
+      impl.impl_items#iter (function AssocFn fn -> self#visit_assoc_fn fn)
 
     method visit_struct { ident; struct_id; struct_span; _ } =
       resolver#append_segment ident;
@@ -263,8 +255,11 @@ class visitor resolver modd parent dir_ownership =
                  ; resolutions = new hashmap
                  }
                in
+               let path = resolver#current_qpath in
+               resolver#set_qpath (new Structures.Vec.vec);
                let mdl' = Module.decode resolver dec None in
                resolver#tcx#decode_metadata dec;
+               resolver#set_qpath path;
                resolver#define dummy name Type (Module mdl');
                resolver#units#push dummy)
 
