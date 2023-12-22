@@ -79,15 +79,9 @@ let rec backend_ty cx ty =
       (match cx.types#get ty' with
        | Some ty -> ty
        | None ->
-           let (Variant variant) = cx.tcx#non_enum_variant ty in
-           let fields =
-             variant.fields#join "\n" (fun (Field { ty; name }) ->
-                 sprintf "  %s %s;" (backend_ty cx ty) name)
-           in
            let name = mangle cx def_id in
            assert (cx.types#insert ty' name = None);
-           prelude
-           ^ sprintf "typedef struct %s {\n%s\n} %s;\n\n" name fields name;
+           prelude ^ sprintf "typedef struct %s %s;\n" name name;
            name)
   | FnPtr { args; ret; is_variadic; _ } as ty ->
       (match cx.types#get ty with
@@ -106,6 +100,21 @@ let rec backend_ty cx ty =
   | _ ->
       print_endline @@ Middle.Ty.render_ty2 ty;
       assert false
+;;
+
+let gen_types cx =
+  cx.types#iter (fun ty name ->
+      match ty with
+      | Adt _ ->
+          let (Variant variant) = cx.tcx#non_enum_variant (ref ty) in
+          let fields =
+            variant.fields#join "\n" (fun (Field { ty; name }) ->
+                sprintf "  %s %s;" (backend_ty cx ty) name)
+          in
+          prelude
+          ^ sprintf "typedef struct %s {\n%s\n} %s;\n\n" name fields name
+      | FnPtr _ -> ()
+      | _ -> assert false)
 ;;
 
 let create tcx irmdl =
@@ -288,6 +297,7 @@ let gen cx =
    | Some id -> gen_main id
    | _ when cx.tcx#sess.options.output_type = Exe -> assert false
    | _ -> ());
+  gen_types cx;
   (match cx.tcx#sess.options.output_type with
    | Unit ->
        let data =

@@ -1,4 +1,5 @@
 open Middle.Ctx
+open Utils.Path
 
 module type CodegenBackend = sig
   type cx
@@ -57,9 +58,14 @@ let codegen (tcx : tcx) mdl =
             sprintf "%s -o %s %s.o %s" command output output objs
         | Object -> sprintf "%s -c %s -o %s.o" command input output
         | Asm -> sprintf "%s -S -masm=intel %s" command input
-        | Unit -> sprintf "%s -c %s -o lib%s.o" command input output
+        | Unit ->
+            sprintf
+              "%s -c %s -o %s.o"
+              command
+              input
+              (add_suffix output "lib")
       in
-      if Sys.command command <> 0 then eprintf "command failed\n";
+      if Sys.command command <> 0 then eprintf "command failed\n"
       (* assert (Sys.command (sprintf "rm -f %s" input) = 0) *)
   | Llvm -> assert false
 ;;
