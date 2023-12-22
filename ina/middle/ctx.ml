@@ -165,6 +165,15 @@ class tcx sess =
             (fun e did ->
               Def_id.encode e did;
               let path = def_id_to_qpath#unsafe_get did in
+              encode_vec e path (fun e s -> e#emit_str s)));
+      encode_hashmap enc prim_ty_assoc_fn Ty.encode (fun e methods ->
+          encode_hashmap
+            e
+            methods
+            (fun e s -> e#emit_str s)
+            (fun e did ->
+              Def_id.encode e did;
+              let path = def_id_to_qpath#unsafe_get did in
               encode_vec e path (fun e s -> e#emit_str s)))
 
     method decode_metadata (dec : decoder) =
@@ -175,6 +184,19 @@ class tcx sess =
           decode_vec dec variants (self |> Ty.decode_variant);
           { variants });
       decode_hashmap dec assoc_fn Def_id.decode (fun dec ->
+          let methods = new hashmap in
+          decode_hashmap
+            dec
+            methods
+            (fun dec -> dec#read_str)
+            (fun dec ->
+              let did = Def_id.decode dec in
+              let path = new vec in
+              decode_vec dec path (fun dec -> dec#read_str);
+              def_id_to_qpath#insert' did path;
+              did);
+          methods);
+      decode_hashmap dec prim_ty_assoc_fn (self |> Ty.decode) (fun dec ->
           let methods = new hashmap in
           decode_hashmap
             dec
