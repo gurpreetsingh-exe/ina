@@ -2,11 +2,13 @@ open Middle.Ty
 open Middle.Def_id
 open Printf
 open Structures.Vec
+open Source
 
 type t = {
     mutable kind: inst_kind
   ; ty: ty ref
   ; mutable id: int
+  ; span: Span.t
 }
 
 and binary_kind =

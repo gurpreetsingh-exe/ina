@@ -9,21 +9,21 @@ class builder tcx blocks block =
     val block : Inst.basic_block = block
     method block = block
 
-    method private add_inst kind =
-      let inst = { kind; ty = tcx#types.unit; id = -1 } in
+    method private add_inst kind span =
+      let inst = { kind; ty = tcx#types.unit; id = -1; span } in
       block.insts#push inst
 
     method private add_terminator term = block.terminator <- term
 
-    method private add_inst_with_ty ty kind =
-      let inst = { kind; ty; id = -1 } in
+    method private add_inst_with_ty ty kind span =
+      let inst = { kind; ty; id = -1; span } in
       block.insts#push inst;
       VReg inst
 
-    method alloca ty =
+    method alloca ty span =
       let kind = Alloca ty in
       let ty = tcx#ptr ty in
-      let inst = { kind; ty; id = blocks.locals#len } in
+      let inst = { kind; ty; id = blocks.locals#len; span } in
       blocks.locals#push inst;
       VReg inst
 
@@ -81,7 +81,10 @@ class builder tcx blocks block =
       self#add_inst_with_ty ty inst
 
     method nop =
-      let inst = { kind = Nop; ty = tcx#types.unit; id = -1 } in
+      let open Source.Span in
+      let inst =
+        { kind = Nop; ty = tcx#types.unit; id = -1; span = make 0 0 }
+      in
       VReg inst
 
     method ret ret = self#add_terminator (Ret ret)

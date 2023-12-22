@@ -11,18 +11,18 @@ let rec lower_block (lcx : lcx) block =
     let f stmt =
       match stmt with
       | Binding binding ->
-          let { binding_expr; binding_id; _ } = binding in
+          let { binding_expr; binding_id; binding_span; _ } = binding in
           let ty =
             tcx#def_id_to_ty#unsafe_get { inner = binding_id; unit_id = 0 }
           in
-          let ptr = lcx#bx#alloca ty in
+          let ptr = lcx#bx#alloca ty binding_span in
           assert (lcx#locals#insert binding_id ptr = None);
           let src = lower binding_expr in
-          lcx#bx#store src ptr
+          lcx#bx#store src ptr binding_span
       | Assign (left, right) ->
           let dst = lower_lvalue left in
           let src = lower right in
-          lcx#bx#store src dst
+          lcx#bx#store src dst left.expr_span
       | Stmt expr | Expr expr -> ignore (lower expr)
       | _ -> ()
     in
@@ -41,7 +41,7 @@ let rec lower_block (lcx : lcx) block =
     | _ -> lower_lvalue expr, ty
   and lower_field expr ident =
     let ptr, ty = lower_autoderef expr in
-    lcx#bx#gep ty ptr ident
+    lcx#bx#gep ty ptr ident expr.expr_span
   and lower_lvalue expr =
     match expr.expr_kind with
     | Path path ->
@@ -53,9 +53,9 @@ let rec lower_block (lcx : lcx) block =
     | Deref expr -> lower expr
     | Field (expr, ident) -> lower_field expr ident
     | _ -> assert false
-  and lower expr =
-    let ty = expr_ty expr in
-    match expr.expr_kind with
+  and lower e =
+    let ty = expr_ty e in
+    match e.expr_kind with
     | Binary (kind, left, right) ->
         let lazy_eval value =
           let open Ir in
@@ -77,7 +77,7 @@ let rec lower_block (lcx : lcx) block =
           let branches = new vec in
           branches#push (Label bb, lcx#bx#const_bool tcx#types.bool value);
           branches#push (Label right_bb, right);
-          let phi = lcx#bx#phi ty branches in
+          let phi = lcx#bx#phi ty branches e.expr_span in
           phi
         in
         let inst_kind = Ir.Inst.binary_kind_to_inst kind in
@@ -87,25 +87,25 @@ let rec lower_block (lcx : lcx) block =
          | _ ->
              let left = lower left in
              let right = lower right in
-             lcx#bx#binary inst_kind left right)
+             lcx#bx#binary inst_kind left right e.expr_span)
     | Lit lit -> lower_lit lit ty
     | Path path ->
         let res = tcx#res_map#unsafe_get path.path_id in
         (match res with
          | Local id ->
              let ptr = lcx#locals#unsafe_get id in
-             lcx#bx#move ptr
+             lcx#bx#move ptr path.span
          | Def (id, _) -> Global id
          | _ -> assert false)
     | Call (expr, args) ->
         let ty = expr_ty expr in
         let fn = lower expr in
         let args = map args (fun arg -> lower arg) in
-        lcx#bx#call ty fn args
+        lcx#bx#call ty fn args e.expr_span
     | Deref expr ->
         let ptr = lower expr in
-        lcx#bx#move ptr
-    | Ref expr -> lcx#bx#bitcast (lower_lvalue expr) ty
+        lcx#bx#move ptr e.expr_span
+    | Ref expr -> lcx#bx#bitcast (lower_lvalue expr) ty e.expr_span
     | If { cond; then_block; else_block; _ } ->
         let open Ir in
         let open Inst in
@@ -137,22 +137,23 @@ let rec lower_block (lcx : lcx) block =
              let branches = new vec in
              branches#push (Label !last_then_bb, true');
              branches#push (Label !last_else_bb, Option.get !false');
-             lcx#bx#phi ty branches)
+             lcx#bx#phi ty branches e.expr_span)
     | Block block -> lower_block lcx block
     | StructExpr { fields; _ } ->
         let f = map fields (fun (_, expr) -> lower expr) in
         Const { kind = Struct f; ty }
     | Field (expr, ident) ->
         let ptr = lower_field expr ident in
-        lcx#bx#move ptr
+        lcx#bx#move ptr e.expr_span
     | Cast (expr, cty) ->
         let ty = expr_ty expr in
         let cty = tcx#ast_ty_to_ty cty in
         let value = lower expr in
         (match !ty, !cty with
          | _ when ty = cty -> value
-         | Ref t0, Ptr t1 when t0 = t1 -> lcx#bx#bitcast value cty
-         | FnPtr _, Ptr _ -> lcx#bx#bitcast value cty
+         | Ref t0, Ptr t1 when t0 = t1 ->
+             lcx#bx#bitcast value cty e.expr_span
+         | FnPtr _, Ptr _ -> lcx#bx#bitcast value cty e.expr_span
          | _ -> assert false)
     | MethodCall (expr, name, args) ->
         let first, ty = lower_autoderef expr in
@@ -162,7 +163,7 @@ let rec lower_block (lcx : lcx) block =
           | FnPtr { args; _ } ->
               (match !(args#get 0) with
                | Ptr ty | Ref ty -> first, ty
-               | _ -> lcx#bx#move first, ty)
+               | _ -> lcx#bx#move first expr.expr_span, ty)
           | _ -> assert false
         in
         let fn = Ir.Inst.Global (tcx#lookup_method_def_id ty name) in
@@ -170,7 +171,7 @@ let rec lower_block (lcx : lcx) block =
         let args' = new vec in
         args'#push first;
         args'#append @@ map args (fun arg -> lower arg);
-        lcx#bx#call ty fn args'
+        lcx#bx#call ty fn args' e.expr_span
   in
   lower_block' ()
 ;;

@@ -17,11 +17,11 @@ let run_pass (tcx : Middle.Ctx.tcx) (blocks : Func.blocks) =
           | _ -> assert false
         in
         let bx = new Builder.builder tcx blocks bb in
-        let ptr = bx#alloca ty in
+        let ptr = bx#alloca ty (Source.Span.make 0 0) in
         branches#iter (function
             | Label bb, value ->
                 let bx = new Builder.builder tcx blocks bb in
-                bx#store value ptr
+                bx#store value ptr (Source.Span.make 0 0)
             | _ -> assert false);
         phi.kind <- Move ptr
     | _ -> assert false

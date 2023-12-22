@@ -35,9 +35,9 @@ let rec lower (lcx : Context.lcx) mdl =
          fn.fn_sig.args#iteri (fun i { arg_id; _ } ->
              args#get i |> function
              | Param (ty, _, _) as inst ->
-                 let ptr = lcx#bx#alloca ty in
+                 let ptr = lcx#bx#alloca ty (Source.Span.make 0 0) in
                  assert (lcx#locals#insert arg_id ptr = None);
-                 lcx#bx#store inst ptr
+                 lcx#bx#store inst ptr (Source.Span.make 0 0)
              | _ -> assert false);
          let ret = Expr.lower_block lcx body in
          (match ret with
@@ -57,6 +57,7 @@ let rec lower (lcx : Context.lcx) mdl =
     | Impl { impl_items; _ } ->
         impl_items#iter (function AssocFn fn -> lower_fn fn)
     | Type _ | Unit _ -> ()
+    | Foreign fns -> fns#iter lower_fn
     | _ -> assert false
   in
   mdl.items#iter f
