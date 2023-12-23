@@ -199,10 +199,12 @@ let pair a b =
 ;;
 
 let rec hash = function
-  | FnPtr { args; ret; is_variadic; abi } ->
-      fold_left (fun init ty -> pair (hash !ty) init) 0 args
-      + hash !ret
-      + if is_variadic then 0 else 1 + Hashtbl.hash abi
+  | FnPtr { args; ret; is_variadic; _ } ->
+      pair
+        (pair
+           (hash !ret)
+           (fold_left (fun init ty -> pair (hash !ty) init) 0 args))
+        (if is_variadic then 1 else 2)
   | Ptr ty -> pair (hash !ty) 1
   | Ref ty -> pair (hash !ty) 2
   | Adt { inner; _ } -> inner

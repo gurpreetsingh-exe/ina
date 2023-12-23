@@ -74,25 +74,15 @@ class type_lowering resolver modd =
         | "default" -> Default
         | _ -> assert false
       in
-      let is_variadic =
-        fn.fn_sig.args#any (fun { ty; _ } -> ty.kind = CVarArgs)
-      in
       let args =
-        fold_left
-          (fun args { ty; _ } ->
-            (match ty.kind with
-             | CVarArgs -> ()
-             | _ -> args#push (resolver#tcx#ast_ty_to_ty ty));
-            args)
-          (new vec)
-          fn.fn_sig.args
+        map fn.fn_sig.args (fun { ty; _ } -> resolver#tcx#ast_ty_to_ty ty)
       in
       let ret =
         match fn.fn_sig.ret_ty with
         | Some ty -> resolver#tcx#ast_ty_to_ty ty
         | None -> resolver#tcx#types.unit
       in
-      let ty = resolver#tcx#fn_ptr args ret is_variadic abi in
+      let ty = resolver#tcx#fn_ptr args ret fn.fn_sig.is_variadic abi in
       let def_id = def_id fn.func_id 0 in
       if assoc then resolver#set_path def_id;
       assert (resolver#tcx#node_id_to_def_id#insert fn.func_id def_id = None);

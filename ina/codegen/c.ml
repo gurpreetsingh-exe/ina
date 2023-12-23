@@ -97,7 +97,10 @@ let rec backend_ty cx ty =
                (backend_ty cx ret)
                name
                (args#join ", " (cx |> backend_ty))
-               (if is_variadic then ", ..." else "");
+               (match is_variadic, args#empty with
+                | true, true -> "..."
+                | true, false -> ", ..."
+                | _ -> "");
            assert (cx.types#insert ty name = None);
            name)
   | _ ->
@@ -125,6 +128,22 @@ let create tcx irmdl =
 ;;
 
 let gen cx =
+  let render_fn_header name ty =
+    let args, ret, is_variadic =
+      match !ty with
+      | FnPtr { args; ret; is_variadic; _ } -> args, ret, is_variadic
+      | _ -> assert false
+    in
+    sprintf
+      "%s %s(%s%s)"
+      (backend_ty cx ret)
+      name
+      (args#join ", " (cx |> backend_ty))
+      (match is_variadic, args#empty with
+       | true, true -> "..."
+       | true, false -> ", ..."
+       | _ -> "")
+  in
   let inst_name inst = sprintf "_%d" inst.id in
   let rec get_const ty = function
     | Int v -> string_of_int v
@@ -153,40 +172,12 @@ let gen cx =
     | VReg i -> inst_name i
     | Global id ->
         let name = mangle cx id in
+        let ty = cx.tcx#def_id_to_ty#unsafe_get id in
         (match cx.gen'd_fns#get id with
          | None when id.unit_id <> 0 ->
              cx.gen'd_fns#insert' id ();
-             let ty = cx.tcx#def_id_to_ty#unsafe_get id in
-             let args, ret, is_variadic =
-               match !ty with
-               | FnPtr { args; ret; is_variadic; _ } ->
-                   args, ret, is_variadic
-               | _ -> assert false
-             in
-             let header =
-               sprintf
-                 "extern %s %s(%s%s);\n"
-                 (backend_ty cx ret)
-                 name
-                 (args#join ", " (cx |> backend_ty))
-                 (if is_variadic then ", ..." else "")
-             in
-             prelude ^ header
-         | None ->
-             let ty = cx.tcx#def_id_to_ty#unsafe_get id in
-             let args, ret =
-               match !ty with
-               | FnPtr { args; ret; _ } -> args, ret
-               | _ -> assert false
-             in
-             let header =
-               sprintf
-                 "%s %s(%s);\n"
-                 (backend_ty cx ret)
-                 name
-                 (args#join ", " (cx |> backend_ty))
-             in
-             prelude ^ header
+             prelude ^ sprintf "extern %s;\n" (render_fn_header name ty)
+         | None -> prelude ^ sprintf "%s;\n" (render_fn_header name ty)
          | Some () -> ());
         name
     | Const { kind; ty } -> get_const ty kind
@@ -308,7 +299,10 @@ let gen cx =
         (backend_ty cx ret)
         name
         (args#join ", " (fun s -> s))
-        (if is_variadic then ", ..." else "")
+        (match is_variadic, args#empty with
+         | true, true -> "..."
+         | true, false -> ", ..."
+         | _ -> "")
     in
     out ^ header;
     if cx.tcx#is_extern func.def_id
@@ -321,7 +315,11 @@ let gen cx =
   in
   let gen_main main_id =
     let name = mangle cx main_id in
-    out ^ sprintf "int main() {\n  return %s();\n}\n" name
+    match !(cx.tcx#def_id_to_ty#unsafe_get main_id) with
+    | FnPtr { ret; _ } when ret = cx.tcx#types.unit ->
+        out ^ sprintf "int main() {\n  %s();\n  return 0;\n}\n" name
+    | FnPtr _ -> out ^ sprintf "int main() {\n  return %s();\n}\n" name
+    | _ -> assert false
   in
   cx.irmdl.items#iter (fun f ->
       let did =

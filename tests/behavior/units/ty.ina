@@ -27,5 +27,5 @@ mod p {
 fn f1(_: bool) {}
 fn f2(_: str) {}
 fn f3(_: fn(*i8)) {}
-fn f4(_: fn(...)) {}
+fn f4(_: fn(*i8, ...)) {}
 fn f5() -> fn(*i8) { p::f2 }

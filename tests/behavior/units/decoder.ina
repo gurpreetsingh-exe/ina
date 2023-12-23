@@ -6,7 +6,7 @@ unit struct;
 // REQUIRES: impls
 unit impls;
 
-fn var(...) {}
+fn var(_: *i8, ...) {}
 
 fn main() {
     let a: i8 = 0;

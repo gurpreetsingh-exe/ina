@@ -4,7 +4,11 @@ class ['a] vec =
     method inner = inner
     method push (v : 'a) = inner <- Array.append inner [|v|]
     method append (v : 'a vec) = inner <- Array.append inner v#inner
-    method get i = Array.unsafe_get inner i
+
+    method get i =
+      assert (i < Array.length inner);
+      Array.unsafe_get inner i
+
     method set i v = Array.unsafe_set inner i v
     method replace v = inner <- v
     method len = Array.length inner

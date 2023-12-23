@@ -295,6 +295,7 @@ class parser pcx file tokenizer =
                 if token.kind = Dot3 then var_arg := true;
                 self#parse_ty)
           in
+          if !var_arg then args#pop;
           let unit_ty : ty =
             { kind = Unit; span = { lo = 0; hi = 0 }; ty_id = self#id }
           in
@@ -394,6 +395,7 @@ class parser pcx file tokenizer =
       let* args =
         parse_spanned_with_sep self LParen RParen Comma parse_arg'
       in
+      if !var_arg then args#pop;
       Ok (args, !var_arg)
 
     method parse_ret_ty =
