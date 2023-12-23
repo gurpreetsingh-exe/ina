@@ -199,12 +199,14 @@ let pair a b =
 ;;
 
 let rec hash = function
-  | FnPtr { args; ret; is_variadic; _ } ->
+  | FnPtr { args; ret; is_variadic; abi } ->
       pair
+        (match abi with Default | C -> 1 | Intrinsic -> 2)
         (pair
-           (hash !ret)
-           (fold_left (fun init ty -> pair (hash !ty) init) 0 args))
-        (if is_variadic then 1 else 2)
+           (pair
+              (hash !ret)
+              (fold_left (fun init ty -> pair (hash !ty) init) 0 args))
+           (if is_variadic then 1 else 2))
   | Ptr ty -> pair (hash !ty) 1
   | Ref ty -> pair (hash !ty) 2
   | Adt { inner; _ } -> inner
