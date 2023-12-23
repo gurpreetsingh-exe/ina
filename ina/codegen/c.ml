@@ -157,17 +157,19 @@ let gen cx =
          | None when id.unit_id <> 0 ->
              cx.gen'd_fns#insert' id ();
              let ty = cx.tcx#def_id_to_ty#unsafe_get id in
-             let args, ret =
+             let args, ret, is_variadic =
                match !ty with
-               | FnPtr { args; ret; _ } -> args, ret
+               | FnPtr { args; ret; is_variadic; _ } ->
+                   args, ret, is_variadic
                | _ -> assert false
              in
              let header =
                sprintf
-                 "extern %s %s(%s);\n"
+                 "extern %s %s(%s%s);\n"
                  (backend_ty cx ret)
                  name
                  (args#join ", " (cx |> backend_ty))
+                 (if is_variadic then ", ..." else "")
              in
              prelude ^ header
          | None ->
@@ -206,6 +208,18 @@ let gen cx =
         (match !ty with
          | Ptr _ | Ref _ -> sprintf "((size_t*)%s)[1];\n" (get_value first)
          | _ -> sprintf "((size_t*)&%s)[1];\n" (get_value first))
+    | "offset" ->
+        let first = args#get 0 in
+        let ty = get_ty cx.tcx first in
+        out
+        ^
+        (match !ty with
+         | Ptr _ ->
+             sprintf
+               "(%s + %s);\n"
+               (get_value first)
+               (get_value (args#get 1))
+         | _ -> assert false)
     | name ->
         print_endline name;
         assert false
@@ -253,7 +267,11 @@ let gen cx =
         let (Variant variant) = cx.tcx#non_enum_variant ty in
         let (Field { name; _ }) = variant.fields#get index in
         out ^ sprintf "&%s->%s;\n" (get_value ptr) name
-    | BitCast (value, ty) ->
+    | BitCast (value, ty)
+    | IntToPtr (value, ty)
+    | PtrToInt (value, ty)
+    | Trunc (value, ty)
+    | Zext (value, ty) ->
         out ^ sprintf "(%s)%s;\n" (backend_ty cx ty) (get_value value)
     | _ ->
         print_endline !out;

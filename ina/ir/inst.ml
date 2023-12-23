@@ -40,13 +40,13 @@ and inst_kind =
   | Intrinsic of string * value list
   | Trap of value
   | BitCast of value * ty ref
-  (* Zext of ty * value *)
+  | Zext of value * ty ref
+  | Trunc of value * ty ref
   (* Sext of ty * value *)
-  (* Trunc of ty * value *)
   (* Fpext of ty * value *)
   (* Fptrunc of ty * value *)
-  | PtrToInt of value * ty
-  | IntToPtr of value * ty
+  | PtrToInt of value * ty ref
+  | IntToPtr of value * ty ref
   | Nop
 
 and terminator =
@@ -222,16 +222,14 @@ let render_inst tcx inst : string =
         (String.concat ", " (List.map (tcx |> render_value) args))
   | BitCast (value, ty) ->
       sprintf "bitcast %s to %s" (render_value tcx value) (tcx#render_ty ty)
+  | Zext (value, ty) ->
+      sprintf "zext %s to %s" (render_value tcx value) (tcx#render_ty ty)
+  | Trunc (value, ty) ->
+      sprintf "trunc %s to %s" (render_value tcx value) (tcx#render_ty ty)
   | PtrToInt (value, ty) ->
-      sprintf
-        "ptrtoint %s to %s"
-        (render_value tcx value)
-        (tcx#render_ty (ref ty))
+      sprintf "ptrtoint %s to %s" (render_value tcx value) (tcx#render_ty ty)
   | IntToPtr (value, ty) ->
-      sprintf
-        "inttoptr %s to %s"
-        (render_value tcx value)
-        (tcx#render_ty (ref ty))
+      sprintf "inttoptr %s to %s" (render_value tcx value) (tcx#render_ty ty)
   | Trap _ -> "trap"
   | Nop -> "nop"
 ;;

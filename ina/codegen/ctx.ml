@@ -1,6 +1,7 @@
 open Middle.Ctx
 open Utils.Path
 open Structures.Vec
+open Structures.Hashmap
 
 module type CodegenBackend = sig
   type cx
@@ -39,20 +40,13 @@ let codegen (tcx : tcx) mdl =
            | Default -> "-O0"
            | Agressive -> "-O3")
       in
-      let units = Array.init tcx#units#len (fun _ -> String.empty) in
-      let i = ref 0 in
-      tcx#units#iter (fun name _ ->
-          units.(!i) <- name;
-          incr i);
-      let objs =
-        fold_left
-          (fun acc name -> sprintf "%s %s" acc name)
-          String.empty
-          tcx#extern_mods
-      in
+      let units = new hashmap in
+      tcx#extern_mods#iter (fun u -> units#insert' u ());
+      let objs = ref "" in
+      units#iter (fun u _ -> objs := sprintf "%s %s" !objs u);
+      let objs = !objs in
       let command =
         match tcx#sess.options.output_type with
-        | Exe when !i = 0 -> sprintf "%s -o %s %s" command output input
         | Exe ->
             let cmd = sprintf "%s -c %s -o %s.o" command input output in
             assert (Sys.command cmd = 0);

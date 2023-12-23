@@ -142,7 +142,12 @@ class tcx sess =
     method extern_decls = extern_decls
     method set_main id = main <- Some id
     method main = main
-    method is_extern did = extern_def_ids#has did
+
+    method is_extern did =
+      match !(def_id_to_ty#unsafe_get did) with
+      | FnPtr { abi = Default; _ } -> false
+      | _ -> true
+
     method units = units
     method extern_mods = extern_mods
 

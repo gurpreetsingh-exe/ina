@@ -480,6 +480,7 @@ let tychk_fn cx fn =
         (match !ty, !cty with
          | Ref t0, Ptr t1 when t0 = t1 -> cty
          | (FnPtr _ | Ptr _), Ptr _ -> cty
+         | (Ptr _ | Int _), (Int _ | Ptr _) -> cty
          | _ ->
              ty_err_emit tcx (InvalidCast (ty, cty)) expr.expr_span;
              cty)

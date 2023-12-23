@@ -80,6 +80,22 @@ class builder tcx blocks block =
       let inst = BitCast (value, ty) in
       self#add_inst_with_ty ty inst
 
+    method ptrtoint value ty =
+      let inst = PtrToInt (value, ty) in
+      self#add_inst_with_ty ty inst
+
+    method inttoptr value ty =
+      let inst = IntToPtr (value, ty) in
+      self#add_inst_with_ty ty inst
+
+    method zext value ty =
+      let inst = Zext (value, ty) in
+      self#add_inst_with_ty ty inst
+
+    method trunc value ty =
+      let inst = Trunc (value, ty) in
+      self#add_inst_with_ty ty inst
+
     method nop =
       let open Source.Span in
       let inst =

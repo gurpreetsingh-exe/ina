@@ -42,8 +42,30 @@ let rec lower_block (lcx : lcx) block =
   and lower_field expr ident =
     let ptr, ty = lower_autoderef expr in
     lcx#bx#gep ty ptr ident expr.expr_span
-  and lower_lvalue expr =
-    match expr.expr_kind with
+  and lower_method e expr name args =
+    let first, ty = lower_autoderef expr in
+    let first, ty =
+      match !(tcx#lookup_method ty name) with
+      | FnPtr { args; _ } when args#empty -> assert false
+      | FnPtr { args; _ } ->
+          (match !(args#get 0) with
+           | Ptr ty | Ref ty -> first, ty
+           | _ -> lcx#bx#move first expr.expr_span, ty)
+      | _ -> assert false
+    in
+    let fn = Ir.Inst.Global (tcx#lookup_method_def_id ty name) in
+    let ty = tcx#lookup_method ty name in
+    let args' = new vec in
+    args'#push first;
+    args'#append @@ map args (fun arg -> lower arg);
+    lcx#bx#call ty fn args' e.expr_span
+  and lower_lvalue e =
+    let ty = expr_ty e in
+    match e.expr_kind with
+    | Lit lit ->
+        let ptr = lcx#bx#alloca ty e.expr_span in
+        lcx#bx#store (lower_lit lit ty) ptr e.expr_span;
+        ptr
     | Path path ->
         let res = tcx#res_map#unsafe_get path.path_id in
         (match res with
@@ -52,7 +74,10 @@ let rec lower_block (lcx : lcx) block =
          | _ -> assert false)
     | Deref expr -> lower expr
     | Field (expr, ident) -> lower_field expr ident
-    | _ -> assert false
+    | MethodCall (expr, name, args) -> lower_method e expr name args
+    | _ ->
+        print_endline @@ tcx#sess.parse_sess.sm#span_to_string e.expr_span.lo;
+        assert false
   and lower e =
     let ty = expr_ty e in
     match e.expr_kind with
@@ -154,24 +179,16 @@ let rec lower_block (lcx : lcx) block =
          | Ref t0, Ptr t1 when t0 = t1 ->
              lcx#bx#bitcast value cty e.expr_span
          | (FnPtr _ | Ptr _), Ptr _ -> lcx#bx#bitcast value cty e.expr_span
-         | _ -> assert false)
-    | MethodCall (expr, name, args) ->
-        let first, ty = lower_autoderef expr in
-        let first, ty =
-          match !(tcx#lookup_method ty name) with
-          | FnPtr { args; _ } when args#empty -> assert false
-          | FnPtr { args; _ } ->
-              (match !(args#get 0) with
-               | Ptr ty | Ref ty -> first, ty
-               | _ -> lcx#bx#move first expr.expr_span, ty)
-          | _ -> assert false
-        in
-        let fn = Ir.Inst.Global (tcx#lookup_method_def_id ty name) in
-        let ty = tcx#lookup_method ty name in
-        let args' = new vec in
-        args'#push first;
-        args'#append @@ map args (fun arg -> lower arg);
-        lcx#bx#call ty fn args' e.expr_span
+         | Ptr _, Int _ -> lcx#bx#ptrtoint value cty e.expr_span
+         | Int _, Ptr _ -> lcx#bx#inttoptr value cty e.expr_span
+         | Int t0, Int t1 when tcx#sizeof_int_ty t0 < tcx#sizeof_int_ty t1 ->
+             lcx#bx#zext value cty e.expr_span
+         | Int _, Int _ -> lcx#bx#trunc value cty e.expr_span
+         | _ ->
+             print_endline
+             @@ tcx#sess.parse_sess.sm#span_to_string e.expr_span.lo;
+             assert false)
+    | MethodCall (expr, name, args) -> lower_method e expr name args
   in
   lower_block' ()
 ;;
