@@ -11,7 +11,6 @@ let prelude =
     "#include <alloca.h>\n\
      #include <sys/types.h>\n\
      #include <stdint.h>\n\
-     #include <stdlib.h>\n\
      #include <stdbool.h>\n\n"
 ;;
 
@@ -68,13 +67,17 @@ let rec backend_ty cx ty =
       (match cx.types#get ty with
        | Some ty -> ty
        | None ->
+           let name = "__ina_string" in
            prelude
-           ^ "typedef struct str {\n\
-             \  void* ptr;\n\
-             \  size_t length;\n\
-              } str;\n\n";
-           assert (cx.types#insert ty "str" = None);
-           "str")
+           ^ sprintf
+               "typedef struct %s {\n\
+               \  void* ptr;\n\
+               \  size_t length;\n\
+                } %s;\n\n"
+               name
+               name;
+           assert (cx.types#insert ty name = None);
+           name)
   | Adt def_id as ty' ->
       (match cx.types#get ty' with
        | Some ty -> ty
@@ -113,7 +116,7 @@ let gen_types cx =
           in
           prelude
           ^ sprintf "typedef struct %s {\n%s\n} %s;\n\n" name fields name
-      | FnPtr _ -> ()
+      | FnPtr _ | Str -> ()
       | _ -> assert false)
 ;;
 
@@ -129,7 +132,7 @@ let gen cx =
     | Bool v -> string_of_bool v
     | Str v ->
         sprintf
-          "(str) { .ptr = \"%s\", .length = %d }"
+          "(__ina_string) { .ptr = \"%s\", .length = %d }"
           (String.escaped v)
           (String.length v)
     | Struct v ->
@@ -193,6 +196,19 @@ let gen cx =
     bb.insts#iter gen_inst;
     out ^ "  ";
     gen_terminator bb.terminator
+  and gen_intrinsic value args =
+    match get_value value with
+    | "len" ->
+        let first = args#get 0 in
+        let ty = get_ty cx.tcx first in
+        out
+        ^
+        (match !ty with
+         | Ptr _ | Ref _ -> sprintf "((size_t*)%s)[1];\n" (get_value first)
+         | _ -> sprintf "((size_t*)&%s)[1];\n" (get_value first))
+    | name ->
+        print_endline name;
+        assert false
   and gen_inst inst =
     out
     ^
@@ -223,17 +239,22 @@ let gen cx =
     | Store (src, dst) ->
         out ^ sprintf "*%s = %s;\n" (get_value dst) (get_value src)
     | Copy ptr | Move ptr -> out ^ sprintf "*%s;\n" (get_value ptr)
-    | Call (_, value, args) ->
-        out
-        ^ sprintf "%s(%s);\n" (get_value value) (args#join ", " get_value)
+    | Call (ty, value, args) ->
+        (match !ty with
+         | FnPtr { abi = Intrinsic; _ } -> gen_intrinsic value args
+         | FnPtr _ ->
+             out
+             ^ sprintf
+                 "%s(%s);\n"
+                 (get_value value)
+                 (args#join ", " get_value)
+         | _ -> assert false)
     | Gep (ty, ptr, index) ->
         let (Variant variant) = cx.tcx#non_enum_variant ty in
         let (Field { name; _ }) = variant.fields#get index in
         out ^ sprintf "&%s->%s;\n" (get_value ptr) name
     | BitCast (value, ty) ->
-        if inst.ty = ty
-        then out ^ sprintf "%s;\n" (get_value value)
-        else out ^ sprintf "(%s)%s;\n" (backend_ty cx ty) (get_value value)
+        out ^ sprintf "(%s)%s;\n" (backend_ty cx ty) (get_value value)
     | _ ->
         print_endline !out;
         newline ();
@@ -253,9 +274,9 @@ let gen cx =
   and gen_function func =
     let open Ir.Func in
     let name = mangle cx func.def_id in
-    let args, ret =
+    let args, ret, is_variadic =
       match !(func.ty) with
-      | FnPtr { args; ret; _ } -> args, ret
+      | FnPtr { args; ret; is_variadic; _ } -> args, ret, is_variadic
       | _ -> assert false
     in
     let gen_arg ty arg =
@@ -264,11 +285,12 @@ let gen cx =
     let args = map2 args func.args gen_arg in
     let header =
       sprintf
-        "%s%s %s(%s)"
+        "%s%s %s(%s%s)"
         (if cx.tcx#is_extern func.def_id then "extern " else "")
         (backend_ty cx ret)
         name
         (args#join ", " (fun s -> s))
+        (if is_variadic then ", ..." else "")
     in
     out ^ header;
     if cx.tcx#is_extern func.def_id
@@ -308,9 +330,11 @@ let gen cx =
               (fun acc c -> sprintf "%s %i," acc (int_of_char c))
               ""
        in
+       let i = cx.tcx#sess.options.input in
        prelude
        ^ sprintf
-           "const uint8_t __ina_metadata[] %s = { %s };\n"
+           "const uint8_t __ina_metadata_%d[] %s = { %s };\n"
+           (Hashtbl.hash i)
            metadata
            data
    | _ -> ());

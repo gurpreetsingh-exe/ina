@@ -172,7 +172,9 @@ class visitor resolver modd parent dir_ownership =
         if fn.is_extern then resolver#tcx#decl_extern name did else did
       in
       resolver#set_path did;
-      let res = Res (Def (did, Fn)) in
+      let res =
+        Res (Def (did, if fn.abi = "intrinsic" then Intrinsic else Fn))
+      in
       resolver#define mdl name Value res;
       self#visit_fn_sig fn.fn_sig;
       (match fn.body with
@@ -246,6 +248,7 @@ class visitor resolver modd parent dir_ownership =
                  then lib
                  else join ["library"; sprintf "lib%s.o" name]
                in
+               resolver#tcx#append_extern_mod lib;
                let obj = Object.read_obj lib in
                let metadata =
                  Option.get @@ Object.read_section_by_name obj ".ina\000"

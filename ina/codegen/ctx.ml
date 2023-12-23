@@ -1,5 +1,6 @@
 open Middle.Ctx
 open Utils.Path
+open Structures.Vec
 
 module type CodegenBackend = sig
   type cx
@@ -32,7 +33,7 @@ let codegen (tcx : tcx) mdl =
       let open Printf in
       let command =
         sprintf
-          "%s -ggdb -std=c17 %s"
+          "%s -ggdb -std=c17 -w %s"
           compiler
           (match tcx#sess.options.opt_level with
            | Default -> "-O0"
@@ -44,10 +45,10 @@ let codegen (tcx : tcx) mdl =
           units.(!i) <- name;
           incr i);
       let objs =
-        Array.fold_left
-          (fun acc name -> sprintf "%s lib%s.o" acc name)
+        fold_left
+          (fun acc name -> sprintf "%s %s" acc name)
           String.empty
-          units
+          tcx#extern_mods
       in
       let command =
         match tcx#sess.options.output_type with

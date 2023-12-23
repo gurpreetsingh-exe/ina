@@ -102,6 +102,7 @@ class tcx sess =
     val extern_def_ids : (def_id, unit) hashmap = new hashmap
     val adt_def : (def_id, adt) hashmap = new hashmap
     val assoc_fn : (def_id, (string, def_id) hashmap) hashmap = new hashmap
+    val extern_mods : string vec = new vec
 
     val prim_ty_assoc_fn : (ty ref, (string, def_id) hashmap) hashmap =
       new hashmap
@@ -143,6 +144,7 @@ class tcx sess =
     method main = main
     method is_extern did = extern_def_ids#has did
     method units = units
+    method extern_mods = extern_mods
 
     method decl_extern name did =
       extern_def_ids#insert' did ();
@@ -152,8 +154,11 @@ class tcx sess =
           assert (extern_decls#insert name did = None);
           did
 
+    method append_extern_mod name = extern_mods#push name
+
     method encode_metadata =
       let enc = sess.enc in
+      encode_vec enc extern_mods (fun e s -> e#emit_str s);
       encode_hashmap enc def_id_to_ty Def_id.encode Ty.encode;
       encode_hashmap enc adt_def Def_id.encode (fun e adt ->
           encode_vec e adt.variants Ty.encode_variant);
@@ -177,6 +182,7 @@ class tcx sess =
               encode_vec e path (fun e s -> e#emit_str s)))
 
     method decode_metadata (dec : decoder) =
+      decode_vec dec extern_mods (fun dec -> dec#read_str);
       decode_hashmap dec def_id_to_ty Def_id.decode (fun dec ->
           Ty.decode self dec);
       decode_hashmap dec adt_def Def_id.decode (fun dec ->

@@ -42,6 +42,6 @@ let decode_hashmap dec map kf vf =
   for _ = 0 to size - 1 do
     let k = kf dec in
     let v = vf dec in
-    assert (map#insert k v = None)
+    map#insert' k v
   done
 ;;

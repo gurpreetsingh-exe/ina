@@ -13,9 +13,17 @@ let rec lower (lcx : Context.lcx) mdl =
       match !ty with FnPtr { args; _ } -> args | _ -> assert false
     in
     let def_id = tcx#node_id_to_def_id#unsafe_get fn.func_id in
+    let i = ref 0 in
     let args =
-      mapi fn.fn_sig.args (fun i { arg; _ } ->
-          Inst.Param (arg_tys#get i, arg, i))
+      fold_left
+        (fun args { arg; ty; _ } ->
+          (match ty.kind with
+           | CVarArgs -> ()
+           | _ -> args#push (Inst.Param (arg_tys#get !i, arg, !i)));
+          incr i;
+          args)
+        (new vec)
+        fn.fn_sig.args
     in
     let ifn =
       Func.

@@ -48,7 +48,7 @@ let rec lower_block (lcx : lcx) block =
         let res = tcx#res_map#unsafe_get path.path_id in
         (match res with
          | Local id -> lcx#locals#unsafe_get id
-         | Def (id, _) -> Global id
+         | Def (id, (Fn | Intrinsic)) -> Global id
          | _ -> assert false)
     | Deref expr -> lower expr
     | Field (expr, ident) -> lower_field expr ident
@@ -95,7 +95,7 @@ let rec lower_block (lcx : lcx) block =
          | Local id ->
              let ptr = lcx#locals#unsafe_get id in
              lcx#bx#move ptr path.span
-         | Def (id, _) -> Global id
+         | Def (id, (Fn | Intrinsic)) -> Global id
          | _ -> assert false)
     | Call (expr, args) ->
         let ty = expr_ty expr in
@@ -153,7 +153,7 @@ let rec lower_block (lcx : lcx) block =
          | _ when ty = cty -> value
          | Ref t0, Ptr t1 when t0 = t1 ->
              lcx#bx#bitcast value cty e.expr_span
-         | FnPtr _, Ptr _ -> lcx#bx#bitcast value cty e.expr_span
+         | (FnPtr _ | Ptr _), Ptr _ -> lcx#bx#bitcast value cty e.expr_span
          | _ -> assert false)
     | MethodCall (expr, name, args) ->
         let first, ty = lower_autoderef expr in
