@@ -146,7 +146,8 @@ class tcx sess =
     method is_extern did =
       match !(def_id_to_ty#unsafe_get did) with
       | FnPtr { abi = Default; _ } -> false
-      | _ -> true
+      | FnPtr _ -> true
+      | _ -> false
 
     method units = units
     method extern_mods = extern_mods

@@ -4,6 +4,6 @@ unit core;
 
 fn main() -> u8 {
     let str = "a";
-    *core::intrinsics::as_ptr(str)
+    *(str.as_ptr())
 }
 
