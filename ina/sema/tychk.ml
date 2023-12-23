@@ -354,22 +354,22 @@ let tychk_fn cx fn =
     | Call (expr, args) ->
         let ty = check_expr expr NoExpectation in
         (match !ty with
-         | FnPtr { args = arg_tys; ret; _ } ->
-             if args#len <> arg_tys#len
+         | FnPtr { args = arg_tys; ret; is_variadic; _ } ->
+             if (not is_variadic) && args#len <> arg_tys#len
              then
                tcx#emit @@ mismatch_args arg_tys#len args#len expr.expr_span;
              args#iteri (fun i arg ->
-                 let expected = arg_tys#get i in
-                 let ty =
-                   check_expr
-                     arg
-                     (if i < arg_tys#len
-                      then ExpectTy expected
-                      else NoExpectation)
+                 let expected =
+                   if i < arg_tys#len
+                   then ExpectTy (arg_tys#get i)
+                   else NoExpectation
                  in
-                 match equate expected ty with
-                 | Ok _ -> ()
-                 | Error e -> ty_err_emit tcx e arg.expr_span);
+                 let ty = check_expr arg expected in
+                 if i < arg_tys#len
+                 then
+                   match equate (arg_tys#get i) ty with
+                   | Ok _ -> ()
+                   | Error e -> ty_err_emit tcx e arg.expr_span);
              ret
          | Err -> ty
          | _ ->
