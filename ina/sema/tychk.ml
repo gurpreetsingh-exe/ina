@@ -318,7 +318,7 @@ let tychk_fn cx fn =
               | None ->
                   let ty = check_expr binding_expr NoExpectation in
                   define binding_id ty))
-    | Assert _ -> ()
+    | Assert (cond, _) -> ignore (check_expr cond (ExpectTy tcx#types.bool))
   and check_expr expr expected =
     let ty = check_expr_kind expr expected in
     let ty = resolve_vars cx.infcx ty in

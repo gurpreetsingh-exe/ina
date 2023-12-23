@@ -96,6 +96,8 @@ class builder tcx blocks block =
       let inst = Trunc (value, ty) in
       self#add_inst_with_ty ty inst
 
+    method trap value = self#add_inst (Trap value)
+
     method nop =
       let open Source.Span in
       let inst =

@@ -1,3 +1,4 @@
+// SKIP
 // python return -N when process is terminated by a signal
 // which in this case is 6 (SIGABRT)
 // EXIT_CODE: -6

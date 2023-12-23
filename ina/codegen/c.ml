@@ -7,11 +7,7 @@ open Printf
 open Ir.Inst
 
 let prelude =
-  ref
-    "#include <alloca.h>\n\
-     #include <sys/types.h>\n\
-     #include <stdint.h>\n\
-     #include <stdbool.h>\n\n"
+  ref "#include <sys/types.h>\n#include <stdint.h>\n#include <stdbool.h>\n\n"
 ;;
 
 let metadata = "__attribute__((section(\".ina\")))"
@@ -76,6 +72,7 @@ let rec backend_ty cx ty =
                 } %s;\n\n"
                name
                name;
+           prelude ^ sprintf "%s __panic_msg = {0};\n" name;
            assert (cx.types#insert ty name = None);
            name)
   | Adt def_id as ty' ->
@@ -221,7 +218,8 @@ let gen cx =
     then sprintf "  %s %s = " (backend_ty cx inst.ty) (inst_name inst)
     else "  ";
     match inst.kind with
-    | Alloca ty -> out ^ sprintf "alloca(sizeof(%s));\n" (backend_ty cx ty)
+    | Alloca ty ->
+        out ^ sprintf "__builtin_alloca(sizeof(%s));\n" (backend_ty cx ty)
     | Binary (kind, left, right) ->
         let op =
           match kind with
@@ -264,6 +262,11 @@ let gen cx =
     | Trunc (value, ty)
     | Zext (value, ty) ->
         out ^ sprintf "(%s)%s;\n" (backend_ty cx ty) (get_value value)
+    | Trap value ->
+        let _ = backend_ty cx (get_ty cx.tcx value) in
+        out ^ sprintf "__panic_msg = %s;\n" (get_value value);
+        out ^ "  __builtin_printf(__panic_msg.ptr);\n";
+        out ^ "  __builtin_abort();\n"
     | _ ->
         print_endline !out;
         newline ();

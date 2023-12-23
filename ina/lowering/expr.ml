@@ -24,7 +24,32 @@ let rec lower_block (lcx : lcx) block =
           let src = lower right in
           lcx#bx#store src dst left.expr_span
       | Stmt expr | Expr expr -> ignore (lower expr)
-      | _ -> ()
+      | Assert (expr, msg) ->
+          let open Ir in
+          let cond = lower expr in
+          let true_bb = Basicblock.create () in
+          let false_bb = Basicblock.create () in
+          let join_bb = Basicblock.create () in
+          lcx#bx#br cond (Label true_bb) (Label false_bb);
+          lcx#append_block_with_builder true_bb;
+          lcx#bx#jmp (Label join_bb);
+          lcx#append_block_with_builder false_bb;
+          let loc =
+            tcx#sess.parse_sess.sm#span_to_string expr.expr_span.lo
+          in
+          let msg =
+            match msg with
+            | Some msg ->
+                (match msg.expr_kind with
+                 | Lit (LitStr msg) ->
+                     "  panic at 'assertion failed: `" ^ msg ^ "`', "
+                 | _ -> assert false)
+            | None -> "  panic at 'assertion failed', "
+          in
+          let msg = msg ^ loc ^ "\n" in
+          lcx#bx#trap (lcx#bx#const_string tcx#types.str msg) expr.expr_span;
+          lcx#bx#jmp (Label join_bb);
+          lcx#append_block_with_builder join_bb
     in
     block.block_stmts#iter f;
     match block.last_expr with Some expr -> lower expr | None -> lcx#bx#nop
