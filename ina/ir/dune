@@ -1,0 +1,7 @@
+(library
+ ; (enabled_if false)
+ (name ir)
+ (libraries ast front middle)
+ ; (preprocess
+ ;  (pps ppx_deriving.show))
+ (modules inst basicblock func module))

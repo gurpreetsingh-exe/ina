@@ -1,11 +1,11 @@
 error: `if` and `else` have incompatible types
-   --> last_if_else.ray:5:9
+   --> last_if_else.ina:5:9
     |
  LL |         if true { 50 } else { 20. }
     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `i64`, found `f32`
 
 error: `if` and `else` have incompatible types
-   --> last_if_else.ray:4:13
+   --> last_if_else.ina:4:13
     |
  LL |     let a = if true {
  ...| 

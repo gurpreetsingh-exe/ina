@@ -1,0 +1,63 @@
+// COMPILE_PASS
+// REQUIRES: ty
+unit ty;
+// REQUIRES: struct
+unit struct;
+// REQUIRES: impls
+unit impls;
+
+fn var(_: *i8, ...) {}
+
+fn main() {
+    let a: i8 = 0;
+    ty::i::f1(a);
+    let a: i16 = 0;
+    ty::i::f2(a);
+    let a: i32 = 0;
+    ty::i::f3(a);
+    a.typeof();
+    let a: i64 = 0;
+    ty::i::f4(a);
+    a.typeof();
+    let a: isize = 0;
+    let _ = ty::i::f5(ty::i::f5(a));
+
+    let a: u8 = 0;
+    ty::i::f6(a);
+    let a: u16 = 0;
+    ty::i::f7(a);
+    let a: u32 = 0;
+    ty::i::f8(a);
+    let a: u64 = 0;
+    ty::i::f9(a);
+    let a: usize = 0;
+    ty::i::f10(a);
+
+    let a: f32 = 0.0;
+    ty::f::f1(a);
+    let a: f64 = 0.0;
+    let _ = ty::f::f2(ty::f::f2(a));
+
+    ty::f1(true);
+    ty::f2("nice");
+    "str".typeof();
+
+    let a: i8 = 0;
+    let a = &a;
+    ty::p::f1(a);
+    ty::p::f2(a as *i8);
+
+    ty::f3(ty::p::f2);
+    ty::f4(var);
+    let f: fn(*i8) = ty::f5();
+    f(a as *i8);
+
+    let a: struct::Unit = struct::Unit::new();
+    struct::f1(a, 0);
+    struct::Unit::f2(a);
+
+    let a: struct::StrBuf::t = struct::StrBuf::new();
+    let a: usize = struct::StrBuf::len(a);
+
+    let a: i32 = 0;
+}

@@ -1,0 +1,9 @@
+(library
+ (name token)
+ (modules token)
+ (libraries source))
+
+(library
+ (name ast)
+ (modules ast)
+ (libraries token))

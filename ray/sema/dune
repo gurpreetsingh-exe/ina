@@ -1,4 +1,0 @@
-(library
- (name sema)
- (libraries ast front session)
- (modules unification_table tychk infer))

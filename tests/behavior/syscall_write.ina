@@ -1,0 +1,9 @@
+// STDOUT: Hello World
+
+unit std;
+
+fn main() -> i32 {
+    let out = "Hello World\n";
+    std::os::linux::write(1, out.as_ptr(), out.len());
+    0
+}

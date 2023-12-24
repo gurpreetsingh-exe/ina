@@ -1,4 +1,0 @@
-(library
- (name session)
- (modules args sess config)
- (libraries llvm.target metadata source errors))

@@ -1,0 +1,12 @@
+// EXIT_CODE: 50
+
+fn foo(i: i64) { i; }
+
+fn main() -> i64 {
+    let c = 20;
+    let b = &c;
+    let d = 50;
+    *b = d;
+    foo(*b);
+    *b
+}

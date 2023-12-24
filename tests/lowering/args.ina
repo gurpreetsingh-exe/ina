@@ -1,0 +1,5 @@
+// RUN: %ina build %s --print-ir | FileCheck %s
+
+// CHECK:      %[[#REG:]] = alloca [[TY:[a-z0-9]+]]
+// CHECK-NEXT: store [[TY]] %{{[a-zA-Z0-9]+}}, *[[TY]] %[[#REG:]]
+fn main(argc: i32) {}

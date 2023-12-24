@@ -1,0 +1,14 @@
+// RUN: %ina build %s --print-ir | FileCheck %s
+
+// CHECK-LABEL: deref::h
+fn h() -> *i8;
+
+// CHECK-LABEL: deref::f
+fn f() -> i8 {
+    let a = 20;
+    let b = &a;
+    // CHECK: load i32, &i32
+    let _: i32 = *b;
+    // CHECK: load i8, *i8
+    *h()
+}

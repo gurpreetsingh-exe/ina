@@ -1,5 +1,0 @@
-(executable
- (public_name ray)
- (name driver)
- (libraries front codegen sema resolve session lowering)
- (modules driver))

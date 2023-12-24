@@ -1,0 +1,9 @@
+// RUN: %ina build %s --print-ir | FileCheck %s
+
+fn main() -> i32 {
+    // CHECK:      alloca [[TY:[a-z0-9]+]]
+    let a = 20;
+    // CHECK:      load [[TY]]
+    // CHECK-NEXT: ret
+    a
+}
