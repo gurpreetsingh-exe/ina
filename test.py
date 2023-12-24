@@ -159,14 +159,13 @@ def run_test(case: pathlib.Path, options: argparse.Namespace):
     tests.progressbar(prefix="  ")
 
     if case.is_dir():
+        if case.joinpath("lit.cfg.py").exists():
+            return 0
+
         test_dir(case, options)
         return
 
-    if case.suffix in {'.o'}:
-        subprocess.call("rm -f {}".format(case).split(" "))
-        return
-
-    if case.suffix in {'.stderr'}:
+    if case.suffix not in {'.ina'}:
         return
 
     with open(case, 'r') as f:
@@ -187,7 +186,7 @@ def run_test(case: pathlib.Path, options: argparse.Namespace):
             res = list(map(lambda r: r.replace("\n", ""), res))
             for r in res:
                 unit = case.with_name("lib" + r).with_suffix(".o")
-                unit_src = case.with_name(r).with_suffix(".ray")
+                unit_src = case.with_name(r).with_suffix(".ina")
                 if unit_src in tests.units:
                     continue
                 tests.units[unit_src] = unit
@@ -256,16 +255,19 @@ def test_dir(dirname, options):
 
 def collect_tests(case: pathlib.Path):
     if case.is_dir():
+        if case.joinpath("lit.cfg.py").exists():
+            return 0
+
         n = 0
         for test in case.iterdir():
             n += collect_tests(test)
         return n
 
-    if case.suffix in {'.o'}:
+    if case.suffix in {'.o', '.c'}:
         subprocess.call("rm -f {}".format(case).split(" "))
         return 0
 
-    if case.suffix in {'.stderr'}:
+    if case.suffix not in {'.ina'}:
         return 0
 
     with open(case, 'r') as f:
