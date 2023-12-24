@@ -8,7 +8,7 @@ let usage arg0 =
   printf "    check                analyze the file and report errors\n";
   printf "    fmt                  format the file\n";
   printf "\nOptions:\n";
-  printf "        --emit=asm|exe|obj|unit\n";
+  printf "        --emit=asm|exe|obj|extmod\n";
   printf "                         output type to emit\n";
   printf "        --opt=0|3        optimization level\n";
   printf "        --skip-codegen   run every pass except codegen\n";
@@ -25,7 +25,7 @@ let usage arg0 =
 let value_map =
   let tbl = Hashtbl.create 0 in
   let entries =
-    [|"--emit", ["asm"; "exe"; "obj"; "unit"]; "--opt", ["0"; "3"]|]
+    [|"--emit", ["asm"; "exe"; "obj"; "extmod"]; "--opt", ["0"; "3"]|]
   in
   Array.iter (fun (option, value) -> Hashtbl.add tbl option value) entries;
   tbl

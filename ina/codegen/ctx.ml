@@ -40,10 +40,10 @@ let codegen (tcx : tcx) mdl =
            | Default -> "-O0"
            | Agressive -> "-O3")
       in
-      let units = new hashmap in
-      tcx#extern_mods#iter (fun u -> units#insert' u ());
+      let extmods = new hashmap in
+      tcx#extern_mods#iter (fun u -> extmods#insert' u ());
       let objs = ref "" in
-      units#iter (fun u _ -> objs := sprintf "%s %s" !objs u);
+      extmods#iter (fun u _ -> objs := sprintf "%s %s" !objs u);
       let objs = !objs in
       let command =
         match tcx#sess.options.output_type with
@@ -53,7 +53,7 @@ let codegen (tcx : tcx) mdl =
             sprintf "%s -o %s %s.o %s" command output output objs
         | Object -> sprintf "%s -c %s -o %s.o" command input output
         | Asm -> sprintf "%s -S -masm=intel %s" command input
-        | Unit ->
+        | ExtMod ->
             sprintf
               "%s -c %s -o %s.o"
               command

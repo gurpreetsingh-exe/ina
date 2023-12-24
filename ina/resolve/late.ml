@@ -124,7 +124,7 @@ class type_lowering resolver modd =
           (match resolved_mod with
            | Some m -> (new type_lowering resolver m)#lower
            | None -> ())
-      | Unit _ -> ()
+      | ExternMod _ -> ()
 
     method visit_mod =
       resolver#append_segment modd.mod_name;

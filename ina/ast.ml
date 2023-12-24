@@ -111,7 +111,7 @@ and item =
       ; inline: bool
       ; span: Span.t
     }
-  | Unit of string
+  | ExternMod of string
 
 and arg = {
     ty: ty

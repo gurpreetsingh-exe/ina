@@ -173,7 +173,7 @@ let ty_err_emit (tcx : tcx) err span =
 let tychk_fn cx fn =
   let tcx = cx.infcx.tcx in
   let define id ty =
-    tcx#create_def { inner = id; unit_id = 0 } ty;
+    tcx#create_def { inner = id; extmod_id = 0 } ty;
     ignore (cx.locals#insert id ty)
   in
   let resolve_expected = function
@@ -182,7 +182,7 @@ let tychk_fn cx fn =
   in
   let write_ty id ty =
     dbg "write_ty(id = %d, ty = %s)\n" id (render_ty2 ty);
-    tcx#create_def { inner = id; unit_id = 0 } ty
+    tcx#create_def { inner = id; extmod_id = 0 } ty
   in
   let int_unification_error (v : IntVid.e) =
     let expected, found = v in
@@ -519,7 +519,9 @@ let tychk_fn cx fn =
              ty_err_emit tcx (InvalidCall ty) expr.expr_span;
              tcx#types.err)
   in
-  let ty = tcx#def_id_to_ty#unsafe_get { inner = fn.func_id; unit_id = 0 } in
+  let ty =
+    tcx#def_id_to_ty#unsafe_get { inner = fn.func_id; extmod_id = 0 }
+  in
   let ret =
     match !ty with
     | FnPtr { ret; _ } -> ret
@@ -559,7 +561,7 @@ let rec tychk cx (modd : modd) =
     | Foreign funcs -> funcs#iter (fun f -> tychk_fn cx f)
     | Impl { impl_items; _ } ->
         impl_items#iter (function AssocFn f -> tychk_fn cx f)
-    | Type _ | Unit _ -> ()
+    | Type _ | ExternMod _ -> ()
     | Mod m ->
         (match m.resolved_mod with Some modd -> tychk cx modd | None -> ())
   in

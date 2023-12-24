@@ -72,7 +72,6 @@ let rec backend_ty cx ty =
                 } %s;\n\n"
                name
                name;
-           prelude ^ sprintf "%s __panic_msg = {0};\n" name;
            assert (cx.types#insert ty name = None);
            name)
   | Adt def_id as ty' ->
@@ -171,7 +170,7 @@ let gen cx =
         let name = mangle cx id in
         let ty = cx.tcx#def_id_to_ty#unsafe_get id in
         (match cx.gen'd_fns#get id with
-         | None when id.unit_id <> 0 ->
+         | None when id.extmod_id <> 0 ->
              cx.gen'd_fns#insert' id ();
              prelude ^ sprintf "extern %s;\n" (render_fn_header name ty)
          | None -> prelude ^ sprintf "%s;\n" (render_fn_header name ty)
@@ -263,9 +262,7 @@ let gen cx =
     | Zext (value, ty) ->
         out ^ sprintf "(%s)%s;\n" (backend_ty cx ty) (get_value value)
     | Trap value ->
-        let _ = backend_ty cx (get_ty cx.tcx value) in
-        out ^ sprintf "__panic_msg = %s;\n" (get_value value);
-        out ^ "  __builtin_printf(__panic_msg.ptr);\n";
+        out ^ sprintf "  __builtin_printf(\"%s\");\n" (String.escaped value);
         out ^ "  __builtin_abort();\n"
     | _ ->
         print_endline !out;
@@ -340,7 +337,7 @@ let gen cx =
    | _ -> ());
   gen_types cx;
   (match cx.tcx#sess.options.output_type with
-   | Unit ->
+   | ExtMod ->
        let data =
          cx.tcx#sess.enc#render
          |> Bytes.to_seq

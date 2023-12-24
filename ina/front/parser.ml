@@ -611,8 +611,8 @@ class parser pcx file tokenizer =
                  let* _ = parse_path_impl () in
                  Ok ()
              | _ -> Ok ())
-        | Unit ->
-            let segment = { ident = "unit"; span = self#mk_span s } in
+        | Mod ->
+            let segment = { ident = "mod"; span = self#mk_span s } in
             segments#push segment;
             self#bump;
             (match token.kind with
@@ -864,7 +864,6 @@ class parser pcx file tokenizer =
         }
 
     method parse_extern attrs =
-      self#bump;
       let abi =
         if self#check (Lit String)
         then (
@@ -905,16 +904,19 @@ class parser pcx file tokenizer =
           let* ty = self#parse_type in
           Ok (Ast.Type ty)
       | Extern ->
-          let* extern_item = self#parse_extern attrs in
-          Ok extern_item
+          self#bump;
+          (match token.kind with
+           | Mod ->
+               self#bump;
+               let* name = self#parse_ident in
+               let* _ = self#expect Semi in
+               Ok (ExternMod name)
+           | _ ->
+               let* extern_item = self#parse_extern attrs in
+               Ok extern_item)
       | Impl ->
           let* impl = self#parse_impl in
           Ok (Ast.Impl impl)
-      | Unit ->
-          self#bump;
-          let* name = self#parse_ident in
-          let* _ = self#expect Semi in
-          Ok (Ast.Unit name)
       | Mod ->
           let s = token.span.lo in
           self#bump;

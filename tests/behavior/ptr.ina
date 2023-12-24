@@ -1,6 +1,6 @@
 // EXIT_CODE: 97
 
-unit core;
+extern mod core;
 
 fn main() -> u8 {
     let str = "a";

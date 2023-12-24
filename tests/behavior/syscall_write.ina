@@ -1,6 +1,6 @@
 // STDOUT: Hello World
 
-unit std;
+extern mod std;
 
 fn main() -> i32 {
     let out = "Hello World\n";

@@ -7,7 +7,7 @@ let rec lower (lcx : Context.lcx) mdl =
   let tcx = lcx#tcx in
   let lower_fn fn =
     let ty =
-      tcx#def_id_to_ty#unsafe_get { inner = fn.func_id; unit_id = 0 }
+      tcx#def_id_to_ty#unsafe_get { inner = fn.func_id; extmod_id = 0 }
     in
     let arg_tys =
       match !ty with FnPtr { args; _ } -> args | _ -> assert false
@@ -56,7 +56,7 @@ let rec lower (lcx : Context.lcx) mdl =
     | Mod { resolved_mod = Some mdl; _ } -> lower lcx mdl
     | Impl { impl_items; _ } ->
         impl_items#iter (function AssocFn fn -> lower_fn fn)
-    | Type _ | Unit _ -> ()
+    | Type _ | ExternMod _ -> ()
     | Foreign fns -> fns#iter lower_fn
     | _ -> assert false
   in

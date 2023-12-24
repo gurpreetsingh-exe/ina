@@ -33,7 +33,7 @@ and output_type =
   | Exe
   | Asm
   | Object
-  | Unit
+  | ExtMod
 
 and backend =
   | C
@@ -49,7 +49,7 @@ let get_output_type = function
   | "exe" -> Some Exe
   | "asm" -> Some Asm
   | "obj" -> Some Object
-  | "unit" -> Some Unit
+  | "extmod" -> Some ExtMod
   | _ -> None
 ;;
 

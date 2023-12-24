@@ -2,7 +2,7 @@ open Printf
 
 type def_id = {
     inner: int
-  ; unit_id: int
+  ; extmod_id: int
 }
 
 type def_kind =
@@ -15,10 +15,13 @@ type def_kind =
   | Impl
 [@@deriving enum]
 
-let def_id inner unit_id = { inner; unit_id }
+let def_id inner extmod_id = { inner; extmod_id }
 let encode enc did = enc#emit_usize did.inner
-let decode dec = def_id dec#read_usize dec#unit_id
-let print_def_id def_id = sprintf "def_id#%d:%d" def_id.inner def_id.unit_id
+let decode dec = def_id dec#read_usize dec#extmod_id
+
+let print_def_id def_id =
+  sprintf "def_id#%d:%d" def_id.inner def_id.extmod_id
+;;
 
 let print_def_kind = function
   | Mod -> "module"

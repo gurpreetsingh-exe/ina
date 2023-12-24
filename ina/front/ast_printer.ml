@@ -293,8 +293,8 @@ and render_impl impl prefix =
 and render_item item prefix =
   match item with
   | Fn (fn, _) -> render_fn fn prefix
-  | Unit name ->
-      out += green "Unit ";
+  | ExternMod name ->
+      out += green "ExternMod ";
       out += (cyan @@ q name);
       out += "\n"
   | Type typ -> render_type typ prefix

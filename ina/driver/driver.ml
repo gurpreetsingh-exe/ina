@@ -23,11 +23,11 @@ let () =
             new Module_graph.visitor resolver mdl None (Owned None)
           in
           visitor#visit_mod;
-          resolver#units#push visitor#mdl;
+          resolver#extmods#push visitor#mdl;
           if sess.options.print_module_graph
           then (
             let printer = new Printer.printer in
-            resolver#units#iter (fun mdl ->
+            resolver#extmods#iter (fun mdl ->
                 Resolver.Module.print_modul "" printer mdl);
             printer#print;
             exit 0);
@@ -38,7 +38,7 @@ let () =
     in
     sess.timings.resolve <- time;
     (new Late.type_lowering resolver mdl)#lower;
-    if sess.options.output_type = Unit
+    if sess.options.output_type = ExtMod
     then (
       Resolver.Module.encode tcx#sess.enc mdl';
       tcx#encode_metadata);

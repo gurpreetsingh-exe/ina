@@ -107,7 +107,7 @@ class tcx sess =
     val prim_ty_assoc_fn : (ty ref, (string, def_id) hashmap) hashmap =
       new hashmap
 
-    val units : (string, int) hashmap = new hashmap
+    val extmods : (string, int) hashmap = new hashmap
 
     initializer
       let ty =
@@ -149,7 +149,7 @@ class tcx sess =
       | FnPtr _ -> true
       | _ -> false
 
-    method units = units
+    method extmods = extmods
     method extern_mods = extern_mods
 
     method decl_extern name did =
@@ -223,11 +223,11 @@ class tcx sess =
           methods)
 
     method unit name =
-      match units#get name with
+      match extmods#get name with
       | Some id -> id
       | None ->
-          let id = units#len + 1 in
-          units#insert' name id;
+          let id = extmods#len + 1 in
+          extmods#insert' name id;
           id
 
     method intern ty : ty ref =

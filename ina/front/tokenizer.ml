@@ -15,7 +15,6 @@ Hashtbl.add keywords "extern" Extern;
 Hashtbl.add keywords "mod" Mod;
 Hashtbl.add keywords "let" Let;
 Hashtbl.add keywords "import" Import;
-Hashtbl.add keywords "unit" Unit;
 Hashtbl.add keywords "if" If;
 Hashtbl.add keywords "else" Else;
 Hashtbl.add keywords "assert" Assert;

@@ -34,7 +34,7 @@ class Tests:
         self.collected_tests = 0
         self.reported_fails = 0
         self.reported_skips = 0
-        self.units: Dict[pathlib.Path, pathlib.Path] = {}
+        self.extmods: Dict[pathlib.Path, pathlib.Path] = {}
         self.term_cols = os.get_terminal_size().columns - 1
 
     def report(self, kind, name):
@@ -185,13 +185,13 @@ def run_test(case: pathlib.Path, options: argparse.Namespace):
         if res := extract_value(src, "REQUIRES"):
             res = list(map(lambda r: r.replace("\n", ""), res))
             for r in res:
-                unit = case.with_name("lib" + r).with_suffix(".o")
-                unit_src = case.with_name(r).with_suffix(".ina")
-                if unit_src in tests.units:
+                extmod = case.with_name("lib" + r).with_suffix(".o")
+                extmod_src = case.with_name(r).with_suffix(".ina")
+                if extmod_src in tests.extmods:
                     continue
-                tests.units[unit_src] = unit
-                subprocess.call("./bin/ina build {} --emit=unit".format(
-                    unit_src).split(" "))
+                tests.extmods[extmod_src] = extmod
+                subprocess.call("./bin/ina build {} --emit=extmod".format(
+                    extmod_src).split(" "))
 
         command = "./bin/ina build {} --ui-testing".format(case).split(" ")
         proc = subprocess.Popen(
@@ -293,5 +293,5 @@ if __name__ == "__main__":
     run_test(test, args)
     print("\x1b[K", end='', flush=True)
     subprocess.call(
-        "rm -f {}".format(" ".join(map(str, tests.units.values()))).split())
+        "rm -f {}".format(" ".join(map(str, tests.extmods.values()))).split())
     tests.print_results()

@@ -38,7 +38,7 @@ and inst_kind =
   | Gep of ty ref * value * int
   | Call of ty ref * value * value vec
   | Intrinsic of string * value list
-  | Trap of value
+  | Trap of string
   | BitCast of value * ty ref
   | Zext of value * ty ref
   | Trunc of value * ty ref

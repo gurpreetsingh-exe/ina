@@ -236,12 +236,12 @@ class visitor resolver modd parent dir_ownership =
                          f parsed_module mod_path.ownership
                      | Error e -> resolver#tcx#emit e)
                 | Error e -> mod_error_emit resolver#tcx m.span e))
-      | Unit name ->
-          (match resolver#tcx#units#has name with
+      | ExternMod name ->
+          (match resolver#tcx#extmods#has name with
            | true -> ()
            | _ ->
                let dir = Filename.dirname modd.mod_path in
-               let unit_id = resolver#tcx#unit name in
+               let extmod_id = resolver#tcx#unit name in
                let lib = join [dir; sprintf "lib%s.o" name] in
                let lib =
                  if Sys.file_exists lib
@@ -253,12 +253,14 @@ class visitor resolver modd parent dir_ownership =
                let metadata =
                  Option.get @@ Object.read_section_by_name obj ".ina\000"
                in
-               let dec = new decoder metadata unit_id in
+               let dec = new decoder metadata extmod_id in
                let dummy =
                  {
                    mkind =
                      Def
-                       (Mod, def_id (-1) unit_id, sprintf "__%s_wrapper" name)
+                       ( Mod
+                       , def_id (-1) extmod_id
+                       , sprintf "__%s_wrapper" name )
                  ; parent = None
                  ; resolutions = new hashmap
                  }
@@ -269,7 +271,7 @@ class visitor resolver modd parent dir_ownership =
                resolver#tcx#decode_metadata dec;
                resolver#set_qpath path;
                resolver#define dummy name Type (Module mdl');
-               resolver#units#push dummy)
+               resolver#extmods#push dummy)
 
     method visit_mod =
       resolver#append_segment modd.mod_name;

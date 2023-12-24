@@ -5,7 +5,7 @@ open Structures.Vec
 let rec lower_block (lcx : lcx) block =
   let tcx = lcx#tcx in
   let expr_ty expr =
-    tcx#def_id_to_ty#unsafe_get { inner = expr.expr_id; unit_id = 0 }
+    tcx#def_id_to_ty#unsafe_get { inner = expr.expr_id; extmod_id = 0 }
   in
   let rec lower_block' () =
     let f stmt =
@@ -13,7 +13,7 @@ let rec lower_block (lcx : lcx) block =
       | Binding binding ->
           let { binding_expr; binding_id; binding_span; _ } = binding in
           let ty =
-            tcx#def_id_to_ty#unsafe_get { inner = binding_id; unit_id = 0 }
+            tcx#def_id_to_ty#unsafe_get { inner = binding_id; extmod_id = 0 }
           in
           let ptr = lcx#bx#alloca ty binding_span in
           assert (lcx#locals#insert binding_id ptr = None);
@@ -47,7 +47,7 @@ let rec lower_block (lcx : lcx) block =
             | None -> "  panic at 'assertion failed', "
           in
           let msg = msg ^ loc ^ "\n" in
-          lcx#bx#trap (lcx#bx#const_string tcx#types.str msg) expr.expr_span;
+          lcx#bx#trap msg expr.expr_span;
           lcx#bx#jmp (Label join_bb);
           lcx#append_block_with_builder join_bb
     in

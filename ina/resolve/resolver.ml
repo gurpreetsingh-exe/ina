@@ -200,7 +200,7 @@ class resolver tcx modd =
     val tcx : tcx = tcx
     val modd : modd = modd
     val modules : (def_id, Module.t) hashmap = new hashmap
-    val units : Module.t vec = new vec
+    val extmods : Module.t vec = new vec
     val mutable current_qpath : string vec = new vec
     val mutable current_impl : res option = None
     val impl_map : (res, (def_id, unit) hashmap) hashmap = new hashmap
@@ -211,13 +211,13 @@ class resolver tcx modd =
     val disambiguator = new disambiguator
     val block_map : (binding_key, name_resolution) hashmap = new hashmap
 
-    val mutable unit_root : Module.t =
+    val mutable mod_root : Module.t =
       { mkind = Block; parent = None; resolutions = new hashmap }
 
-    method unit_root = unit_root
-    method init mdl = unit_root <- mdl
+    method mod_root = mod_root
+    method init mdl = mod_root <- mdl
     method modules = modules
-    method units = units
+    method extmods = extmods
     method tcx = tcx
     method sess = tcx#sess
     method current_qpath = current_qpath
@@ -325,7 +325,7 @@ class resolver tcx modd =
         (segs#join "::" (fun seg -> seg.ident))
         (match ns with Type -> "type" | Value -> "value");
       let segs_len = segs#len in
-      let unit_in_path_report = ref false in
+      let mod_in_path_report = ref false in
       let rec f i mdl : res =
         let ns = if i = segs_len - 1 then ns else Type in
         let seg = segs#get i in
@@ -334,7 +334,7 @@ class resolver tcx modd =
           i
           (print_mkind mdl.mkind)
           seg.ident;
-        if i <> 0 && seg.ident = "unit" && not !unit_in_path_report
+        if i <> 0 && seg.ident = "mod" && not !mod_in_path_report
         then Err
         else
           let key = { ident = seg.ident; ns; disambiguator = 0 } in
@@ -368,12 +368,12 @@ class resolver tcx modd =
         (match ns with Type -> "type" | Value -> "value");
       let res : res =
         match ns, segs_len, (segs#get 0).ident with
-        | Value, 1, "unit" -> Err
+        | Value, 1, "mod" -> Err
         | Value, 1, _ ->
             self#resolve_ident_in_lexical_scope mdl (segs#get 0).ident Value
-        | _, _, "unit" ->
+        | _, _, "mod" ->
             segs#pop_front;
-            self#resolve_path_in_modul unit_root segs ns
+            self#resolve_path_in_modul mod_root segs ns
         | _ ->
             let mdl = self#get_root_mod mdl in
             self#resolve_path_in_modul mdl segs ns
@@ -387,13 +387,13 @@ class resolver tcx modd =
       !res
 
     method resolve_main =
-      let mdl = self#get_root_mod unit_root in
+      let mdl = self#get_root_mod mod_root in
       let segs = new vec in
       segs#push { ident = "main"; span = Source.Span.make 0 0 };
       self#resolve_path_in_modul mdl segs Value
 
     method resolve =
-      self#resolve_paths unit_root modd;
+      self#resolve_paths mod_root modd;
       if tcx#sess.options.output_type == Exe
       then
         let main = self#resolve_main in
@@ -440,7 +440,7 @@ class resolver tcx modd =
                     | Middle.Ctx.Err -> self#resolve_path mdl path ns
                     | _ -> resolved)
                   Err
-                  units
+                  extmods
               in
               (match resolved with Err -> self#not_found path | _ -> ());
               resolved
@@ -545,7 +545,7 @@ class resolver tcx modd =
                      visit_assoc_fn res fn);
                  current_impl <- None
              | None -> assert false)
-        | Unit _ -> ()
+        | ExternMod _ -> ()
       in
       modd.items#iter visit_item
   end

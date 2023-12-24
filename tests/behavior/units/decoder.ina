@@ -1,10 +1,10 @@
 // COMPILE_PASS
 // REQUIRES: ty
-unit ty;
+extern mod ty;
 // REQUIRES: struct
-unit struct;
+extern mod struct;
 // REQUIRES: impls
-unit impls;
+extern mod impls;
 
 fn var(_: *i8, ...) {}
 
