@@ -408,13 +408,11 @@ class parser pcx file tokenizer =
 
     method parse_fn_sig =
       let s = token.span.lo in
-      let* ident = self#parse_ident in
       let* args, is_variadic = self#parse_fn_args in
       let* ret_ty = self#parse_ret_ty in
       Ok
         {
-          name = ident
-        ; args
+          args
         ; ret_ty
         ; fn_span = self#mk_span s
         ; is_variadic
@@ -779,9 +777,43 @@ class parser pcx file tokenizer =
           })
       else Error (self#err token.span "expected `{`")
 
+    method parse_generics =
+      let s = token.span.lo in
+      let parse_generic_param () =
+        let s = token.span.lo in
+        let* name = self#parse_ident in
+        Ok
+          {
+            kind = Ident name
+          ; generic_param_span = self#mk_span s
+          ; generic_param_id = self#id
+          }
+      in
+      match token.kind with
+      | LBracket ->
+          let* params =
+            parse_spanned_with_sep
+              self
+              LBracket
+              RBracket
+              Comma
+              parse_generic_param
+          in
+          Ok
+            { params; generics_span = self#mk_span s; generics_id = self#id }
+      | _ ->
+          Ok
+            {
+              params = new vec
+            ; generics_span = self#mk_span s
+            ; generics_id = self#id
+            }
+
     method parse_fn abi is_extern =
       let s = token.span.lo in
       self#bump;
+      let* name = self#parse_ident in
+      let* fn_generics = self#parse_generics in
       let* sign = self#parse_fn_sig in
       if token.kind == Semi
       then (
@@ -790,9 +822,10 @@ class parser pcx file tokenizer =
           {
             is_extern
           ; abi
+          ; name
           ; fn_sig = sign
+          ; fn_generics
           ; body = None
-          ; func_path = None
           ; func_span = self#mk_span s
           ; func_id = self#id
           })
@@ -802,9 +835,10 @@ class parser pcx file tokenizer =
           {
             is_extern
           ; abi
+          ; name
           ; fn_sig = sign
+          ; fn_generics
           ; body = Some body
-          ; func_path = None
           ; func_span = self#mk_span s
           ; func_id = self#id
           }

@@ -66,7 +66,7 @@ class type_lowering resolver modd =
       | None -> ()
 
     method visit_fn fn assoc =
-      resolver#append_segment fn.fn_sig.name;
+      resolver#append_segment fn.name;
       let abi : abi =
         match fn.abi with
         | "intrinsic" -> Intrinsic

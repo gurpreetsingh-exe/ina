@@ -13,14 +13,11 @@ let red s = "\x1b[31m" ^ s ^ "\x1b[0m"
 let pink s = "\x1b[35m" ^ s ^ "\x1b[0m"
 let blue s = "\x1b[1;34m" ^ s ^ "\x1b[0m"
 let cyan s = "\x1b[1;36m" ^ s ^ "\x1b[0m"
+let render_span span = pink @@ sprintf "<%d:%d>" span.lo span.hi
+let render_id i = red @@ sprintf "[0x%x]" i
 
 let id prefix i span =
-  out
-  += sprintf
-       "%s %s %s"
-       (green prefix)
-       (red @@ sprintf "[0x%x]" i)
-       (pink @@ sprintf "<%d:%d>" span.lo span.hi)
+  out += sprintf "%s %s %s" (green prefix) (render_id i) (render_span span)
 ;;
 
 let q s = "'" ^ s ^ "'"
@@ -81,9 +78,6 @@ let rec render_ty (ty : ty) =
   | Err -> "error"
 
 and render_fn_sig fnsig =
-  out += cyan fnsig.name;
-  out += "\x1b[32m";
-  out += " 'fn(";
   let nargs = fnsig.args#len in
   let f i { ty; arg = name; _ } =
     let last = i = nargs - 1 in
@@ -259,11 +253,40 @@ and render_block block prefix =
   | Some expr -> render_child ?prefix:(Some prefix) true expr render_expr
   | None -> ()
 
+and render_generics generics prefix =
+  id "Generics" 0 generics.generics_span;
+  out += "\n";
+  let rendre_generic_param param _ =
+    let { kind = Ident name; generic_param_span; generic_param_id } =
+      param
+    in
+    out
+    += sprintf
+         "%s %s %s\n"
+         (cyan @@ q name)
+         (render_id generic_param_id)
+         (render_span generic_param_span)
+  in
+  render_children generics.params rendre_generic_param ?prefix:(Some prefix)
+
 and render_fn fn prefix =
   id "Function" fn.func_id fn.func_span;
   out += " ";
+  out += cyan fn.name;
+  let generics = fn.fn_generics in
+  let rg =
+    if generics.params#empty
+    then ""
+    else
+      sprintf
+        "[%s]"
+        (generics.params#join ", " (fun { kind = Ident name; _ } -> name))
+  in
+  out += "\x1b[32m";
+  out += sprintf " 'fn%s(" rg;
   render_fn_sig fn.fn_sig;
   out += "\n";
+  render_child ?prefix:(Some prefix) false generics render_generics;
   match fn.body with
   | Some body -> render_child ?prefix:(Some prefix) true body render_block
   | None -> ()

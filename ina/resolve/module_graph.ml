@@ -164,9 +164,9 @@ class visitor resolver modd parent dir_ownership =
           | None -> ())
 
     method visit_fn fn =
-      resolver#append_segment fn.fn_sig.name;
+      let name = fn.name in
+      resolver#append_segment name;
       resolver#tcx#insert_span fn.func_id fn.fn_sig.fn_span;
-      let name = fn.fn_sig.name in
       let did = def_id fn.func_id 0 in
       let did =
         if fn.is_extern then resolver#tcx#decl_extern name did else did

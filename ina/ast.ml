@@ -83,6 +83,20 @@ type modd = {
   ; mod_id: node_id
 }
 
+and generic_param_kind = Ident of ident
+
+and generic_param = {
+    kind: generic_param_kind
+  ; generic_param_span: Span.t
+  ; generic_param_id: node_id
+}
+
+and generics = {
+    params: generic_param vec
+  ; generics_span: Span.t
+  ; generics_id: node_id
+}
+
 and strukt = {
     ident: string
   ; mutable members: (ty * string) vec
@@ -120,8 +134,7 @@ and arg = {
 }
 
 and fn_sig = {
-    name: ident
-  ; mutable args: arg vec
+    mutable args: arg vec
   ; ret_ty: ty option
   ; fn_span: Span.t
   ; is_variadic: bool
@@ -130,10 +143,11 @@ and fn_sig = {
 
 and func = {
     is_extern: bool
+  ; name: ident
   ; abi: string
   ; fn_sig: fn_sig
+  ; fn_generics: generics
   ; body: block option
-  ; mutable func_path: path option
   ; func_span: Span.t
   ; func_id: node_id
 }

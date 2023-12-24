@@ -508,7 +508,7 @@ class resolver tcx modd =
       in
       let visit_assoc_fn ty fn =
         let did = def_id fn.func_id 0 in
-        tcx#define_assoc_fn ty fn.fn_sig.name did;
+        tcx#define_assoc_fn ty fn.name did;
         visit_fn fn
       in
       let visit_struct strukt =
