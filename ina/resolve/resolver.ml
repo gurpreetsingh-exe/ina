@@ -194,6 +194,27 @@ class disambiguator =
     method pop = stack <- (match stack with _ :: rest -> rest | [] -> [0])
   end
 
+class scope =
+  let open Module in
+  object
+    val bindings : (binding_key, res) hashmap = new hashmap
+    method bindings = bindings
+
+    method define ident ns res =
+      assert (bindings#insert { ident; ns; disambiguator = 0 } res = None)
+  end
+
+let with_generics_params resolver generics f =
+  let type_scope = new scope in
+  generics.params#iter (fun { kind = Ident name; generic_param_id; _ } ->
+      let did = def_id generic_param_id 0 in
+      let res = Middle.Ctx.Def (did, TyParam) in
+      type_scope#define name Type res);
+  resolver#scopes#push type_scope;
+  f ();
+  resolver#scopes#pop
+;;
+
 class resolver tcx modd =
   let open Module in
   object (self)
@@ -204,6 +225,7 @@ class resolver tcx modd =
     val mutable current_qpath : string vec = new vec
     val mutable current_impl : res option = None
     val impl_map : (res, (def_id, unit) hashmap) hashmap = new hashmap
+    val scopes : scope vec = new vec
 
     val binding_parent_module : (name_resolution, Module.t) hashmap =
       new hashmap
@@ -225,6 +247,7 @@ class resolver tcx modd =
     method append_segment segment = current_qpath#push segment
     method append_segments segments = current_qpath#append segments
     method pop_segment = current_qpath#pop
+    method scopes = scopes
 
     method pop_segments n =
       for _ = 0 to n do
@@ -371,6 +394,16 @@ class resolver tcx modd =
         | Value, 1, "mod" -> Err
         | Value, 1, _ ->
             self#resolve_ident_in_lexical_scope mdl (segs#get 0).ident Value
+        | Type, 1, _ ->
+            let ident = (segs#get 0).ident in
+            let key = { ident; ns; disambiguator = 0 } in
+            let rec f i =
+              match (scopes#get i)#bindings#get key with
+              | Some res -> res
+              | None when i <= 0 -> Err
+              | None -> f (i - 1)
+            in
+            f (scopes#len - 1)
         | _, _, "mod" ->
             segs#pop_front;
             self#resolve_path_in_modul mod_root segs ns
@@ -500,11 +533,12 @@ class resolver tcx modd =
         | None -> ()
       in
       let visit_fn (func : func) =
-        func.fn_sig.args#iter (fun { ty; _ } -> resolve_ty ty);
-        (match func.fn_sig.ret_ty with
-         | Some ty -> resolve_ty ty
-         | None -> ());
-        match func.body with Some body -> visit_block body | None -> ()
+        with_generics_params self func.fn_generics (fun () ->
+            func.fn_sig.args#iter (fun { ty; _ } -> resolve_ty ty);
+            (match func.fn_sig.ret_ty with
+             | Some ty -> resolve_ty ty
+             | None -> ());
+            match func.body with Some body -> visit_block body | None -> ())
       in
       let visit_assoc_fn ty fn =
         let did = def_id fn.func_id 0 in

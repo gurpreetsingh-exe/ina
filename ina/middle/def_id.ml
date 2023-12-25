@@ -9,6 +9,7 @@ type def_kind =
   (* Type namespace *)
   | Mod
   | Struct
+  | TyParam
   (* Value namespace *)
   | Fn
   | Intrinsic
@@ -26,6 +27,7 @@ let print_def_id def_id =
 let print_def_kind = function
   | Mod -> "module"
   | Struct -> "struct"
+  | TyParam -> "type parameter"
   | Fn -> "function"
   | Intrinsic -> "intrinsic"
   | Impl -> "impl"

@@ -85,6 +85,11 @@ and variant =
 
 and adt = { variants: variant vec }
 
+and typaram = {
+    index: int
+  ; name: string
+}
+
 and ty =
   | Int of int_ty
   | Float of float_ty
@@ -99,6 +104,7 @@ and ty =
       ; is_variadic: bool
       ; abi: abi
     }
+  | Param of typaram
   | Infer of infer_ty
   | Unit
   | Err
@@ -116,6 +122,7 @@ let discriminator = function
   | FnPtr _ -> 7L
   | Infer _ -> 8L
   | Unit -> 9L
+  | Param _ -> assert false
   | Err -> assert false
 ;;
 
@@ -237,6 +244,7 @@ let rec render_ty2 ty =
   | Ptr ty -> "*" ^ render_ty2 ty
   | Ref ty -> "&" ^ render_ty2 ty
   | Adt def_id -> print_def_id def_id
+  | Param { index; name } -> sprintf "%s%d" name index
 ;;
 
 _render_ty2 := render_ty2

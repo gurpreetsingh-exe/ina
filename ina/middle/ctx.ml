@@ -322,6 +322,9 @@ class tcx sess =
       adt_def#insert' def_id { variants };
       self#adt def_id
 
+    method ty_param index name = self#intern (Param { index; name })
+    method ty_param_from_def_id def_id = def_id_to_ty#unsafe_get def_id
+
     method sizeof_int_ty =
       function
       | I8 | U8 -> 1
@@ -402,7 +405,8 @@ class tcx sess =
       | Path path ->
           let res = res_map#unsafe_get path.path_id in
           res |> ( function
-          | Def (def_id, _) -> self#adt def_id
+          | Def (def_id, Struct) -> self#adt def_id
+          | Def (def_id, TyParam) -> self#ty_param_from_def_id def_id
           | _ -> assert false )
       | ImplicitSelf ->
           let res = res_map#unsafe_get ty.ty_id in
@@ -461,4 +465,5 @@ class tcx sess =
       | Adt def_id ->
           let segments = def_id_to_qpath#unsafe_get def_id in
           segments#last |> Option.get
+      | Param { name; _ } -> name
   end

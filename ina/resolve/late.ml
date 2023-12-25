@@ -65,8 +65,16 @@ class type_lowering resolver modd =
       | Some expr -> self#visit_expr expr
       | None -> ()
 
-    method visit_fn fn assoc =
+    method visit_generics generics =
+      generics.params#iteri
+        (fun i { kind = Ident name; generic_param_id; _ } ->
+          let did = def_id generic_param_id 0 in
+          let ty = resolver#tcx#ty_param i name in
+          resolver#tcx#create_def did ty)
+
+    method visit_fn (fn : func) assoc =
       resolver#append_segment fn.name;
+      self#visit_generics fn.fn_generics;
       let abi : abi =
         match fn.abi with
         | "intrinsic" -> Intrinsic

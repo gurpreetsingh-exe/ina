@@ -1,6 +1,5 @@
 open Middle.Ctx
 open Utils.Path
-open Structures.Vec
 open Structures.Hashmap
 
 module type CodegenBackend = sig
