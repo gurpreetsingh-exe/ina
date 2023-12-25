@@ -400,7 +400,9 @@ class resolver tcx modd =
             let rec f i =
               match (scopes#get i)#bindings#get key with
               | Some res -> res
-              | None when i <= 0 -> Err
+              | None when i <= 0 ->
+                  let mdl = self#get_root_mod mdl in
+                  self#resolve_path_in_modul mdl segs ns
               | None -> f (i - 1)
             in
             f (scopes#len - 1)
