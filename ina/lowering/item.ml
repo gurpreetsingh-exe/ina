@@ -1,17 +1,14 @@
 open Ast
 open Middle.Ty
+open Middle.Def_id
 open Ir
 open Structures.Vec
 
 let rec lower (lcx : Context.lcx) mdl =
   let tcx = lcx#tcx in
   let lower_fn fn =
-    let ty =
-      tcx#def_id_to_ty#unsafe_get { inner = fn.func_id; extmod_id = 0 }
-    in
-    let arg_tys =
-      match !ty with FnPtr { args; _ } -> args | _ -> assert false
-    in
+    let ty = tcx#get_def (local_def_id fn.func_id) in
+    let arg_tys = Fn.args tcx ty in
     let def_id = tcx#node_id_to_def_id#unsafe_get fn.func_id in
     let args =
       mapi fn.fn_sig.args (fun i { arg; _ } ->

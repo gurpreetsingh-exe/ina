@@ -168,7 +168,7 @@ let gen cx =
     | VReg i -> inst_name i
     | Global id ->
         let name = mangle cx id in
-        let ty = cx.tcx#def_id_to_ty#unsafe_get id in
+        let ty = cx.tcx#get_def id in
         (match cx.gen'd_fns#get id with
          | None when id.extmod_id <> 0 ->
              cx.gen'd_fns#insert' id ();
@@ -242,15 +242,14 @@ let gen cx =
         out ^ sprintf "*%s = %s;\n" (get_value dst) (get_value src)
     | Copy ptr | Move ptr -> out ^ sprintf "*%s;\n" (get_value ptr)
     | Call (ty, value, args) ->
-        (match !ty with
-         | FnPtr { abi = Intrinsic; _ } -> gen_intrinsic value args
-         | FnPtr _ ->
+        (match Fn.abi cx.tcx ty with
+         | Intrinsic -> gen_intrinsic value args
+         | _ ->
              out
              ^ sprintf
                  "%s(%s);\n"
                  (get_value value)
-                 (args#join ", " get_value)
-         | _ -> assert false)
+                 (args#join ", " get_value))
     | Gep (ty, ptr, index) ->
         let (Variant variant) = cx.tcx#non_enum_variant ty in
         let (Field { name; _ }) = variant.fields#get index in
@@ -283,11 +282,7 @@ let gen cx =
   and gen_function func =
     let open Ir.Func in
     let name = mangle cx func.def_id in
-    let args, ret, is_variadic =
-      match !(func.ty) with
-      | FnPtr { args; ret; is_variadic; _ } -> args, ret, is_variadic
-      | _ -> assert false
-    in
+    let { args; ret; is_variadic; _ } = Fn.get cx.tcx func.ty in
     let gen_arg ty arg =
       sprintf "%s %s" (backend_ty cx ty) (get_value arg)
     in
@@ -315,11 +310,11 @@ let gen cx =
   in
   let gen_main main_id =
     let name = mangle cx main_id in
-    match !(cx.tcx#def_id_to_ty#unsafe_get main_id) with
-    | FnPtr { ret; _ } when ret = cx.tcx#types.unit ->
+    let ty = cx.tcx#get_def main_id in
+    match Fn.ret cx.tcx ty with
+    | ret when ret = cx.tcx#types.unit ->
         out ^ sprintf "int main() {\n  %s();\n  return 0;\n}\n" name
-    | FnPtr _ -> out ^ sprintf "int main() {\n  return %s();\n}\n" name
-    | _ -> assert false
+    | _ -> out ^ sprintf "int main() {\n  return %s();\n}\n" name
   in
   cx.irmdl.items#iter (fun f ->
       let did =

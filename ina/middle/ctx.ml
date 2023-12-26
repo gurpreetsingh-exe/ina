@@ -101,6 +101,7 @@ class tcx sess =
     val extern_decls : (string, def_id) hashmap = new hashmap
     val extern_def_ids : (def_id, unit) hashmap = new hashmap
     val adt_def : (def_id, adt) hashmap = new hashmap
+    val fn_def : (def_id, fnsig) hashmap = new hashmap
     val assoc_fn : (def_id, (string, def_id) hashmap) hashmap = new hashmap
     val extern_mods : string vec = new vec
 
@@ -134,7 +135,6 @@ class tcx sess =
 
     method sess = sess
     method types = _types
-    method def_id_to_ty = def_id_to_ty
     method node_id_to_def_id = node_id_to_def_id
     method res_map = res_map
     method def_id_to_qpath = def_id_to_qpath
@@ -144,7 +144,7 @@ class tcx sess =
     method main = main
 
     method is_extern did =
-      match !(def_id_to_ty#unsafe_get did) with
+      match !(self#get_def did) with
       | FnPtr { abi = Default; _ } -> false
       | FnPtr _ -> true
       | _ -> false
@@ -244,6 +244,13 @@ class tcx sess =
       | Some ty' -> assert (ty = ty')
       | None -> ()
 
+    method get_def id =
+      match def_id_to_ty#get id with Some ty -> ty | None -> assert false
+
+    method iter_infer_vars f =
+      def_id_to_ty#iter (fun _ v ->
+          match !v with Infer tyvar -> f (v, tyvar) | _ -> ())
+
     method define_assoc_fn res name fn =
       match res with
       | Def (id, (Struct | Impl)) ->
@@ -261,7 +268,7 @@ class tcx sess =
       | Def _ | Local _ | Err -> assert false
 
     method lookup_method ty name =
-      self#lookup_method_def_id ty name |> def_id_to_ty#unsafe_get
+      self#lookup_method_def_id ty name |> self#get_def
 
     method lookup_method_def_id ty name =
       match !ty with
@@ -317,13 +324,20 @@ class tcx sess =
       self#intern (FnPtr { args; ret; is_variadic; abi })
 
     method adt def_id = self#intern (Adt def_id)
+    method get_adt def_id = adt_def#unsafe_get def_id
+    method fn def_id = self#intern (Fn def_id)
+    method get_fn def_id = fn_def#unsafe_get def_id
 
     method adt_with_variants def_id variants =
       adt_def#insert' def_id { variants };
       self#adt def_id
 
+    method fn_with_sig def_id args ret is_variadic abi =
+      fn_def#insert' def_id { args; ret; is_variadic; abi };
+      self#fn def_id
+
     method ty_param index name = self#intern (Param { index; name })
-    method ty_param_from_def_id def_id = def_id_to_ty#unsafe_get def_id
+    method ty_param_from_def_id def_id = self#get_def def_id
 
     method sizeof_int_ty =
       function
@@ -347,7 +361,7 @@ class tcx sess =
     method non_enum_variant ty =
       match !ty with
       | Adt def_id ->
-          let variants = (adt_def#unsafe_get def_id).variants in
+          let variants = (self#get_adt def_id).variants in
           assert (variants#len = 1);
           variants#get 0
       | _ -> assert false
@@ -462,7 +476,7 @@ class tcx sess =
       | Ptr ty -> "*" ^ self#render_ty ty
       | Ref ty -> "&" ^ self#render_ty ty
       | Err -> "err"
-      | Adt def_id ->
+      | Fn def_id | Adt def_id ->
           let segments = def_id_to_qpath#unsafe_get def_id in
           segments#last |> Option.get
       | Param { name; _ } -> name

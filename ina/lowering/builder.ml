@@ -1,5 +1,6 @@
 open Ir
 open Middle.Ctx
+open Middle.Ty
 open Inst
 
 class builder tcx blocks block =
@@ -58,7 +59,7 @@ class builder tcx blocks block =
       | None -> assert false
 
     method call ty value args =
-      let ret = Option.get @@ tcx#inner_ty ty in
+      let ret = Fn.ret tcx ty in
       self#add_inst_with_ty ret (Call (ty, value, args))
 
     method br cond then_block else_block =

@@ -90,6 +90,13 @@ and typaram = {
   ; name: string
 }
 
+and fnsig = {
+    args: ty ref vec
+  ; ret: ty ref
+  ; is_variadic: bool
+  ; abi: abi
+}
+
 and ty =
   | Int of int_ty
   | Float of float_ty
@@ -98,12 +105,8 @@ and ty =
   | Ptr of ty ref
   | Ref of ty ref
   | Adt of def_id
-  | FnPtr of {
-        args: ty ref vec
-      ; ret: ty ref
-      ; is_variadic: bool
-      ; abi: abi
-    }
+  | Fn of def_id
+  | FnPtr of fnsig
   | Param of typaram
   | Infer of infer_ty
   | Unit
@@ -112,19 +115,41 @@ and ty =
 and t = ty
 
 let discriminator = function
-  | Int _ -> 0L
-  | Float _ -> 1L
-  | Bool -> 2L
-  | Str -> 3L
-  | Ptr _ -> 4L
-  | Ref _ -> 5L
-  | Adt _ -> 6L
-  | FnPtr _ -> 7L
-  | Infer _ -> 8L
-  | Unit -> 9L
-  | Param _ -> assert false
-  | Err -> assert false
+  | Int _ -> 1L
+  | Float _ -> 2L
+  | Bool -> 3L
+  | Str -> 4L
+  | Ptr _ -> 5L
+  | Ref _ -> 6L
+  | Adt _ -> 7L
+  | FnPtr _ -> 8L
+  | Infer _ -> 9L
+  | Unit -> 10L
+  | Param _ -> 11L
+  | Fn _ -> 12L
+  | Err -> 13L
 ;;
+
+type fxhasher = { mutable hash: int }
+
+let rotl64c x n = (x lsl n) lor (x lsr (-n land 62))
+let rotate_left5 x = (x lsl 5) lor (x lsr 27)
+let k = 0x145f306dc9c882ef
+let fx_add_to_hash fx i = fx.hash <- rotl64c fx.hash 5 lxor i * k
+
+module Fn = struct
+  let get tcx ty =
+    match !ty with
+    | Fn did -> tcx#get_fn did
+    | FnPtr fn -> fn
+    | _ -> assert false
+  ;;
+
+  let args tcx ty = (get tcx ty).args
+  let ret tcx ty = (get tcx ty).ret
+  let abi tcx ty = (get tcx ty).abi
+  let is_variadic tcx ty = (get tcx ty).is_variadic
+end
 
 let _render_ty2 = ref (fun _ -> "")
 let render_ty ty = !_render_ty2 ty
@@ -152,14 +177,14 @@ let rec encode enc ty =
 
 let rec decode tcx dec =
   (match dec#read_usize with
-   | 0 -> Int (dec#read_usize |> int_ty_of_enum |> Option.get)
-   | 1 -> Float (dec#read_usize |> float_ty_of_enum |> Option.get)
-   | 2 -> Bool
-   | 3 -> Str
-   | 4 -> Ptr (decode tcx dec)
-   | 5 -> Ref (decode tcx dec)
-   | 6 -> Adt (Def_id.decode dec)
-   | 7 ->
+   | 1 -> Int (dec#read_usize |> int_ty_of_enum |> Option.get)
+   | 2 -> Float (dec#read_usize |> float_ty_of_enum |> Option.get)
+   | 3 -> Bool
+   | 4 -> Str
+   | 5 -> Ptr (decode tcx dec)
+   | 6 -> Ref (decode tcx dec)
+   | 7 -> Adt (Def_id.decode dec)
+   | 8 ->
        let args = new vec in
        let nargs = dec#read_usize in
        for _ = 0 to nargs - 1 do
@@ -169,7 +194,7 @@ let rec decode tcx dec =
        let is_variadic = dec#read_bool in
        let abi = dec#read_usize |> abi_of_enum |> Option.get in
        FnPtr { args; ret; is_variadic; abi }
-   | 9 -> Unit
+   | 10 -> Unit
    | i ->
        printf "%d\n" i;
        assert false)
@@ -199,25 +224,52 @@ let decode_variant tcx dec =
   Variant { def_id; fields }
 ;;
 
-let pair a b =
-  let a' = 2 * a in
-  let b' = 2 * b in
-  Int.div (if a' >= b' then (a' * a') + a' + b' else a' + (b' * b')) 2
+let rec hash hasher ty =
+  let f = hash hasher in
+  let g = fx_add_to_hash hasher in
+  match ty with
+  | Int i -> g (int_ty_to_enum i + 1)
+  | Float f -> g (float_ty_to_enum f + 1)
+  | Bool | Str | Unit | Err -> ()
+  | Ptr ty | Ref ty -> f !ty
+  | Adt { inner; _ } | Fn { inner; _ } -> g inner
+  | FnPtr { args; ret; is_variadic; abi } ->
+      args#iter (fun ty -> f !ty);
+      f !ret;
+      if is_variadic then g 1;
+      g (abi_to_enum abi + 1)
+  | Infer infty ->
+      (match infty with
+       | IntVar i ->
+           g 1;
+           g i.index
+       | FloatVar f ->
+           g 2;
+           g f.index
+       | TyVar t ->
+           g 3;
+           g t.index)
+  | Param { name; index } ->
+      g (String.hash name);
+      g index
 ;;
 
-let rec hash = function
-  | FnPtr { args; ret; is_variadic; abi } ->
-      pair
-        (match abi with Default | C -> 1 | Intrinsic -> 2)
-        (pair
-           (pair
-              (hash !ret)
-              (fold_left (fun init ty -> pair (hash !ty) init) 0 args))
-           (if is_variadic then 1 else 2))
-  | Ptr ty -> pair (hash !ty) 1
-  | Ref ty -> pair (hash !ty) 2
-  | Adt { inner; _ } -> inner
-  | ty -> Hashtbl.hash ty
+let fnhash { args; ret; is_variadic; abi } =
+  let hasher = { hash = Int.zero } in
+  let f = hash hasher in
+  let g = fx_add_to_hash hasher in
+  args#iter (fun ty -> f !ty);
+  f !ret;
+  if is_variadic then g 1;
+  g (abi_to_enum abi + 1)
+;;
+
+let hash ty =
+  let hasher = { hash = Int.zero } in
+  let dis = discriminator ty |> Int64.to_int in
+  fx_add_to_hash hasher dis;
+  hash hasher ty;
+  hasher.hash
 ;;
 
 let equal t0 t1 = hash t0 = hash t1
@@ -243,7 +295,8 @@ let rec render_ty2 ty =
   | Err -> "err"
   | Ptr ty -> "*" ^ render_ty2 ty
   | Ref ty -> "&" ^ render_ty2 ty
-  | Adt def_id -> print_def_id def_id
+  | Adt def_id -> sprintf "adt(%s)" (print_def_id def_id)
+  | Fn def_id -> sprintf "fn(%s)" (print_def_id def_id)
   | Param { index; name } -> sprintf "%s%d" name index
 ;;
 

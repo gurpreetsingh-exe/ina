@@ -1,20 +1,17 @@
 open Ast
 open Context
 open Structures.Vec
+open Middle.Def_id
 
 let rec lower_block (lcx : lcx) block =
   let tcx = lcx#tcx in
-  let expr_ty expr =
-    tcx#def_id_to_ty#unsafe_get { inner = expr.expr_id; extmod_id = 0 }
-  in
+  let expr_ty expr = tcx#get_def (local_def_id expr.expr_id) in
   let rec lower_block' () =
     let f stmt =
       match stmt with
       | Binding binding ->
           let { binding_expr; binding_id; binding_span; _ } = binding in
-          let ty =
-            tcx#def_id_to_ty#unsafe_get { inner = binding_id; extmod_id = 0 }
-          in
+          let ty = tcx#get_def (local_def_id binding_id) in
           let ptr = lcx#bx#alloca ty binding_span in
           assert (lcx#locals#insert binding_id ptr = None);
           let src = lower binding_expr in

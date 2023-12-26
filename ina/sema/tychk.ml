@@ -1,6 +1,7 @@
 open Ast
 open Middle.Ty
 open Middle.Ctx
+open Middle.Def_id
 open Errors
 open Structures.Vec
 open Structures.Hashmap
@@ -173,7 +174,7 @@ let ty_err_emit (tcx : tcx) err span =
 let tychk_fn cx fn =
   let tcx = cx.infcx.tcx in
   let define id ty =
-    tcx#create_def { inner = id; extmod_id = 0 } ty;
+    tcx#create_def (local_def_id id) ty;
     ignore (cx.locals#insert id ty)
   in
   let resolve_expected = function
@@ -182,7 +183,7 @@ let tychk_fn cx fn =
   in
   let write_ty id ty =
     dbg "write_ty(id = %d, ty = %s)\n" id (render_ty2 ty);
-    tcx#create_def { inner = id; extmod_id = 0 } ty
+    tcx#create_def (local_def_id id) ty
   in
   let int_unification_error (v : IntVid.e) =
     let expected, found = v in
@@ -235,6 +236,12 @@ let tychk_fn cx fn =
       | Ref t0, Ref t1 ->
           let* ty = equate t0 t1 in
           Ok (tcx#ref ty)
+      | FnPtr t0', Fn def_id ->
+          let t1' = tcx#get_fn def_id in
+          printf "what %s %s\n%!" (tcx#render_ty t0) (tcx#render_ty t1);
+          if fnhash t0' = fnhash t1'
+          then Ok t0
+          else Error (MismatchTy (t0, t1))
       | _ -> Error (MismatchTy (t0, t1))
   in
   let fold_int_ty intvid old_ty =
@@ -326,10 +333,24 @@ let tychk_fn cx fn =
     ty
   and check_path path =
     tcx#res_map#unsafe_get path.path_id |> function
-    | Def (id, _) -> tcx#def_id_to_ty#unsafe_get id
+    | Def (id, _) -> tcx#get_def id
     | Local id -> cx.locals#unsafe_get id
     | Err -> tcx#types.err
     | _ -> assert false
+  and check_call pexpr exprs { args; ret; is_variadic; _ } =
+    if (not is_variadic) && exprs#len <> args#len
+    then tcx#emit @@ mismatch_args args#len exprs#len pexpr.expr_span;
+    exprs#iteri (fun i arg ->
+        let expected =
+          if i < args#len then ExpectTy (args#get i) else NoExpectation
+        in
+        let ty = check_expr arg expected in
+        if i < args#len
+        then
+          match equate (args#get i) ty with
+          | Ok _ -> ()
+          | Error e -> ty_err_emit tcx e arg.expr_span);
+    ret
   and check_expr_kind expr expected =
     match expr.expr_kind with
     | Binary (kind, left, right) ->
@@ -354,23 +375,8 @@ let tychk_fn cx fn =
     | Call (expr, args) ->
         let ty = check_expr expr NoExpectation in
         (match !ty with
-         | FnPtr { args = arg_tys; ret; is_variadic; _ } ->
-             if (not is_variadic) && args#len <> arg_tys#len
-             then
-               tcx#emit @@ mismatch_args arg_tys#len args#len expr.expr_span;
-             args#iteri (fun i arg ->
-                 let expected =
-                   if i < arg_tys#len
-                   then ExpectTy (arg_tys#get i)
-                   else NoExpectation
-                 in
-                 let ty = check_expr arg expected in
-                 if i < arg_tys#len
-                 then
-                   match equate (arg_tys#get i) ty with
-                   | Ok _ -> ()
-                   | Error e -> ty_err_emit tcx e arg.expr_span);
-             ret
+         | FnPtr fnsig -> check_call expr args fnsig
+         | Fn def_id -> tcx#get_fn def_id |> check_call expr args
          | Err -> ty
          | _ ->
              ty_err_emit tcx (InvalidCall ty) expr.expr_span;
@@ -519,16 +525,8 @@ let tychk_fn cx fn =
              ty_err_emit tcx (InvalidCall ty) expr.expr_span;
              tcx#types.err)
   in
-  let ty =
-    tcx#def_id_to_ty#unsafe_get { inner = fn.func_id; extmod_id = 0 }
-  in
-  let ret =
-    match !ty with
-    | FnPtr { ret; _ } -> ret
-    | _ ->
-        dbg "expected function, found `%s`\n" (tcx#render_ty ty);
-        assert false
-  in
+  let ty = tcx#get_def (local_def_id fn.func_id) in
+  let ret = Fn.ret tcx ty in
   (* TODO: display better error span *)
   let span =
     match fn.fn_sig.ret_ty with
@@ -544,15 +542,11 @@ let tychk_fn cx fn =
         | Ok _ -> ()
         | Error e -> ty_err_emit tcx e span)
    | None -> ());
-  tcx#def_id_to_ty#iter (fun _ v ->
-      match !v with
-      | Infer (IntVar i) -> fold_int_ty i v
-      | Infer (FloatVar f) -> fold_float_ty f v
-      | Infer _ -> assert false
-      | _ -> ())
+  tcx#iter_infer_vars (function
+      | v, IntVar i -> fold_int_ty i v
+      | v, FloatVar f -> fold_float_ty f v
+      | _ -> assert false)
 ;;
-
-(* tcx#node_id_to_ty#iter (fun k v -> printf "%d -> %s\n" k (render_ty !v)) *)
 
 let rec tychk cx (modd : modd) =
   let f (item : item) =

@@ -17,6 +17,7 @@ type def_kind =
 [@@deriving enum]
 
 let def_id inner extmod_id = { inner; extmod_id }
+let local_def_id inner = def_id inner 0
 let encode enc did = enc#emit_usize did.inner
 let decode dec = def_id dec#read_usize dec#extmod_id
 
