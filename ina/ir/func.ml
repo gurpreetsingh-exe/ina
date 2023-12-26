@@ -43,7 +43,7 @@ let gen_id blocks =
 
 let render tcx { ty; def_id; args; basic_blocks; _ } =
   let qpath = tcx#def_id_to_qpath#unsafe_get def_id in
-  let ret = !ty |> function FnPtr { ret; _ } -> ret | _ -> assert false in
+  let ret = Fn.ret tcx ty in
   sprintf
     "fn %s(%s)%s %s\n"
     (qpath#join "::" (fun s -> s))

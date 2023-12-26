@@ -99,9 +99,29 @@ let rec backend_ty cx ty =
                 | _ -> "");
            assert (cx.types#insert ty name = None);
            name)
+  | Fn _ as ty -> fn cx ty
   | _ ->
       print_endline @@ Middle.Ty.render_ty2 ty;
       assert false
+
+and fn cx ty =
+  let { args; ret; is_variadic; _ } = Fn.get cx.tcx (ref ty) in
+  match cx.types#get ty with
+  | Some ty -> ty
+  | None ->
+      let name = sprintf "__fn_%d" cx.types#len in
+      prelude
+      ^ sprintf
+          "typedef %s (*%s)(%s%s);\n\n"
+          (backend_ty cx ret)
+          name
+          (args#join ", " (cx |> backend_ty))
+          (match is_variadic, args#empty with
+           | true, true -> "..."
+           | true, false -> ", ..."
+           | _ -> "");
+      assert (cx.types#insert ty name = None);
+      name
 ;;
 
 let gen_types cx =
@@ -115,7 +135,7 @@ let gen_types cx =
           in
           prelude
           ^ sprintf "typedef struct %s {\n%s\n} %s;\n\n" name fields name
-      | FnPtr _ | Str -> ()
+      | Fn _ | FnPtr _ | Str -> ()
       | _ -> assert false)
 ;;
 
@@ -125,11 +145,7 @@ let create tcx irmdl =
 
 let gen cx =
   let render_fn_header name ty =
-    let args, ret, is_variadic =
-      match !ty with
-      | FnPtr { args; ret; is_variadic; _ } -> args, ret, is_variadic
-      | _ -> assert false
-    in
+    let { args; ret; is_variadic; _ } = Fn.get cx.tcx ty in
     sprintf
       "%s %s(%s%s)"
       (backend_ty cx ret)

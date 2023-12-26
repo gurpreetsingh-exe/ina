@@ -238,7 +238,6 @@ let tychk_fn cx fn =
           Ok (tcx#ref ty)
       | FnPtr t0', Fn def_id ->
           let t1' = tcx#get_fn def_id in
-          printf "what %s %s\n%!" (tcx#render_ty t0) (tcx#render_ty t1);
           if fnhash t0' = fnhash t1'
           then Ok t0
           else Error (MismatchTy (t0, t1))
@@ -351,6 +350,33 @@ let tychk_fn cx fn =
           | Ok _ -> ()
           | Error e -> ty_err_emit tcx e arg.expr_span);
     ret
+  and check_method ty name pexpr exprs fnsig =
+    let { args; ret; _ } = fnsig in
+    if args#empty
+    then (
+      ty_err_emit tcx (AssocFnAsMethod (ty, name)) pexpr.expr_span;
+      ret)
+    else
+      let args' = new vec in
+      args'#copy args;
+      let first = tcx#autoderef (args'#get 0) in
+      args'#pop_front;
+      let args = args' in
+      if first <> ty
+      then ty_err_emit tcx (AssocFnAsMethod (ty, name)) pexpr.expr_span;
+      if exprs#len <> args#len
+      then tcx#emit @@ mismatch_args args#len exprs#len pexpr.expr_span;
+      exprs#iteri (fun i arg ->
+          let expected =
+            if i < args#len then ExpectTy (args#get i) else NoExpectation
+          in
+          let ty = check_expr arg expected in
+          if i < args#len
+          then
+            match equate (args#get i) ty with
+            | Ok _ -> ()
+            | Error e -> ty_err_emit tcx e arg.expr_span);
+      ret
   and check_expr_kind expr expected =
     match expr.expr_kind with
     | Binary (kind, left, right) ->
@@ -485,7 +511,7 @@ let tychk_fn cx fn =
         let ty = fold_ty ty in
         (match !ty, !cty with
          | Ref t0, Ptr t1 when t0 = t1 -> cty
-         | (FnPtr _ | Ptr _), Ptr _ -> cty
+         | (Fn _ | FnPtr _ | Ptr _), Ptr _ -> cty
          | (Ptr _ | Int _), (Int _ | Ptr _) -> cty
          | _ ->
              ty_err_emit tcx (InvalidCast (ty, cty)) expr.expr_span;
@@ -495,31 +521,8 @@ let tychk_fn cx fn =
         let ty = tcx#autoderef ty in
         let method' = tcx#lookup_method ty name in
         (match !method' with
-         | FnPtr { args = arg_tys; ret; _ } when arg_tys#empty ->
-             ty_err_emit tcx (AssocFnAsMethod (ty, name)) expr.expr_span;
-             ret
-         | FnPtr { args = arg_tys; ret; _ } ->
-             let args' = new vec in
-             args'#copy arg_tys;
-             let first = tcx#autoderef (args'#get 0) in
-             args'#pop_front;
-             if first <> ty
-             then ty_err_emit tcx (AssocFnAsMethod (ty, name)) expr.expr_span;
-             if args#len <> args'#len
-             then tcx#emit @@ mismatch_args args'#len args#len expr.expr_span;
-             args#iteri (fun i arg ->
-                 let expected = args'#get i in
-                 let ty =
-                   check_expr
-                     arg
-                     (if i < args'#len
-                      then ExpectTy expected
-                      else NoExpectation)
-                 in
-                 match equate expected ty with
-                 | Ok _ -> ()
-                 | Error e -> ty_err_emit tcx e arg.expr_span);
-             ret
+         | Fn did -> tcx#get_fn did |> check_method ty name expr args
+         | FnPtr sign -> check_method ty name expr args sign
          | Err -> ty
          | _ ->
              ty_err_emit tcx (InvalidCall ty) expr.expr_span;

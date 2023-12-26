@@ -207,9 +207,7 @@ let render_inst tcx inst : string =
         (render_value tcx value)
         index
   | Call (ty, fn, args) ->
-      let ty =
-        match !ty with FnPtr { ret; _ } -> ret | _ -> assert false
-      in
+      let ty = Fn.ret tcx ty in
       sprintf
         "call %s %s(%s)"
         (tcx#render_ty ty)

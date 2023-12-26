@@ -149,6 +149,12 @@ module Fn = struct
   let ret tcx ty = (get tcx ty).ret
   let abi tcx ty = (get tcx ty).abi
   let is_variadic tcx ty = (get tcx ty).is_variadic
+
+  let __encode_fn : (encoder -> fnsig -> unit) ref =
+    ref (fun _ _ -> assert false)
+  ;;
+
+  let encode enc fn = !__encode_fn enc fn
 end
 
 let _render_ty2 = ref (fun _ -> "")
@@ -162,18 +168,20 @@ let rec encode enc ty =
       enc#emit_with disc (fun e -> float_ty_to_enum f |> e#emit_usize)
   | Bool | Str | Unit -> enc#emit_with disc (fun _ -> ())
   | Ptr ty | Ref ty -> enc#emit_with disc (fun e -> encode e ty)
-  | Adt id -> enc#emit_with disc (fun e -> Def_id.encode e id)
-  | FnPtr { args; ret; is_variadic; abi } ->
-      enc#emit_with disc (fun e ->
-          e#emit_usize args#len;
-          args#iter (fun ty -> encode e ty);
-          encode e ret;
-          e#emit_bool is_variadic;
-          abi_to_enum abi |> e#emit_usize)
+  | Adt id | Fn id -> enc#emit_with disc (fun e -> Def_id.encode e id)
+  | FnPtr fn -> enc#emit_with disc (fun e -> Fn.encode e fn)
   | _ ->
       print_endline @@ render_ty ty;
       assert false
 ;;
+
+Fn.__encode_fn :=
+  fun enc { args; ret; is_variadic; abi } ->
+    enc#emit_usize args#len;
+    args#iter (fun ty -> encode enc ty);
+    encode enc ret;
+    enc#emit_bool is_variadic;
+    abi_to_enum abi |> enc#emit_usize
 
 let rec decode tcx dec =
   (match dec#read_usize with
@@ -195,10 +203,23 @@ let rec decode tcx dec =
        let abi = dec#read_usize |> abi_of_enum |> Option.get in
        FnPtr { args; ret; is_variadic; abi }
    | 10 -> Unit
+   | 12 -> Fn (Def_id.decode dec)
    | i ->
        printf "%d\n" i;
        assert false)
   |> tcx#intern
+;;
+
+let decode_fn tcx dec =
+  let args = new vec in
+  let nargs = dec#read_usize in
+  for _ = 0 to nargs - 1 do
+    args#push (decode tcx dec)
+  done;
+  let ret = decode tcx dec in
+  let is_variadic = dec#read_bool in
+  let abi = dec#read_usize |> abi_of_enum |> Option.get in
+  { args; ret; is_variadic; abi }
 ;;
 
 let encode_field enc (Field { ty; name }) =
@@ -227,12 +248,15 @@ let decode_variant tcx dec =
 let rec hash hasher ty =
   let f = hash hasher in
   let g = fx_add_to_hash hasher in
+  discriminator ty |> Int64.to_int |> g;
   match ty with
   | Int i -> g (int_ty_to_enum i + 1)
   | Float f -> g (float_ty_to_enum f + 1)
   | Bool | Str | Unit | Err -> ()
   | Ptr ty | Ref ty -> f !ty
-  | Adt { inner; _ } | Fn { inner; _ } -> g inner
+  | Adt { inner; extmod_id } | Fn { inner; extmod_id } ->
+      g inner;
+      g extmod_id
   | FnPtr { args; ret; is_variadic; abi } ->
       args#iter (fun ty -> f !ty);
       f !ret;
@@ -266,8 +290,6 @@ let fnhash { args; ret; is_variadic; abi } =
 
 let hash ty =
   let hasher = { hash = Int.zero } in
-  let dis = discriminator ty |> Int64.to_int in
-  fx_add_to_hash hasher dis;
   hash hasher ty;
   hasher.hash
 ;;

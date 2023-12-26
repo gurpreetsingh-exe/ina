@@ -144,10 +144,14 @@ class tcx sess =
     method main = main
 
     method is_extern did =
-      match !(self#get_def did) with
-      | FnPtr { abi = Default; _ } -> false
-      | FnPtr _ -> true
-      | _ -> false
+      let f ty =
+        match ty with
+        | FnPtr { abi = Default; _ } -> false
+        | FnPtr _ -> true
+        | Fn did -> (self#get_fn did).abi <> Default
+        | _ -> false
+      in
+      f !(self#get_def did)
 
     method extmods = extmods
     method extern_mods = extern_mods
@@ -168,6 +172,7 @@ class tcx sess =
       encode_hashmap enc def_id_to_ty Def_id.encode Ty.encode;
       encode_hashmap enc adt_def Def_id.encode (fun e adt ->
           encode_vec e adt.variants Ty.encode_variant);
+      encode_hashmap enc fn_def Def_id.encode Fn.encode;
       encode_hashmap enc assoc_fn Def_id.encode (fun e methods ->
           encode_hashmap
             e
@@ -195,6 +200,7 @@ class tcx sess =
           let variants = new vec in
           decode_vec dec variants (self |> Ty.decode_variant);
           { variants });
+      decode_hashmap dec fn_def Def_id.decode (self |> decode_fn);
       decode_hashmap dec assoc_fn Def_id.decode (fun dec ->
           let methods = new hashmap in
           decode_hashmap
@@ -352,7 +358,7 @@ class tcx sess =
       match !ty with
       | Ty.Int i -> self#sizeof_int_ty i
       | Float f -> self#sizeof_float_ty f
-      | Ptr _ | Ref _ | FnPtr _ -> 8
+      | Ptr _ | Ref _ | FnPtr _ | Fn _ -> 8
       | Str -> 16
       | Unit -> 0
       | Bool -> 1

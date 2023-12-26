@@ -394,7 +394,7 @@ class resolver tcx modd =
         | Value, 1, "mod" -> Err
         | Value, 1, _ ->
             self#resolve_ident_in_lexical_scope mdl (segs#get 0).ident Value
-        | Type, 1, _ ->
+        | Type, 1, _ when not scopes#empty ->
             let ident = (segs#get 0).ident in
             let key = { ident; ns; disambiguator = 0 } in
             let rec f i =

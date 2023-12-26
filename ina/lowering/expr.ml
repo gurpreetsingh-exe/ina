@@ -67,13 +67,14 @@ let rec lower_block (lcx : lcx) block =
   and lower_method e expr name args =
     let first, ty = lower_autoderef expr in
     let first, ty =
-      match !(tcx#lookup_method ty name) with
-      | FnPtr { args; _ } when args#empty -> assert false
-      | FnPtr { args; _ } ->
+      let open Middle.Ty in
+      let method' = tcx#lookup_method ty name in
+      match Fn.args tcx method' with
+      | args when args#empty -> assert false
+      | args ->
           (match !(args#get 0) with
-           | Ptr ty | Ref ty -> first, ty
+           | Ref ty -> first, ty
            | _ -> lcx#bx#move first expr.expr_span, ty)
-      | _ -> assert false
     in
     let fn = Ir.Inst.Global (tcx#lookup_method_def_id ty name) in
     let ty = tcx#lookup_method ty name in
@@ -200,7 +201,8 @@ let rec lower_block (lcx : lcx) block =
          | _ when ty = cty -> value
          | Ref t0, Ptr t1 when t0 = t1 ->
              lcx#bx#bitcast value cty e.expr_span
-         | (FnPtr _ | Ptr _), Ptr _ -> lcx#bx#bitcast value cty e.expr_span
+         | (Fn _ | FnPtr _ | Ptr _), Ptr _ ->
+             lcx#bx#bitcast value cty e.expr_span
          | Ptr _, Int _ -> lcx#bx#ptrtoint value cty e.expr_span
          | Int _, Ptr _ -> lcx#bx#inttoptr value cty e.expr_span
          | Int t0, Int t1 when tcx#sizeof_int_ty t0 < tcx#sizeof_int_ty t1 ->
