@@ -351,9 +351,15 @@ class tcx sess =
       adt_def#insert' def_id { variants };
       self#adt def_id
 
-    method fn_with_sig def_id args ret is_variadic abi =
+    method fn_with_sig
+        ?(subst = Subst (new vec))
+        def_id
+        args
+        ret
+        is_variadic
+        abi =
       fn_def#insert' def_id { args; ret; is_variadic; abi };
-      self#fn def_id (Subst (new vec))
+      self#fn def_id subst
 
     method ty_param index name = self#intern (Param { index; name })
     method ty_param_from_def_id def_id = self#get_def def_id

@@ -79,6 +79,31 @@ let mismatch_args expected found span =
   |> label { msg; style = NoStyle } span
 ;;
 
+let mismatch_generic_args expected found span =
+  let msg =
+    sprintf
+      "expected %d generic arg%s, found %d"
+      expected
+      (if expected = 1 then "" else "s")
+      found
+  in
+  new diagnostic Err ~multi_span:(multi_span span)
+  |> message "mismatch generic arguments"
+  |> label { msg; style = NoStyle } span
+;;
+
+let missing_generic_args expected span =
+  let msg =
+    sprintf
+      "expected %d generic arg%s"
+      expected
+      (if expected = 1 then "" else "s")
+  in
+  new diagnostic Err ~multi_span:(multi_span span)
+  |> message "function is missing generic arguments"
+  |> label { msg; style = NoStyle } span
+;;
+
 let unused_value span = mk_err "expression result unused" span
 
 let uninitialized_fields name span =
@@ -336,21 +361,23 @@ let tychk_fn cx fn =
     | Def (id, Fn) ->
         let ty = tcx#get_def id in
         let args = (Option.get path.segments#last).args in
-        Option.fold
-          ~none:ty
-          ~some:(fun args ->
-            match !ty with
-            | Fn (did, _) ->
-                let subst =
-                  map args (fun arg : generic_arg ->
-                      Ty (tcx#ast_ty_to_ty arg))
-                in
-                tcx#fn did (Subst subst)
-            | FnPtr _ ->
-                (* TODO(error): function pointers cannot be generic *)
-                assert false
-            | _ -> assert false)
-          args
+        (match !ty, args with
+         | Fn (_, Subst subst), None when subst#empty -> ty
+         | Fn (_, Subst subst), None ->
+             tcx#emit @@ missing_generic_args subst#len path.span;
+             tcx#types.err
+         | Fn (did, Subst subst), Some args ->
+             if args#len <> subst#len
+             then
+               tcx#emit @@ mismatch_generic_args subst#len args#len path.span;
+             let subst =
+               map args (fun arg : generic_arg -> Ty (tcx#ast_ty_to_ty arg))
+             in
+             tcx#fn did (Subst subst)
+         | FnPtr _, Some _ ->
+             (* TODO(error): function pointers cannot be generic *)
+             assert false
+         | _ -> assert false)
     | Local id -> cx.locals#unsafe_get id
     | Err -> tcx#types.err
     | _ -> assert false
@@ -423,7 +450,9 @@ let tychk_fn cx fn =
          | Fn (def_id, subst) ->
              let fnsig = tcx#get_fn def_id in
              tcx#subst fnsig subst |> check_call expr args
-         | Err -> ty
+         | Err ->
+             args#iter (fun arg -> ignore (check_expr arg NoExpectation));
+             ty
          | _ ->
              ty_err_emit tcx (InvalidCall ty) expr.expr_span;
              tcx#types.err)
