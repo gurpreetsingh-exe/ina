@@ -2,6 +2,7 @@
  (dev
   (flags
    (:standard
+    -w "-30"
     -warn-error
     "-unused-open"
     -warn-error

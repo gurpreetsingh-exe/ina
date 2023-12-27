@@ -296,9 +296,7 @@ class parser pcx file tokenizer =
                 self#parse_ty)
           in
           if !var_arg then args#pop;
-          let unit_ty : ty =
-            { kind = Unit; span = { lo = 0; hi = 0 }; ty_id = self#id }
-          in
+          let unit_ty : ty = mk_ty Unit (make 0 0) self#id in
           let* ret_ty = self#parse_ret_ty in
           let ret_ty = Option.value ~default:unit_ty ret_ty in
           Ok
@@ -593,6 +591,10 @@ class parser pcx file tokenizer =
         ; if_id = self#id
         }
 
+    method parse_bracket_args =
+      parse_spanned_with_sep self LBracket RBracket Comma (fun () ->
+          self#parse_ty)
+
     method parse_path =
       let s = token.span.lo in
       let segments = new vec in
@@ -601,7 +603,15 @@ class parser pcx file tokenizer =
         | Ident ->
             let s = token.span.lo in
             let* ident = self#parse_ident in
-            let segment = { ident; span = self#mk_span s } in
+            let* args =
+              match token.kind with
+              | Bang ->
+                  self#bump;
+                  let* args = self#parse_bracket_args in
+                  Ok (Some args)
+              | _ -> Ok None
+            in
+            let segment = { ident; args; span = self#mk_span s } in
             segments#push segment;
             (match token.kind with
              | Colon2 ->
@@ -610,7 +620,9 @@ class parser pcx file tokenizer =
                  Ok ()
              | _ -> Ok ())
         | Mod ->
-            let segment = { ident = "mod"; span = self#mk_span s } in
+            let segment =
+              { ident = "mod"; args = None; span = self#mk_span s }
+            in
             segments#push segment;
             self#bump;
             (match token.kind with

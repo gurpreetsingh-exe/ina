@@ -5,17 +5,6 @@ open Structures.Vec
 type node_id = int
 type ident = string
 
-type path_segment = {
-    ident: ident
-  ; span: Span.t
-}
-
-type path = {
-    segments: path_segment vec
-  ; span: Span.t
-  ; path_id: node_id
-}
-
 type int_ty =
   | I8
   | I16
@@ -45,6 +34,18 @@ type ty_kind =
   | Unit
   | CVarArgs
   | Err
+
+and path_segment = {
+    ident: ident
+  ; args: ty vec option
+  ; span: Span.t
+}
+
+and path = {
+    segments: path_segment vec
+  ; span: Span.t
+  ; path_id: node_id
+}
 
 and ty = {
     kind: ty_kind

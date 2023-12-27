@@ -434,7 +434,7 @@ class resolver tcx modd =
     method resolve_main =
       let mdl = self#get_root_mod mod_root in
       let segs = new vec in
-      segs#push { ident = "main"; span = Source.Span.make 0 0 };
+      segs#push { ident = "main"; args = None; span = Source.Span.make 0 0 };
       self#resolve_path_in_modul mdl segs Value
 
     method resolve =
