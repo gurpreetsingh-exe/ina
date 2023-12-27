@@ -332,7 +332,25 @@ let tychk_fn cx fn =
     ty
   and check_path path =
     tcx#res_map#unsafe_get path.path_id |> function
-    | Def (id, _) -> tcx#get_def id
+    | Def (id, Struct) -> tcx#get_def id
+    | Def (id, Fn) ->
+        let ty = tcx#get_def id in
+        let args = (Option.get path.segments#last).args in
+        Option.fold
+          ~none:ty
+          ~some:(fun args ->
+            match !ty with
+            | Fn (did, _) ->
+                let subst =
+                  map args (fun arg : generic_arg ->
+                      Ty (tcx#ast_ty_to_ty arg))
+                in
+                tcx#fn did (Subst subst)
+            | FnPtr _ ->
+                (* TODO(error): function pointers cannot be generic *)
+                assert false
+            | _ -> assert false)
+          args
     | Local id -> cx.locals#unsafe_get id
     | Err -> tcx#types.err
     | _ -> assert false
@@ -402,7 +420,9 @@ let tychk_fn cx fn =
         let ty = check_expr expr NoExpectation in
         (match !ty with
          | FnPtr fnsig -> check_call expr args fnsig
-         | Fn (def_id, _) -> tcx#get_fn def_id |> check_call expr args
+         | Fn (def_id, subst) ->
+             let fnsig = tcx#get_fn def_id in
+             tcx#subst fnsig subst |> check_call expr args
          | Err -> ty
          | _ ->
              ty_err_emit tcx (InvalidCall ty) expr.expr_span;

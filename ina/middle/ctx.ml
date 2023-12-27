@@ -343,14 +343,8 @@ class tcx sess =
     method get_fn def_id = fn_def#unsafe_get def_id
 
     method subst fnsig (Subst subst) =
-      let args =
-        map fnsig.args (fun ty ->
-            let ty = SubstFolder.fold_ty ty subst in
-            print_endline @@ self#render_ty ty;
-            ty)
-      in
+      let args = map fnsig.args (fun ty -> SubstFolder.fold_ty ty subst) in
       let ret = SubstFolder.fold_ty fnsig.ret subst in
-      print_endline @@ self#render_ty ret;
       { fnsig with args; ret }
 
     method adt_with_variants def_id variants =

@@ -491,6 +491,10 @@ class resolver tcx modd =
               resolved
           | res -> res
         in
+        path.segments#iter (fun s ->
+            match s.args with
+            | Some args -> args#iter resolve_ty
+            | None -> ());
         dbg "res_map { %d -> %s }\n" path.path_id (print_res resolved);
         assert (tcx#res_map#insert path.path_id resolved = None)
       and visit_expr expr (mdl : Module.t) =
