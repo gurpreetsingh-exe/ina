@@ -182,7 +182,7 @@ let tychk_fn cx fn =
     | ExpectTy ty -> Some (Infer.resolve_vars cx.infcx ty)
   in
   let write_ty id ty =
-    dbg "write_ty(id = %d, ty = %s)\n" id (render_ty2 ty);
+    dbg "write_ty(id = %d, ty = %s)\n" id (tcx#render_ty ty);
     tcx#create_def (local_def_id id) ty
   in
   let int_unification_error (v : IntVid.e) =
@@ -236,7 +236,7 @@ let tychk_fn cx fn =
       | Ref t0, Ref t1 ->
           let* ty = equate t0 t1 in
           Ok (tcx#ref ty)
-      | FnPtr t0', Fn def_id ->
+      | FnPtr t0', Fn (def_id, _) ->
           let t1' = tcx#get_fn def_id in
           if fnhash t0' = fnhash t1'
           then Ok t0
@@ -402,7 +402,7 @@ let tychk_fn cx fn =
         let ty = check_expr expr NoExpectation in
         (match !ty with
          | FnPtr fnsig -> check_call expr args fnsig
-         | Fn def_id -> tcx#get_fn def_id |> check_call expr args
+         | Fn (def_id, _) -> tcx#get_fn def_id |> check_call expr args
          | Err -> ty
          | _ ->
              ty_err_emit tcx (InvalidCall ty) expr.expr_span;
@@ -521,7 +521,7 @@ let tychk_fn cx fn =
         let ty = tcx#autoderef ty in
         let method' = tcx#lookup_method ty name in
         (match !method' with
-         | Fn did -> tcx#get_fn did |> check_method ty name expr args
+         | Fn (did, _) -> tcx#get_fn did |> check_method ty name expr args
          | FnPtr sign -> check_method ty name expr args sign
          | Err -> ty
          | _ ->

@@ -322,8 +322,15 @@ class resolver tcx modd =
         match mdl.resolutions#get key with
         | Some r ->
             (match r with
-             | Res r -> r
+             | Res r ->
+                 dbg "%s\n"
+                 @@ Utils.Printer.green ?bold:(Some false) (print_res r);
+                 r
              | Module mdl ->
+                 dbg "%s\n"
+                 @@ Utils.Printer.green
+                      ?bold:(Some false)
+                      (print_mkind mdl.mkind);
                  (* recursive function *)
                  self#resolve_ident_in_lexical_scope
                    (self#get_root_mod mdl)
@@ -334,11 +341,14 @@ class resolver tcx modd =
              | Some modul' ->
                  (match mdl.mkind with
                   | Block ->
+                      dbg "%s\n"
+                      @@ Utils.Printer.green
+                           ?bold:(Some false)
+                           (print_mkind modul'.mkind);
                       self#resolve_ident_in_lexical_scope modul' ident ns
                   | _ -> Err)
              | _ -> Err)
       in
-      dbg "%s\n" (print_res res);
       res
 
     method resolve_path_in_modul mdl (segs : path_segment vec) ns =

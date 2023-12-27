@@ -11,6 +11,14 @@ open Encoder
 open Decoder
 module TypeMap = Hashtbl.Make (Ty)
 
+module SubstFolder = struct
+  let fold_ty ty subst =
+    match !ty with
+    | Param { index; _ } -> subst#get index |> ( function Ty ty -> ty )
+    | _ -> ty
+  ;;
+end
+
 type 'a nodemap = (int, 'a) hashmap
 
 and res =
@@ -148,7 +156,7 @@ class tcx sess =
         match ty with
         | FnPtr { abi = Default; _ } -> false
         | FnPtr _ -> true
-        | Fn did -> (self#get_fn did).abi <> Default
+        | Fn (did, _) -> (self#get_fn did).abi <> Default
         | _ -> false
       in
       f !(self#get_def did)
@@ -331,8 +339,19 @@ class tcx sess =
 
     method adt def_id = self#intern (Adt def_id)
     method get_adt def_id = adt_def#unsafe_get def_id
-    method fn def_id = self#intern (Fn def_id)
+    method fn def_id subst = self#intern (Fn (def_id, subst))
     method get_fn def_id = fn_def#unsafe_get def_id
+
+    method subst fnsig (Subst subst) =
+      let args =
+        map fnsig.args (fun ty ->
+            let ty = SubstFolder.fold_ty ty subst in
+            print_endline @@ self#render_ty ty;
+            ty)
+      in
+      let ret = SubstFolder.fold_ty fnsig.ret subst in
+      print_endline @@ self#render_ty ret;
+      { fnsig with args; ret }
 
     method adt_with_variants def_id variants =
       adt_def#insert' def_id { variants };
@@ -340,7 +359,7 @@ class tcx sess =
 
     method fn_with_sig def_id args ret is_variadic abi =
       fn_def#insert' def_id { args; ret; is_variadic; abi };
-      self#fn def_id
+      self#fn def_id (Subst (new vec))
 
     method ty_param index name = self#intern (Param { index; name })
     method ty_param_from_def_id def_id = self#get_def def_id
@@ -482,7 +501,24 @@ class tcx sess =
       | Ptr ty -> "*" ^ self#render_ty ty
       | Ref ty -> "&" ^ self#render_ty ty
       | Err -> "err"
-      | Fn def_id | Adt def_id ->
+      | Fn (def_id, Subst subst) ->
+          let { args; ret; is_variadic; abi } = self#get_fn def_id in
+          sprintf
+            "%sfn%s(%s) -> %s"
+            (abi |> function
+             | Default -> ""
+             | Intrinsic -> "\"intrinsic\" "
+             | C -> "\"C\" ")
+            (if subst#empty
+             then ""
+             else
+               sprintf
+                 "[%s]"
+                 (subst#join ", " (function Ty ty -> self#render_ty ty)))
+            (args#join ", " (fun ty -> self#render_ty ty)
+             ^ if is_variadic then ", ..." else String.empty)
+            (self#render_ty ret)
+      | Adt def_id ->
           let segments = def_id_to_qpath#unsafe_get def_id in
           segments#last |> Option.get
       | Param { name; _ } -> name

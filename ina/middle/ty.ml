@@ -97,6 +97,9 @@ and fnsig = {
   ; abi: abi
 }
 
+and generic_arg = Ty of ty ref
+and subst = Subst of generic_arg vec
+
 and ty =
   | Int of int_ty
   | Float of float_ty
@@ -105,7 +108,7 @@ and ty =
   | Ptr of ty ref
   | Ref of ty ref
   | Adt of def_id
-  | Fn of def_id
+  | Fn of (def_id * subst)
   | FnPtr of fnsig
   | Param of typaram
   | Infer of infer_ty
@@ -140,7 +143,7 @@ let fx_add_to_hash fx i = fx.hash <- rotl64c fx.hash 5 lxor i * k
 module Fn = struct
   let get tcx ty =
     match !ty with
-    | Fn did -> tcx#get_fn did
+    | Fn (did, _) -> tcx#get_fn did
     | FnPtr fn -> fn
     | _ -> assert false
   ;;
@@ -168,7 +171,8 @@ let rec encode enc ty =
       enc#emit_with disc (fun e -> float_ty_to_enum f |> e#emit_usize)
   | Bool | Str | Unit -> enc#emit_with disc (fun _ -> ())
   | Ptr ty | Ref ty -> enc#emit_with disc (fun e -> encode e ty)
-  | Adt id | Fn id -> enc#emit_with disc (fun e -> Def_id.encode e id)
+  | Adt id -> enc#emit_with disc (fun e -> Def_id.encode e id)
+  | Fn (id, _) -> enc#emit_with disc (fun e -> Def_id.encode e id)
   | FnPtr fn -> enc#emit_with disc (fun e -> Fn.encode e fn)
   | _ ->
       print_endline @@ render_ty ty;
@@ -203,7 +207,7 @@ let rec decode tcx dec =
        let abi = dec#read_usize |> abi_of_enum |> Option.get in
        FnPtr { args; ret; is_variadic; abi }
    | 10 -> Unit
-   | 12 -> Fn (Def_id.decode dec)
+   | 12 -> Fn (Def_id.decode dec, assert false)
    | i ->
        printf "%d\n" i;
        assert false)
@@ -254,9 +258,13 @@ let rec hash hasher ty =
   | Float f -> g (float_ty_to_enum f + 1)
   | Bool | Str | Unit | Err -> ()
   | Ptr ty | Ref ty -> f !ty
-  | Adt { inner; extmod_id } | Fn { inner; extmod_id } ->
+  | Adt { inner; extmod_id } ->
       g inner;
       g extmod_id
+  | Fn ({ inner; extmod_id }, Subst subst) ->
+      g inner;
+      g extmod_id;
+      subst#iter (function Ty ty -> f !ty)
   | FnPtr { args; ret; is_variadic; abi } ->
       args#iter (fun ty -> f !ty);
       f !ret;
@@ -318,17 +326,8 @@ let rec render_ty2 ty =
   | Ptr ty -> "*" ^ render_ty2 ty
   | Ref ty -> "&" ^ render_ty2 ty
   | Adt def_id -> sprintf "adt(%s)" (print_def_id def_id)
-  | Fn def_id -> sprintf "fn(%s)" (print_def_id def_id)
+  | Fn (def_id, _) -> sprintf "fn(%s)" (print_def_id def_id)
   | Param { index; name } -> sprintf "%s%d" name index
 ;;
 
 _render_ty2 := render_ty2
-
-(* | Adt { def_id; variants } -> *)
-(*     let render (Field { name; ty }) = *)
-(*       sprintf "%s: %s" name (render_ty2 ty) *)
-(*     in *)
-(*     let render (Variant { def_id; fields }) = *)
-(*       sprintf "%s { %s }" (print_def_id def_id) (fields#join ", " render) *)
-(*     in *)
-(*     sprintf "%s { %s }" (print_def_id def_id) (variants#join ", " render) *)

@@ -8,7 +8,7 @@ let display_loc (loc : Printexc.location) =
 let devnull = open_out Filename.null
 
 let dbg fmt =
-  if false
+  if true
   then
     let _loc () =
       let stack = Printexc.get_callstack 2 in
