@@ -1,0 +1,4 @@
+(library
+ (name monomorphize)
+ (modules collect)
+ (libraries ir))

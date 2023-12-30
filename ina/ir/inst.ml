@@ -4,6 +4,36 @@ open Printf
 open Structures.Vec
 open Source
 
+type instance_def =
+  | Fn of def_id
+  | Intrinsic of def_id
+
+and instance = {
+    def: instance_def
+  ; subst: subst
+}
+
+and item = Fn of instance
+
+let instance_def_id instance =
+  instance.def |> function Fn id | Intrinsic id -> id
+;;
+
+let render_instance tcx instance =
+  match instance.def with
+  | Fn id | Intrinsic id ->
+      let (Subst subst) = instance.subst in
+      sprintf
+        "@%s%s"
+        ((tcx#def_id_to_qpath#unsafe_get id)#join "::" (fun s -> s))
+        (if subst#empty
+         then ""
+         else
+           sprintf
+             "[%s]"
+             (subst#join ", " (function Ty ty -> tcx#render_ty ty)))
+;;
+
 type t = {
     mutable kind: inst_kind
   ; ty: ty ref
@@ -63,7 +93,7 @@ and value =
   | VReg of t
   | Label of basic_block
   | Param of ty ref * string * int
-  | Global of def_id
+  | Global of item
 
 and const_kind =
   | Int of int
@@ -132,17 +162,15 @@ and render_value tcx = function
   | VReg inst -> sprintf "%s %%%i" (tcx#render_ty inst.ty) inst.id
   | Label bb -> sprintf "label %%bb%d" bb.bid
   | Param (ty, name, _) -> sprintf "%s %%%s" (tcx#render_ty ty) name
-  | Global id ->
-      sprintf
-        "@%s"
-        ((tcx#def_id_to_qpath#unsafe_get id)#join "::" (fun s -> s))
+  | Global (Fn instance) -> render_instance tcx instance
 ;;
 
 let get_ty tcx = function
   | Param (ty, _, _) -> ty
   | Const c -> c.ty
   | VReg v -> v.ty
-  | Global id -> tcx#get_def id
+  | Global (Fn { def; _ }) ->
+      (match def with Fn id | Intrinsic id -> tcx#get_def id)
   | _ -> assert false
 ;;
 

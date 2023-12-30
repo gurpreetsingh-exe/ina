@@ -27,18 +27,32 @@ type cx = {
   ; gen'd_fns: (def_id, unit) hashmap
 }
 
-let mangle cx did =
+let mangle_adt cx did =
   let qpath = cx.tcx#def_id_to_qpath#unsafe_get did in
-  if cx.tcx#is_extern did
-  then Option.get qpath#last
-  else
-    String.concat
-      ""
-      [
-        "_ZN"
-      ; qpath#join "" (fun s -> sprintf "%d%s" (String.length s) s)
-      ; "Ev"
-      ]
+  String.concat
+    ""
+    [
+      "_ZN"; qpath#join "" (fun s -> sprintf "%d%s" (String.length s) s); "Ev"
+    ]
+;;
+
+let mangle cx instance =
+  match instance.def with
+  | Fn did ->
+      let qpath = cx.tcx#def_id_to_qpath#unsafe_get did in
+      if cx.tcx#is_extern did
+      then Option.get qpath#last
+      else
+        String.concat
+          ""
+          [
+            "_ZN"
+          ; qpath#join "" (fun s -> sprintf "%d%s" (String.length s) s)
+          ; "Ev"
+          ]
+  | Intrinsic did ->
+      let qpath = cx.tcx#def_id_to_qpath#unsafe_get did in
+      Option.get qpath#last
 ;;
 
 let rec backend_ty cx ty =
@@ -78,7 +92,7 @@ let rec backend_ty cx ty =
       (match cx.types#get ty' with
        | Some ty -> ty
        | None ->
-           let name = mangle cx def_id in
+           let name = mangle_adt cx def_id in
            assert (cx.types#insert ty' name = None);
            prelude ^ sprintf "typedef struct %s %s;\n" name name;
            name)
@@ -105,6 +119,8 @@ let rec backend_ty cx ty =
       assert false
 
 and fn cx ty =
+  let subst = Fn.subst ty in
+  print_endline @@ subst#join ", " (function Ty ty -> cx.tcx#render_ty ty);
   let { args; ret; is_variadic; _ } = Fn.get cx.tcx (ref ty) in
   match cx.types#get ty with
   | Some ty -> ty
@@ -145,6 +161,7 @@ let create tcx irmdl =
 
 let gen cx =
   let render_fn_header name ty =
+    let ty = cx.tcx#ty_with_subst ty in
     let { args; ret; is_variadic; _ } = Fn.get cx.tcx ty in
     sprintf
       "%s %s(%s%s)"
@@ -182,16 +199,19 @@ let gen cx =
     | Param (_, name, id) when name = "_" -> sprintf "_p%d" id
     | Param (_, name, _) -> name
     | VReg i -> inst_name i
-    | Global id ->
-        let name = mangle cx id in
-        let ty = cx.tcx#get_def id in
-        (match cx.gen'd_fns#get id with
-         | None when id.extmod_id <> 0 ->
-             cx.gen'd_fns#insert' id ();
-             prelude ^ sprintf "extern %s;\n" (render_fn_header name ty)
-         | None -> prelude ^ sprintf "%s;\n" (render_fn_header name ty)
-         | Some () -> ());
-        name
+    | Global (Fn instance) ->
+        (match instance.def with
+         | Fn id | Intrinsic id ->
+             let name = mangle cx instance in
+             (* let ty = cx.tcx#get_def id in *)
+             let ty = cx.tcx#fn id instance.subst in
+             (match cx.gen'd_fns#get id with
+              | None when id.extmod_id <> 0 ->
+                  cx.gen'd_fns#insert' id ();
+                  prelude ^ sprintf "extern %s;\n" (render_fn_header name ty)
+              | None -> prelude ^ sprintf "%s;\n" (render_fn_header name ty)
+              | Some () -> ());
+             name)
     | Const { kind; ty } -> get_const ty kind
     | Label bb -> sprintf "bb%d" bb.bid
   in
@@ -258,6 +278,7 @@ let gen cx =
         out ^ sprintf "*%s = %s;\n" (get_value dst) (get_value src)
     | Copy ptr | Move ptr -> out ^ sprintf "*%s;\n" (get_value ptr)
     | Call (ty, value, args) ->
+        print_endline @@ cx.tcx#render_ty ty;
         (match Fn.abi cx.tcx ty with
          | Intrinsic -> gen_intrinsic value args
          | _ ->
@@ -297,7 +318,7 @@ let gen cx =
     | Jmp bb -> out ^ sprintf "goto %s;\n" (get_value bb)
   and gen_function func =
     let open Ir.Func in
-    let name = mangle cx func.def_id in
+    let name = mangle cx func.instance in
     let { args; ret; is_variadic; _ } = Fn.get cx.tcx func.ty in
     let gen_arg ty arg =
       sprintf "%s %s" (backend_ty cx ty) (get_value arg)
@@ -306,7 +327,8 @@ let gen cx =
     let header =
       sprintf
         "%s%s %s(%s%s)"
-        (if cx.tcx#is_extern func.def_id then "extern " else "")
+        (* (if cx.tcx#is_extern func.def_id then "extern " else "") *)
+        ("")
         (backend_ty cx ret)
         name
         (args#join ", " (fun s -> s))
@@ -316,36 +338,41 @@ let gen cx =
          | _ -> "")
     in
     out ^ header;
-    if cx.tcx#is_extern func.def_id
-    then out ^ ";\n"
-    else (
+    (* if cx.tcx#is_extern func.def_id *)
+    (* then out ^ ";\n" *)
+    (* else ( *)
+    (*   out ^ " {\n"; *)
+    (*   func.basic_blocks.locals#iter gen_inst; *)
+    (*   func.basic_blocks.bbs#iter gen_bb; *)
+    (*   out ^ "}\n\n") *)
       out ^ " {\n";
       func.basic_blocks.locals#iter gen_inst;
       func.basic_blocks.bbs#iter gen_bb;
-      out ^ "}\n\n")
+      out ^ "}\n\n"
   in
-  let gen_main main_id =
-    let name = mangle cx main_id in
-    let ty = cx.tcx#get_def main_id in
-    match Fn.ret cx.tcx ty with
-    | ret when ret = cx.tcx#types.unit ->
-        out ^ sprintf "int main() {\n  %s();\n  return 0;\n}\n" name
-    | _ -> out ^ sprintf "int main() {\n  return %s();\n}\n" name
-  in
+  (* let gen_main main_id = *)
+  (*   let name = mangle cx main_id in *)
+  (*   let ty = cx.tcx#get_def main_id in *)
+  (*   match Fn.ret cx.tcx ty with *)
+  (*   | ret when ret = cx.tcx#types.unit -> *)
+  (*       out ^ sprintf "int main() {\n  %s();\n  return 0;\n}\n" name *)
+  (*   | _ -> out ^ sprintf "int main() {\n  return %s();\n}\n" name *)
+  (* in *)
   cx.irmdl.items#iter (fun f ->
       let did =
         if f.decl
-        then cx.tcx#decl_extern (mangle cx f.def_id) f.def_id
-        else f.def_id
+        then cx.tcx#decl_extern (mangle cx f.instance) (instance_def_id f.instance)
+        else instance_def_id f.instance
       in
-      if not (cx.gen'd_fns#has did)
+      let ty = cx.tcx#get_def did in
+      if (not (Fn.is_generic ty)) && not (cx.gen'd_fns#has did)
       then (
         assert (cx.gen'd_fns#insert did () = None);
         gen_function f));
-  (match cx.tcx#main with
-   | Some id -> gen_main id
-   | _ when cx.tcx#sess.options.output_type = Exe -> assert false
-   | _ -> ());
+  (* (match cx.tcx#main with *)
+  (*  | Some id -> gen_main id *)
+  (*  | _ when cx.tcx#sess.options.output_type = Exe -> assert false *)
+  (*  | _ -> ()); *)
   gen_types cx;
   (match cx.tcx#sess.options.output_type with
    | ExtMod ->

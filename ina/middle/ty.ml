@@ -153,6 +153,17 @@ module Fn = struct
   let abi tcx ty = (get tcx ty).abi
   let is_variadic tcx ty = (get tcx ty).is_variadic
 
+  let is_generic ty =
+    match !ty with
+    | Fn (_, Subst subst) -> not subst#empty
+    | FnPtr _ -> false
+    | _ -> assert false
+  ;;
+
+  let subst ty =
+    match ty with Fn (_, Subst subst) -> subst | _ -> assert false
+  ;;
+
   let __encode_fn : (encoder -> fnsig -> unit) ref =
     ref (fun _ _ -> assert false)
   ;;

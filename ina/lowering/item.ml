@@ -8,8 +8,10 @@ let rec lower (lcx : Context.lcx) mdl =
   let tcx = lcx#tcx in
   let lower_fn fn =
     let ty = tcx#get_def (local_def_id fn.func_id) in
+    let subst = Middle.Ty.Fn.subst !ty in
     let arg_tys = Fn.args tcx ty in
     let def_id = tcx#node_id_to_def_id#unsafe_get fn.func_id in
+    let instance = Inst.{ def = Fn def_id; subst = Subst subst } in
     let args =
       mapi fn.fn_sig.args (fun i { arg; _ } ->
           Inst.Param (arg_tys#get i, arg, i))
@@ -18,7 +20,7 @@ let rec lower (lcx : Context.lcx) mdl =
       Func.
         {
           ty
-        ; def_id
+        ; instance
         ; args
         ; basic_blocks = { locals = new vec; bbs = new vec }
         ; decl = fn.is_extern

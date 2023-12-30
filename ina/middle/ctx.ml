@@ -347,6 +347,16 @@ class tcx sess =
       let ret = SubstFolder.fold_ty fnsig.ret subst in
       { fnsig with args; ret }
 
+    method ty_with_subst ty =
+      match !ty with
+      | FnPtr { args; ret; is_variadic; abi } ->
+          self#fn_ptr args ret is_variadic abi
+      | Fn (def_id, subst) ->
+          let fnsig = self#get_fn def_id in
+          let { args; ret; is_variadic; abi } = self#subst fnsig subst in
+          self#fn_ptr args ret is_variadic abi
+      | _ -> assert false
+
     method adt_with_variants def_id variants =
       adt_def#insert' def_id { variants };
       self#adt def_id

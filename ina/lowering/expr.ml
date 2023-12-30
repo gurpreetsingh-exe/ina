@@ -76,7 +76,9 @@ let rec lower_block (lcx : lcx) block =
            | Ref ty -> first, ty
            | _ -> lcx#bx#move first expr.expr_span, ty)
     in
-    let fn = Ir.Inst.Global (tcx#lookup_method_def_id ty name) in
+    let id = tcx#lookup_method_def_id ty name in
+    let instance = Ir.Inst.{ def = Fn id; subst = Subst (new vec) } in
+    let fn = Ir.Inst.Global (Fn instance) in
     let ty = tcx#lookup_method ty name in
     let args' = new vec in
     args'#push first;
@@ -93,7 +95,10 @@ let rec lower_block (lcx : lcx) block =
         let res = tcx#res_map#unsafe_get path.path_id in
         (match res with
          | Local id -> lcx#locals#unsafe_get id
-         | Def (id, (Fn | Intrinsic)) -> Global id
+         | Def (id, (Fn | Intrinsic)) ->
+             let subst = Middle.Ty.Fn.subst !ty in
+             let instance = Ir.Inst.{ def = Fn id; subst = Subst subst } in
+             Global (Fn instance)
          | _ -> assert false)
     | Deref expr -> lower expr
     | Field (expr, ident) -> lower_field expr ident
@@ -143,10 +148,13 @@ let rec lower_block (lcx : lcx) block =
          | Local id ->
              let ptr = lcx#locals#unsafe_get id in
              lcx#bx#move ptr path.span
-         | Def (id, (Fn | Intrinsic)) -> Global id
+         | Def (id, (Fn | Intrinsic)) ->
+             let subst = Middle.Ty.Fn.subst !ty in
+             let instance = Ir.Inst.{ def = Fn id; subst = Subst subst } in
+             Global (Fn instance)
          | _ -> assert false)
     | Call (expr, args) ->
-        let ty = expr_ty expr in
+        let ty = expr_ty expr |> tcx#ty_with_subst in
         let fn = lower expr in
         let args = map args (fun arg -> lower arg) in
         lcx#bx#call ty fn args e.expr_span

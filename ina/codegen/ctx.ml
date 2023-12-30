@@ -1,6 +1,7 @@
 open Middle.Ctx
 open Utils.Path
 open Structures.Hashmap
+open Monomorphize
 
 module type CodegenBackend = sig
   type cx
@@ -9,7 +10,7 @@ module type CodegenBackend = sig
   val create : tcx -> Ir.Module.t -> cx
   val gen : cx -> unit
   val emit : cx -> string -> unit
-  val mangle : cx -> Middle.Def_id.def_id -> string
+  val mangle : cx -> Ir.Inst.instance -> string
 end
 
 module MakeCodegenBackend (T : CodegenBackend) = struct
@@ -21,6 +22,8 @@ module MakeCodegenBackend (T : CodegenBackend) = struct
 end
 
 let codegen (tcx : tcx) mdl =
+  let items = Collect.collect tcx mdl in
+  let mdl = Ir.Module.{ items } in
   match tcx#sess.options.backend with
   | C ->
       let module Backend = MakeCodegenBackend (C) in

@@ -17,7 +17,7 @@ let render_blocks tcx { locals; bbs } =
 
 type t = {
     ty: ty ref
-  ; def_id: def_id
+  ; instance: Inst.instance
   ; args: Inst.value vec
   ; basic_blocks: blocks
   ; decl: bool
@@ -41,12 +41,11 @@ let gen_id blocks =
   blocks.bbs#iter f
 ;;
 
-let render tcx { ty; def_id; args; basic_blocks; _ } =
-  let qpath = tcx#def_id_to_qpath#unsafe_get def_id in
+let render tcx { ty; instance; args; basic_blocks; _ } =
   let ret = Fn.ret tcx ty in
   sprintf
     "fn %s(%s)%s %s\n"
-    (qpath#join "::" (fun s -> s))
+    (Inst.render_instance tcx instance)
     (args#join ", " (tcx |> Inst.render_value))
     (match !ret with Unit -> String.empty | _ -> " -> " ^ tcx#render_ty ret)
     (render_blocks tcx basic_blocks)
