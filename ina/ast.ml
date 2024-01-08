@@ -118,7 +118,7 @@ and impl = {
 and item =
   | Fn of func * attr_vec
   | Type of typ
-  | Foreign of func vec
+  | Foreign of func vec * node_id
   | Impl of impl
   | Mod of {
         name: string

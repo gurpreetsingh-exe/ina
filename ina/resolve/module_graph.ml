@@ -97,6 +97,7 @@ class visitor resolver modd parent dir_ownership =
     val resolver : resolver = resolver
     val modd = modd
     val parent = parent
+    val mutable parent_id = 0
     val mutable mdl = create_modul ()
     val mutable curr_fn = None
     val dir_ownership = dir_ownership
@@ -165,6 +166,7 @@ class visitor resolver modd parent dir_ownership =
 
     method visit_fn fn =
       let name = fn.name in
+      ignore (resolver#tcx#define parent_id fn.func_id (ValueNs name));
       resolver#append_segment name;
       resolver#tcx#insert_span fn.func_id fn.fn_sig.fn_span;
       let did = def_id fn.func_id 0 in
@@ -210,7 +212,9 @@ class visitor resolver modd parent dir_ownership =
       match item with
       | Ast.Fn (fn, _) -> self#visit_fn fn
       | Type (Struct s) -> self#visit_struct s
-      | Foreign fns -> fns#iter self#visit_fn
+      | Foreign (fns, id) ->
+          let did = resolver#tcx#define parent_id id ExternMod in
+          self#with_parent did (fun () -> fns#iter self#visit_fn)
       | Impl impl -> self#visit_impl impl
       | Mod m ->
           let f m o =
@@ -273,8 +277,18 @@ class visitor resolver modd parent dir_ownership =
                resolver#define dummy name Type (Module mdl');
                resolver#extmods#push dummy)
 
+    method with_parent def f =
+      let tmp = parent_id in
+      parent_id <- def;
+      f ();
+      parent_id <- tmp
+
     method visit_mod =
-      resolver#append_segment modd.mod_name;
-      modd.items#iter self#visit_item;
-      resolver#pop_segment
+      let did =
+        resolver#tcx#define parent_id modd.mod_id (TypeNs modd.mod_name)
+      in
+      self#with_parent did (fun () ->
+          resolver#append_segment modd.mod_name;
+          modd.items#iter self#visit_item;
+          resolver#pop_segment)
   end

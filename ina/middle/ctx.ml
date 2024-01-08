@@ -11,6 +11,61 @@ open Encoder
 open Decoder
 module TypeMap = Hashtbl.Make (Ty)
 
+type def_data =
+  | ModRoot
+  | ExternMod
+  | Impl
+  | TypeNs of string
+  | ValueNs of string
+
+let def_data_discriminant = function
+  | ModRoot -> 1
+  | ExternMod -> 2
+  | Impl -> 3
+  | TypeNs _ -> 4
+  | ValueNs _ -> 5
+;;
+
+module DefKey = struct
+  type t = {
+      parent: int option
+    ; data: def_data
+  }
+
+  let equal = ( = )
+
+  let hash k =
+    match k.parent with Some i -> i | None -> Hashtbl.hash ModRoot
+  ;;
+
+  let compute_hash parent k =
+    let hasher = { hash = 0 } in
+    fx_add_to_hash hasher parent;
+    let disc = def_data_discriminant k.data in
+    fx_add_to_hash hasher disc;
+    (match k.data with
+     | TypeNs name | ValueNs name ->
+         fx_add_to_hash hasher (Hashtbl.hash name)
+     | _ -> ());
+    hasher.hash
+  ;;
+
+  let print_def_data = function
+    | ModRoot -> "ModRoot"
+    | ExternMod -> "ExternMod"
+    | Impl -> "Impl"
+    | TypeNs name -> "TypeNs " ^ name
+    | ValueNs name -> "ValueNs " ^ name
+  ;;
+
+  let display { parent; data } =
+    sprintf
+      "{ parent = %s, data = %s }"
+      (match parent with Some p -> sprintf "%d" p | None -> "None")
+      (print_def_data data)
+  ;;
+end
+
 module SubstFolder = struct
   let fold_ty ty subst =
     match !ty with
@@ -112,6 +167,7 @@ class tcx sess =
     val fn_def : (def_id, fnsig) hashmap = new hashmap
     val assoc_fn : (def_id, (string, def_id) hashmap) hashmap = new hashmap
     val extern_mods : string vec = new vec
+    val definitions : (int, DefKey.t) hashmap = new hashmap
 
     val prim_ty_assoc_fn : (ty ref, (string, def_id) hashmap) hashmap =
       new hashmap
@@ -252,6 +308,17 @@ class tcx sess =
           dbg "intern(type = %s)\n" @@ render_ty2 rty;
           ignore (TypeMap.add types ty rty);
           rty
+
+    method define parent id data =
+      assert (data <> ModRoot);
+      dbg
+        "define(parent = %d, id = %d, def_data = %s)\n"
+        parent
+        id
+        (DefKey.print_def_data data);
+      let key = DefKey.{ parent = Some parent; data } in
+      assert (definitions#insert id key = None);
+      id
 
     method create_def id ty =
       match def_id_to_ty#insert id ty with

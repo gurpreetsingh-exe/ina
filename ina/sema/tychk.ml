@@ -604,7 +604,7 @@ let rec tychk cx (modd : modd) =
   let f (item : item) =
     match item with
     | Fn (func, _) -> tychk_fn cx func
-    | Foreign funcs -> funcs#iter (fun f -> tychk_fn cx f)
+    | Foreign (funcs, _) -> funcs#iter (fun f -> tychk_fn cx f)
     | Impl { impl_items; _ } ->
         impl_items#iter (function AssocFn f -> tychk_fn cx f)
     | Type _ | ExternMod _ -> ()

@@ -575,7 +575,7 @@ class resolver tcx modd =
              | None -> ())
         | Fn (func, _) -> visit_fn func
         | Type (Struct strukt) -> visit_struct strukt
-        | Foreign fns -> fns#iter (fun f -> visit_fn f)
+        | Foreign (fns, _) -> fns#iter (fun f -> visit_fn f)
         | Impl { impl_ty; impl_items; impl_id; _ } ->
             let did = def_id impl_id 0 in
             resolve_ty impl_ty;

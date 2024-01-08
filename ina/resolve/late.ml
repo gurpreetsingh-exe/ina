@@ -140,7 +140,7 @@ class type_lowering resolver modd =
       match item with
       | Ast.Fn (fn, _) -> self#visit_fn fn false
       | Type (Struct s) -> self#visit_struct s
-      | Foreign fns -> fns#iter (fun f -> self#visit_fn f false)
+      | Foreign (fns, _) -> fns#iter (fun f -> self#visit_fn f false)
       | Impl impl -> self#visit_impl impl
       | Mod { resolved_mod; _ } ->
           (match resolved_mod with

@@ -330,7 +330,7 @@ and render_item item prefix =
        | Some modd ->
            render_child ?prefix:(Some prefix) true modd render_module
        | None -> ())
-  | Foreign fns ->
+  | Foreign (fns, _) ->
       out += green "ExternBlock\n";
       render_children ?prefix:(Some prefix) fns render_fn
 

@@ -934,7 +934,7 @@ class parser pcx file tokenizer =
             Ok items
           in
           let* items = f () in
-          Ok (Foreign items)
+          Ok (Foreign (items, self#id))
       | Fn ->
           let* fn = self#parse_fn abi true in
           Ok (Ast.Fn (fn, attrs))
