@@ -167,24 +167,18 @@ class visitor resolver modd parent dir_ownership =
     method visit_fn fn =
       let name = fn.name in
       ignore (resolver#tcx#define parent_id fn.func_id (ValueNs name));
-      resolver#append_segment name;
       resolver#tcx#insert_span fn.func_id fn.fn_sig.fn_span;
       let did = def_id fn.func_id 0 in
-      let did =
-        if fn.is_extern then resolver#tcx#decl_extern name did else did
-      in
-      resolver#set_path did;
       let res =
         Res (Def (did, if fn.abi = "intrinsic" then Intrinsic else Fn))
       in
       resolver#define mdl name Value res;
       self#visit_fn_sig fn.fn_sig;
-      (match fn.body with
-       | Some body ->
-           curr_fn <- Some fn;
-           self#visit_block body
-       | None -> ());
-      resolver#pop_segment
+      match fn.body with
+      | Some body ->
+          curr_fn <- Some fn;
+          self#visit_block body
+      | None -> ()
 
     method visit_assoc_fn fn =
       resolver#tcx#insert_span fn.func_id fn.fn_sig.fn_span;
@@ -200,13 +194,11 @@ class visitor resolver modd parent dir_ownership =
       impl.impl_items#iter (function AssocFn fn -> self#visit_assoc_fn fn)
 
     method visit_struct { ident; struct_id; struct_span; _ } =
-      resolver#append_segment ident;
       resolver#tcx#insert_span struct_id struct_span;
       let did = def_id struct_id 0 in
-      resolver#set_path did;
+      ignore (resolver#tcx#define parent_id struct_id (TypeNs ident));
       let res = Res (Def (did, Struct)) in
-      resolver#define mdl ident Type res;
-      resolver#pop_segment
+      resolver#define mdl ident Type res
 
     method visit_item item =
       match item with
@@ -269,11 +261,8 @@ class visitor resolver modd parent dir_ownership =
                  ; resolutions = new hashmap
                  }
                in
-               let path = resolver#current_qpath in
-               resolver#set_qpath (new Structures.Vec.vec);
                let mdl' = Module.decode resolver dec None in
                resolver#tcx#decode_metadata dec;
-               resolver#set_qpath path;
                resolver#define dummy name Type (Module mdl');
                resolver#extmods#push dummy)
 
@@ -287,8 +276,9 @@ class visitor resolver modd parent dir_ownership =
       let did =
         resolver#tcx#define parent_id modd.mod_id (TypeNs modd.mod_name)
       in
-      self#with_parent did (fun () ->
-          resolver#append_segment modd.mod_name;
-          modd.items#iter self#visit_item;
-          resolver#pop_segment)
+      self#with_parent did (fun () -> modd.items#iter self#visit_item)
+
+    method visit_mod_root =
+      let did = resolver#tcx#define_root 0 in
+      self#with_parent did (fun () -> self#visit_mod)
   end

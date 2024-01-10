@@ -22,7 +22,7 @@ let () =
           let visitor =
             new Module_graph.visitor resolver mdl None (Owned None)
           in
-          visitor#visit_mod;
+          visitor#visit_mod_root;
           resolver#extmods#push visitor#mdl;
           if sess.options.print_module_graph
           then (

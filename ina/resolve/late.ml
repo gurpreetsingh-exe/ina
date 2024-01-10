@@ -72,8 +72,7 @@ class type_lowering resolver modd =
           let ty = resolver#tcx#ty_param i name in
           resolver#tcx#create_def did ty)
 
-    method visit_fn (fn : func) assoc =
-      resolver#append_segment fn.name;
+    method visit_fn (fn : func) =
       self#visit_generics fn.fn_generics;
       let abi : abi =
         match fn.abi with
@@ -107,21 +106,15 @@ class type_lowering resolver modd =
           abi
       in
       resolver#tcx#create_def def_id ty;
-      if assoc then resolver#set_path def_id;
       assert (resolver#tcx#node_id_to_def_id#insert fn.func_id def_id = None);
-      (match fn.body with
-       | Some body ->
-           curr_fn <- Some fn;
-           self#visit_block body
-       | None -> ());
-      resolver#pop_segment
+      match fn.body with
+      | Some body ->
+          curr_fn <- Some fn;
+          self#visit_block body
+      | None -> ()
 
     method visit_impl impl =
-      let ty = resolver#tcx#ast_ty_to_ty impl.impl_ty in
-      let segments = resolver#tcx#render_ty_segments ty in
-      resolver#append_segments segments;
-      impl.impl_items#iter (function AssocFn fn -> self#visit_fn fn true);
-      resolver#pop_segments (segments#len - 1)
+      impl.impl_items#iter (function AssocFn fn -> self#visit_fn fn)
 
     method visit_struct strukt =
       let id = strukt.struct_id in
@@ -138,9 +131,9 @@ class type_lowering resolver modd =
 
     method visit_item item =
       match item with
-      | Ast.Fn (fn, _) -> self#visit_fn fn false
+      | Ast.Fn (fn, _) -> self#visit_fn fn
       | Type (Struct s) -> self#visit_struct s
-      | Foreign (fns, _) -> fns#iter (fun f -> self#visit_fn f false)
+      | Foreign (fns, _) -> fns#iter (fun f -> self#visit_fn f)
       | Impl impl -> self#visit_impl impl
       | Mod { resolved_mod; _ } ->
           (match resolved_mod with
@@ -149,11 +142,9 @@ class type_lowering resolver modd =
       | ExternMod _ -> ()
 
     method visit_mod =
-      resolver#append_segment modd.mod_name;
       let def_id = def_id modd.mod_id 0 in
       assert (resolver#tcx#node_id_to_def_id#insert modd.mod_id def_id = None);
-      modd.items#iter self#visit_item;
-      resolver#pop_segment
+      modd.items#iter self#visit_item
 
     method lower = self#visit_mod
   end

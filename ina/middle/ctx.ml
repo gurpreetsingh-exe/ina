@@ -95,7 +95,7 @@ let decode_res resolver dec =
   match dec#read_usize with
   | 0 ->
       let id = Def_id.decode dec in
-      resolver#set_path id;
+      (* resolver#set_path id; *)
       let kind = Option.get @@ Def_id.def_kind_of_enum dec#read_usize in
       Def (id, kind)
   | _ -> assert false
@@ -161,8 +161,6 @@ class tcx sess =
     val mutable main : def_id option = None
     val mutable _types = dummy_types
     val mutable err_count = 0
-    val extern_decls : (string, def_id) hashmap = new hashmap
-    val extern_def_ids : (def_id, unit) hashmap = new hashmap
     val adt_def : (def_id, adt) hashmap = new hashmap
     val fn_def : (def_id, fnsig) hashmap = new hashmap
     val assoc_fn : (def_id, (string, def_id) hashmap) hashmap = new hashmap
@@ -203,31 +201,18 @@ class tcx sess =
     method res_map = res_map
     method def_id_to_qpath = def_id_to_qpath
     method spans = spans
-    method extern_decls = extern_decls
     method set_main id = main <- Some id
     method main = main
 
     method is_extern did =
-      let f ty =
-        match ty with
-        | FnPtr { abi = Default; _ } -> false
-        | FnPtr _ -> true
-        | Fn (did, _) -> (self#get_fn did).abi <> Default
-        | _ -> false
-      in
-      f !(self#get_def did)
+      let DefKey.{ parent; _ } = self#def_key did.inner in
+      let parent = Option.get parent in
+      match self#def_key parent with
+      | { data = ExternMod; _ } -> true
+      | _ -> false
 
     method extmods = extmods
     method extern_mods = extern_mods
-
-    method decl_extern name did =
-      extern_def_ids#insert' did ();
-      match extern_decls#get name with
-      | Some did -> did
-      | None ->
-          assert (extern_decls#insert name did = None);
-          did
-
     method append_extern_mod name = extern_mods#push name
 
     method encode_metadata =
@@ -319,6 +304,35 @@ class tcx sess =
       let key = DefKey.{ parent = Some parent; data } in
       assert (definitions#insert id key = None);
       id
+
+    method define_root id =
+      let key = DefKey.{ parent = None; data = ModRoot } in
+      assert (definitions#insert id key = None);
+      id
+
+    method def_path id =
+      let DefKey.{ parent; data } = definitions#unsafe_get id in
+      match parent with
+      | Some id -> self#def_path id @ [data]
+      | None -> [data]
+
+    method def_key id = definitions#unsafe_get id
+
+    method into_segments id =
+      let DefKey.{ parent; _ } = self#def_key id.inner in
+      let parent = Option.get parent in
+      let extern =
+        match self#def_key parent with
+        | { data = ExternMod; _ } -> true
+        | _ -> false
+      in
+      ( self#def_path id.inner
+        |> (function ModRoot :: rest -> rest | _ -> assert false)
+        |> List.filter (function TypeNs _ | ValueNs _ -> true | _ -> false)
+        |> List.map (function
+               | ModRoot | Impl | ExternMod -> assert false
+               | TypeNs name | ValueNs name -> name)
+      , extern )
 
     method create_def id ty =
       match def_id_to_ty#insert id ty with
@@ -596,7 +610,8 @@ class tcx sess =
              ^ if is_variadic then ", ..." else String.empty)
             (self#render_ty ret)
       | Adt def_id ->
-          let segments = def_id_to_qpath#unsafe_get def_id in
-          segments#last |> Option.get
+          (self#def_key def_id.inner).data |> ( function
+          | TypeNs name -> name
+          | _ -> assert false )
       | Param { name; _ } -> name
   end

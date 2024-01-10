@@ -549,8 +549,11 @@ let tychk_fn cx fn =
              |> ( function
              | Some ty -> ty
              | None ->
-                 let path = tcx#def_id_to_qpath#unsafe_get variant.def_id in
-                 let name = Option.get path#last in
+                 let name =
+                   (tcx#def_key variant.def_id.inner).data |> function
+                   | TypeNs name -> name
+                   | _ -> assert false
+                 in
                  let err = UnknownField (name, ident) in
                  ty_err_emit tcx err expr.expr_span;
                  tcx#types.err ))

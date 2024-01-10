@@ -28,31 +28,30 @@ type cx = {
 }
 
 let mangle_adt cx did =
-  let qpath = cx.tcx#def_id_to_qpath#unsafe_get did in
-  String.concat
-    ""
-    [
-      "_ZN"; qpath#join "" (fun s -> sprintf "%d%s" (String.length s) s); "Ev"
-    ]
+  let segments, _ = cx.tcx#into_segments did in
+  let path =
+    segments
+    |> List.map (fun s -> sprintf "%d%s" (String.length s) s)
+    |> String.concat ""
+  in
+  String.concat "" ["_ZN"; path; "Ev"]
+;;
+
+let mangle_def_path cx did =
+  let segments, extern = cx.tcx#into_segments did in
+  match extern with
+  | true -> List.nth segments (List.length segments - 1)
+  | false ->
+      let name =
+        segments
+        |> List.map (fun s -> sprintf "%d%s" (String.length s) s)
+        |> String.concat ""
+      in
+      String.concat "" ["_ZN"; name; "Ev"]
 ;;
 
 let mangle cx instance =
-  match instance.def with
-  | Fn did ->
-      let qpath = cx.tcx#def_id_to_qpath#unsafe_get did in
-      if cx.tcx#is_extern did
-      then Option.get qpath#last
-      else
-        String.concat
-          ""
-          [
-            "_ZN"
-          ; qpath#join "" (fun s -> sprintf "%d%s" (String.length s) s)
-          ; "Ev"
-          ]
-  | Intrinsic did ->
-      let qpath = cx.tcx#def_id_to_qpath#unsafe_get did in
-      Option.get qpath#last
+  match instance.def with Fn did | Intrinsic did -> mangle_def_path cx did
 ;;
 
 let rec backend_ty cx ty =
@@ -328,7 +327,7 @@ let gen cx =
       sprintf
         "%s%s %s(%s%s)"
         (* (if cx.tcx#is_extern func.def_id then "extern " else "") *)
-        ("")
+        ""
         (backend_ty cx ret)
         name
         (args#join ", " (fun s -> s))
@@ -338,41 +337,34 @@ let gen cx =
          | _ -> "")
     in
     out ^ header;
-    (* if cx.tcx#is_extern func.def_id *)
-    (* then out ^ ";\n" *)
-    (* else ( *)
-    (*   out ^ " {\n"; *)
-    (*   func.basic_blocks.locals#iter gen_inst; *)
-    (*   func.basic_blocks.bbs#iter gen_bb; *)
-    (*   out ^ "}\n\n") *)
+    if func.decl
+    then out ^ ";\n"
+    else (
       out ^ " {\n";
       func.basic_blocks.locals#iter gen_inst;
       func.basic_blocks.bbs#iter gen_bb;
-      out ^ "}\n\n"
+      out ^ "}\n\n")
   in
-  (* let gen_main main_id = *)
-  (*   let name = mangle cx main_id in *)
-  (*   let ty = cx.tcx#get_def main_id in *)
-  (*   match Fn.ret cx.tcx ty with *)
-  (*   | ret when ret = cx.tcx#types.unit -> *)
-  (*       out ^ sprintf "int main() {\n  %s();\n  return 0;\n}\n" name *)
-  (*   | _ -> out ^ sprintf "int main() {\n  return %s();\n}\n" name *)
-  (* in *)
+  let gen_main main =
+    let name = mangle cx main in
+    let ty = cx.tcx#get_def (instance_def_id main) in
+    match Fn.ret cx.tcx ty with
+    | ret when ret = cx.tcx#types.unit ->
+        out ^ sprintf "int main() {\n  %s();\n  return 0;\n}\n" name
+    | _ -> out ^ sprintf "int main() {\n  return %s();\n}\n" name
+  in
   cx.irmdl.items#iter (fun f ->
-      let did =
-        if f.decl
-        then cx.tcx#decl_extern (mangle cx f.instance) (instance_def_id f.instance)
-        else instance_def_id f.instance
-      in
-      let ty = cx.tcx#get_def did in
-      if (not (Fn.is_generic ty)) && not (cx.gen'd_fns#has did)
+      let did = instance_def_id f.instance in
+      if not (cx.gen'd_fns#has did)
       then (
         assert (cx.gen'd_fns#insert did () = None);
         gen_function f));
-  (* (match cx.tcx#main with *)
-  (*  | Some id -> gen_main id *)
-  (*  | _ when cx.tcx#sess.options.output_type = Exe -> assert false *)
-  (*  | _ -> ()); *)
+  (match cx.tcx#main with
+   | Some id ->
+       let instance = { def = Fn id; subst = Subst (new vec) } in
+       gen_main instance
+   | _ when cx.tcx#sess.options.output_type = Exe -> assert false
+   | _ -> ());
   gen_types cx;
   (match cx.tcx#sess.options.output_type with
    | ExtMod ->

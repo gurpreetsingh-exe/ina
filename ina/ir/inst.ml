@@ -25,7 +25,12 @@ let render_instance tcx instance =
       let (Subst subst) = instance.subst in
       sprintf
         "@%s%s"
-        ((tcx#def_id_to_qpath#unsafe_get id)#join "::" (fun s -> s))
+        (tcx#def_path id.inner
+         |> List.map (function
+                | Middle.Ctx.ModRoot -> ""
+                | Impl | ExternMod -> assert false
+                | TypeNs name | ValueNs name -> name)
+         |> String.concat "::")
         (if subst#empty
          then ""
          else

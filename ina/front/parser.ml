@@ -909,7 +909,7 @@ class parser pcx file tokenizer =
         ; impl_id = self#id
         }
 
-    method parse_extern attrs =
+    method parse_extern =
       let abi =
         if self#check (Lit String)
         then (
@@ -935,10 +935,7 @@ class parser pcx file tokenizer =
           in
           let* items = f () in
           Ok (Foreign (items, self#id))
-      | Fn ->
-          let* fn = self#parse_fn abi true in
-          Ok (Ast.Fn (fn, attrs))
-      | _ -> assert false
+      | _ -> Error (self#err token.span "unexpected_token")
 
     method parse_item =
       let* attrs = self#parse_outer_attrs in
@@ -958,7 +955,7 @@ class parser pcx file tokenizer =
                let* _ = self#expect Semi in
                Ok (ExternMod name)
            | _ ->
-               let* extern_item = self#parse_extern attrs in
+               let* extern_item = self#parse_extern in
                Ok extern_item)
       | Impl ->
           let* impl = self#parse_impl in

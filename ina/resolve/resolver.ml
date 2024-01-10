@@ -61,8 +61,6 @@ module Module = struct
       | 0 ->
           let def_id = Middle.Def_id.decode dec in
           let name = dec#read_str in
-          resolver#append_segment name;
-          resolver#set_path def_id;
           Def (Mod, def_id, name)
       | i ->
           printf "%i\n" i;
@@ -82,16 +80,13 @@ module Module = struct
       let binding =
         match dec#read_usize with
         | 0 ->
-            resolver#append_segment ident;
             let res = Res (decode_res resolver dec) in
-            resolver#pop_segment;
             res
         | 1 -> Module (decode resolver dec (Some mdl))
         | _ -> assert false
       in
       resolver#define mdl ident ns binding
     done;
-    resolver#pop_segment;
     mdl
   ;;
 
@@ -222,7 +217,6 @@ class resolver tcx modd =
     val modd : modd = modd
     val modules : (def_id, Module.t) hashmap = new hashmap
     val extmods : Module.t vec = new vec
-    val mutable current_qpath : string vec = new vec
     val mutable current_impl : res option = None
     val impl_map : (res, (def_id, unit) hashmap) hashmap = new hashmap
     val scopes : scope vec = new vec
@@ -242,22 +236,7 @@ class resolver tcx modd =
     method extmods = extmods
     method tcx = tcx
     method sess = tcx#sess
-    method current_qpath = current_qpath
-    method set_qpath path = current_qpath <- path
-    method append_segment segment = current_qpath#push segment
-    method append_segments segments = current_qpath#append segments
-    method pop_segment = current_qpath#pop
     method scopes = scopes
-
-    method pop_segments n =
-      for _ = 0 to n do
-        self#pop_segment
-      done
-
-    method set_path def_id =
-      let path = new vec in
-      path#copy current_qpath;
-      assert (tcx#def_id_to_qpath#insert def_id path = None)
 
     method shadow mdl ident ns binding =
       let key = { ident; ns; disambiguator = 0 } in
