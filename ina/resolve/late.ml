@@ -114,7 +114,12 @@ class type_lowering resolver modd =
       | None -> ()
 
     method visit_impl impl =
-      impl.impl_items#iter (function AssocFn fn -> self#visit_fn fn)
+      resolver#tcx#def_key impl.impl_id |> function
+      | { data = Impl id; _ } ->
+          let ty = resolver#tcx#ast_ty_to_ty impl.impl_ty in
+          resolver#tcx#link_impl id ty;
+          impl.impl_items#iter (function AssocFn fn -> self#visit_fn fn)
+      | _ -> assert false
 
     method visit_struct strukt =
       let id = strukt.struct_id in

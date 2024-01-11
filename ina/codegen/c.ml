@@ -118,8 +118,8 @@ let rec backend_ty cx ty =
       assert false
 
 and fn cx ty =
-  let subst = Fn.subst ty in
-  print_endline @@ subst#join ", " (function Ty ty -> cx.tcx#render_ty ty);
+  (* let subst = Fn.subst ty in *)
+  (* print_endline @@ subst#join ", " (function Ty ty -> cx.tcx#render_ty ty); *)
   let { args; ret; is_variadic; _ } = Fn.get cx.tcx (ref ty) in
   match cx.types#get ty with
   | Some ty -> ty
@@ -277,7 +277,6 @@ let gen cx =
         out ^ sprintf "*%s = %s;\n" (get_value dst) (get_value src)
     | Copy ptr | Move ptr -> out ^ sprintf "*%s;\n" (get_value ptr)
     | Call (ty, value, args) ->
-        print_endline @@ cx.tcx#render_ty ty;
         (match Fn.abi cx.tcx ty with
          | Intrinsic -> gen_intrinsic value args
          | _ ->

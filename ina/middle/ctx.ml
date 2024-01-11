@@ -14,14 +14,14 @@ module TypeMap = Hashtbl.Make (Ty)
 type def_data =
   | ModRoot
   | ExternMod
-  | Impl
+  | Impl of int
   | TypeNs of string
   | ValueNs of string
 
 let def_data_discriminant = function
   | ModRoot -> 1
   | ExternMod -> 2
-  | Impl -> 3
+  | Impl _ -> 3
   | TypeNs _ -> 4
   | ValueNs _ -> 5
 ;;
@@ -53,7 +53,7 @@ module DefKey = struct
   let print_def_data = function
     | ModRoot -> "ModRoot"
     | ExternMod -> "ExternMod"
-    | Impl -> "Impl"
+    | Impl i -> "Impl " ^ string_of_int i
     | TypeNs name -> "TypeNs " ^ name
     | ValueNs name -> "ValueNs " ^ name
   ;;
@@ -166,6 +166,8 @@ class tcx sess =
     val assoc_fn : (def_id, (string, def_id) hashmap) hashmap = new hashmap
     val extern_mods : string vec = new vec
     val definitions : (int, DefKey.t) hashmap = new hashmap
+    val impls : (int, ty ref) hashmap = new hashmap
+    val mutable impl_id = 0
 
     val prim_ty_assoc_fn : (ty ref, (string, def_id) hashmap) hashmap =
       new hashmap
@@ -214,6 +216,11 @@ class tcx sess =
     method extmods = extmods
     method extern_mods = extern_mods
     method append_extern_mod name = extern_mods#push name
+
+    method impl_id =
+      let id = impl_id in
+      impl_id <- impl_id + 1;
+      id
 
     method encode_metadata =
       let enc = sess.enc in
@@ -328,11 +335,16 @@ class tcx sess =
       in
       ( self#def_path id.inner
         |> (function ModRoot :: rest -> rest | _ -> assert false)
-        |> List.filter (function TypeNs _ | ValueNs _ -> true | _ -> false)
+        |> List.filter (function
+               | TypeNs _ | ValueNs _ | Impl _ -> true
+               | _ -> false)
         |> List.map (function
-               | ModRoot | Impl | ExternMod -> assert false
+               | ModRoot | ExternMod -> assert false
+               | Impl id -> self#render_ty (impls#unsafe_get id)
                | TypeNs name | ValueNs name -> name)
       , extern )
+
+    method link_impl id ty = assert (impls#insert id ty = None)
 
     method create_def id ty =
       match def_id_to_ty#insert id ty with

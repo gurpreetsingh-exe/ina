@@ -183,6 +183,7 @@ class visitor resolver modd parent dir_ownership =
     method visit_assoc_fn fn =
       resolver#tcx#insert_span fn.func_id fn.fn_sig.fn_span;
       assert (not fn.is_extern);
+      ignore (resolver#tcx#define parent_id fn.func_id (ValueNs fn.name));
       self#visit_fn_sig fn.fn_sig;
       match fn.body with
       | Some body ->
@@ -191,7 +192,15 @@ class visitor resolver modd parent dir_ownership =
       | None -> assert false
 
     method visit_impl impl =
-      impl.impl_items#iter (function AssocFn fn -> self#visit_assoc_fn fn)
+      let did =
+        resolver#tcx#define
+          parent_id
+          impl.impl_id
+          (Impl resolver#tcx#impl_id)
+      in
+      self#with_parent did (fun () ->
+          impl.impl_items#iter (function AssocFn fn ->
+              self#visit_assoc_fn fn))
 
     method visit_struct { ident; struct_id; struct_span; _ } =
       resolver#tcx#insert_span struct_id struct_span;
@@ -211,9 +220,10 @@ class visitor resolver modd parent dir_ownership =
       | Mod m ->
           let f m o =
             let visitor = new visitor resolver m (Some mdl) o in
-            visitor#visit_mod;
-            let res = Module visitor#mdl in
-            resolver#define mdl m.mod_name Type res
+            visitor#with_parent parent_id (fun () ->
+                visitor#visit_mod;
+                let res = Module visitor#mdl in
+                resolver#define mdl m.mod_name Type res)
           in
           (match m.resolved_mod with
            | Some m -> f m dir_ownership

@@ -28,7 +28,7 @@ let render_instance tcx instance =
         (tcx#def_path id.inner
          |> List.map (function
                 | Middle.Ctx.ModRoot -> ""
-                | Impl | ExternMod -> assert false
+                | Impl _ | ExternMod -> assert false
                 | TypeNs name | ValueNs name -> name)
          |> String.concat "::")
         (if subst#empty
