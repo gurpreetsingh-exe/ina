@@ -1,6 +1,15 @@
 class encoder =
   object (self)
     val buf : Buffer.t = Buffer.create 0
+    val mutable mod_id : int = 0
+    val mutable mod_name : string = "<anon>"
+    method mod_id = mod_id
+
+    method set_mod_name name =
+      mod_name <- name;
+      mod_id <- Hashtbl.hash name
+
+    method emit_mod_id = self#emit_usize mod_id
 
     (* method render = String.of_bytes @@ Buffer.to_bytes buf *)
     method render = Buffer.to_bytes buf

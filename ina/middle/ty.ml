@@ -218,7 +218,7 @@ let rec decode tcx dec =
        let abi = dec#read_usize |> abi_of_enum |> Option.get in
        FnPtr { args; ret; is_variadic; abi }
    | 10 -> Unit
-   | 12 -> Fn (Def_id.decode dec, assert false)
+   | 12 -> Fn (Def_id.decode dec, Subst (new vec))
    | i ->
        printf "%d\n" i;
        assert false)
@@ -269,12 +269,12 @@ let rec hash hasher ty =
   | Float f -> g (float_ty_to_enum f + 1)
   | Bool | Str | Unit | Err -> ()
   | Ptr ty | Ref ty -> f !ty
-  | Adt { inner; extmod_id } ->
+  | Adt { inner; mod_id } ->
       g inner;
-      g extmod_id
-  | Fn ({ inner; extmod_id }, Subst subst) ->
+      g mod_id
+  | Fn ({ inner; mod_id }, Subst subst) ->
       g inner;
-      g extmod_id;
+      g mod_id;
       subst#iter (function Ty ty -> f !ty)
   | FnPtr { args; ret; is_variadic; abi } ->
       args#iter (fun ty -> f !ty);

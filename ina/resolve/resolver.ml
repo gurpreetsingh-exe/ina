@@ -38,6 +38,19 @@ module Module = struct
 
   and resolutions = (binding_key, name_resolution) hashmap
 
+  let binding_to_def_id : name_resolution -> def_id = function
+    | Res (Def (id, _)) | Module { mkind = Def (_, id, _); _ } -> id
+    | _ -> assert false
+  ;;
+
+  let binding_to_def_path name : name_resolution -> def_data = function
+    | Res (Def (_, (Fn | Intrinsic))) -> ValueNs name
+    | Res (Def (_, (Mod | Struct))) | Module { mkind = Def (Mod, _, _); _ }
+      ->
+        TypeNs name
+    | _ -> assert false
+  ;;
+
   let rec encode enc mdl =
     (match mdl.mkind with
      | Def (_, id, name) ->
@@ -79,9 +92,7 @@ module Module = struct
       in
       let binding =
         match dec#read_usize with
-        | 0 ->
-            let res = Res (decode_res resolver dec) in
-            res
+        | 0 -> Res (decode_res dec)
         | 1 -> Module (decode resolver dec (Some mdl))
         | _ -> assert false
       in
@@ -99,11 +110,6 @@ module Module = struct
     match binding with
     | Res res -> res_to_def_kind res
     | Module _ -> "module"
-  ;;
-
-  let binding_to_def_id : name_resolution -> def_id = function
-    | Res (Def (id, _)) | Module { mkind = Def (_, id, _); _ } -> id
-    | _ -> assert false
   ;;
 
   let name_binding_kind_to_enum = function Res _ -> 0L | Module _ -> 1L
@@ -202,7 +208,7 @@ class scope =
 let with_generics_params resolver generics f =
   let type_scope = new scope in
   generics.params#iter (fun { kind = Ident name; generic_param_id; _ } ->
-      let did = def_id generic_param_id 0 in
+      let did = local_def_id generic_param_id in
       let res = Middle.Ctx.Def (did, TyParam) in
       type_scope#define name Type res);
   resolver#scopes#push type_scope;
@@ -216,7 +222,7 @@ class resolver tcx modd =
     val tcx : tcx = tcx
     val modd : modd = modd
     val modules : (def_id, Module.t) hashmap = new hashmap
-    val extmods : Module.t vec = new vec
+    val extmods : (string, Module.t) hashmap = new hashmap
     val mutable current_impl : res option = None
     val impl_map : (res, (def_id, unit) hashmap) hashmap = new hashmap
     val scopes : scope vec = new vec
@@ -458,13 +464,13 @@ class resolver tcx modd =
           match self#resolve_path mdl path ns with
           | Err ->
               let resolved =
-                fold_left
+                Seq.fold_left
                   (fun resolved mdl ->
                     match resolved with
                     | Middle.Ctx.Err -> self#resolve_path mdl path ns
                     | _ -> resolved)
                   Err
-                  extmods
+                  extmods#values
               in
               (match resolved with Err -> self#not_found path | _ -> ());
               resolved
@@ -505,7 +511,7 @@ class resolver tcx modd =
             visit_expr expr mdl;
             args#iter (fun expr -> visit_expr expr mdl)
       and visit_block body =
-        let mdl = modules#unsafe_get (def_id body.block_id 0) in
+        let mdl = modules#unsafe_get (local_def_id body.block_id) in
         body.block_stmts#iter (fun stmt ->
             match stmt with
             | Stmt expr | Expr expr -> visit_expr expr mdl
@@ -536,7 +542,7 @@ class resolver tcx modd =
             match func.body with Some body -> visit_block body | None -> ())
       in
       let visit_assoc_fn ty fn =
-        let did = def_id fn.func_id 0 in
+        let did = local_def_id fn.func_id in
         tcx#define_assoc_fn ty fn.name did;
         visit_fn fn
       in
@@ -548,7 +554,7 @@ class resolver tcx modd =
         | Mod { resolved_mod; _ } ->
             (match resolved_mod with
              | Some modd ->
-                 let id = def_id modd.mod_id 0 in
+                 let id = local_def_id modd.mod_id in
                  let mdl = modules#unsafe_get id in
                  self#resolve_paths mdl modd
              | None -> ())
@@ -556,7 +562,7 @@ class resolver tcx modd =
         | Type (Struct strukt) -> visit_struct strukt
         | Foreign (fns, _) -> fns#iter (fun f -> visit_fn f)
         | Impl { impl_ty; impl_items; impl_id; _ } ->
-            let did = def_id impl_id 0 in
+            let did = local_def_id impl_id in
             resolve_ty impl_ty;
             (match tcx#ast_ty_to_res impl_ty with
              | Some res ->

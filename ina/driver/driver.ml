@@ -16,19 +16,20 @@ let () =
         Parser.parse_mod_from_file sess.parse_sess sess.options.input)
   in
   let resolve_and_sema mdl =
-    let time, (resolver, mdl') =
+    let time, (resolver, _) =
       Timer.time (fun () ->
           let resolver = new Resolver.resolver tcx mdl in
           let visitor =
             new Module_graph.visitor resolver mdl None (Owned None)
           in
           visitor#visit_mod_root;
-          resolver#extmods#push visitor#mdl;
+          resolver#extmods#insert' mdl.mod_name visitor#mdl;
           if sess.options.print_module_graph
           then (
             let printer = new Printer.printer in
-            resolver#extmods#iter (fun mdl ->
-                Resolver.Module.print_modul "" printer mdl);
+            Seq.iter
+              (fun mdl -> Resolver.Module.print_modul "" printer mdl)
+              resolver#extmods#values;
             printer#print;
             exit 0);
           resolver#init visitor#mdl;
@@ -40,7 +41,23 @@ let () =
     (new Late.type_lowering resolver mdl)#lower;
     if sess.options.output_type = ExtMod
     then (
-      Resolver.Module.encode tcx#sess.enc mdl';
+      Metadata.Encoder.encode_hashmap
+        tcx#sess.enc
+        resolver#extmods
+        (fun enc s -> enc#emit_str s)
+        (fun enc mdl' ->
+          let mdl =
+            match mdl'.mkind with
+            | Def (_, _, name) when mdl.mod_name <> name ->
+                let mdl =
+                  (Array.of_seq mdl'.resolutions#values).(0) |> function
+                  | Module m -> m
+                  | _ -> assert false
+                in
+                mdl
+            | _ -> mdl'
+          in
+          Resolver.Module.encode enc mdl);
       tcx#encode_metadata);
     let time, _ =
       Timer.time (fun () ->
@@ -53,6 +70,7 @@ let () =
   in
   match res with
   | Ok mdl ->
+      tcx#sess.enc#set_mod_name mdl.mod_name;
       sess.options.output <-
         (if Filename.basename mdl.mod_path = "lib.ina"
          then Filename.dirname mdl.mod_path

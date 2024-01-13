@@ -25,12 +25,8 @@ let render_instance tcx instance =
       let (Subst subst) = instance.subst in
       sprintf
         "@%s%s"
-        (tcx#def_path id.inner
-         |> List.map (function
-                | Middle.Ctx.ModRoot -> ""
-                | Impl _ | ExternMod -> assert false
-                | TypeNs name | ValueNs name -> name)
-         |> String.concat "::")
+        (tcx#into_segments id |> function
+         | segments, _ -> segments |> String.concat "::")
         (if subst#empty
          then ""
          else

@@ -14,7 +14,7 @@ module TypeMap = Hashtbl.Make (Ty)
 type def_data =
   | ModRoot
   | ExternMod
-  | Impl of int
+  | Impl of def_id
   | TypeNs of string
   | ValueNs of string
 
@@ -26,16 +26,49 @@ let def_data_discriminant = function
   | ValueNs _ -> 5
 ;;
 
+let encode_def_data enc data : unit =
+  let disc = def_data_discriminant data |> Int64.of_int in
+  match data with
+  | ModRoot | ExternMod -> enc#emit_with disc (fun _ -> ())
+  | Impl id -> enc#emit_with disc (fun e -> Def_id.encode e id)
+  | TypeNs name | ValueNs name ->
+      enc#emit_with disc (fun e -> e#emit_str name)
+;;
+
+let decode_def_data dec =
+  match dec#read_usize with
+  | 1 -> ModRoot
+  | 2 -> ExternMod
+  | 3 -> Impl (Def_id.decode dec)
+  | 4 -> TypeNs dec#read_str
+  | 5 -> ValueNs dec#read_str
+  | _ -> assert false
+;;
+
 module DefKey = struct
   type t = {
-      parent: int option
+      parent: def_id option
     ; data: def_data
   }
 
-  let equal = ( = )
+  let encode enc key =
+    (match key.parent with
+     | Some parent ->
+         enc#emit_usize 1;
+         Def_id.encode enc parent
+     | None -> enc#emit_usize 2);
+    encode_def_data enc key.data
+  ;;
 
-  let hash k =
-    match k.parent with Some i -> i | None -> Hashtbl.hash ModRoot
+  let decode dec =
+    let parent =
+      match dec#read_usize with
+      | 1 -> Some (Def_id.decode dec)
+      | 2 -> None
+      | _ -> assert false
+    in
+    let data = decode_def_data dec in
+    { parent; data }
   ;;
 
   let compute_hash parent k =
@@ -53,7 +86,7 @@ module DefKey = struct
   let print_def_data = function
     | ModRoot -> "ModRoot"
     | ExternMod -> "ExternMod"
-    | Impl i -> "Impl " ^ string_of_int i
+    | Impl i -> "Impl " ^ print_def_id i
     | TypeNs name -> "TypeNs " ^ name
     | ValueNs name -> "ValueNs " ^ name
   ;;
@@ -61,7 +94,7 @@ module DefKey = struct
   let display { parent; data } =
     sprintf
       "{ parent = %s, data = %s }"
-      (match parent with Some p -> sprintf "%d" p | None -> "None")
+      (match parent with Some p -> print_def_id p | None -> "None")
       (print_def_data data)
   ;;
 end
@@ -91,11 +124,10 @@ let encode_res enc res =
   | _ -> assert false
 ;;
 
-let decode_res resolver dec =
+let decode_res dec =
   match dec#read_usize with
   | 0 ->
       let id = Def_id.decode dec in
-      (* resolver#set_path id; *)
       let kind = Option.get @@ Def_id.def_kind_of_enum dec#read_usize in
       Def (id, kind)
   | _ -> assert false
@@ -155,7 +187,6 @@ class tcx sess =
     val def_id_to_ty : (def_id, ty ref) hashmap = new hashmap
     val node_id_to_def_id : def_id nodemap = new hashmap
     val res_map : res nodemap = new hashmap
-    val def_id_to_qpath : (def_id, string vec) hashmap = new hashmap
     val spans : Span.t nodemap = new hashmap
     val sess : Sess.t = sess
     val mutable main : def_id option = None
@@ -165,8 +196,8 @@ class tcx sess =
     val fn_def : (def_id, fnsig) hashmap = new hashmap
     val assoc_fn : (def_id, (string, def_id) hashmap) hashmap = new hashmap
     val extern_mods : string vec = new vec
-    val definitions : (int, DefKey.t) hashmap = new hashmap
-    val impls : (int, ty ref) hashmap = new hashmap
+    val definitions : (def_id, DefKey.t) hashmap = new hashmap
+    val impls : (def_id, ty ref) hashmap = new hashmap
     val mutable impl_id = 0
 
     val prim_ty_assoc_fn : (ty ref, (string, def_id) hashmap) hashmap =
@@ -201,13 +232,12 @@ class tcx sess =
     method types = _types
     method node_id_to_def_id = node_id_to_def_id
     method res_map = res_map
-    method def_id_to_qpath = def_id_to_qpath
     method spans = spans
     method set_main id = main <- Some id
     method main = main
 
     method is_extern did =
-      let DefKey.{ parent; _ } = self#def_key did.inner in
+      let DefKey.{ parent; _ } = self#def_key did in
       let parent = Option.get parent in
       match self#def_key parent with
       | { data = ExternMod; _ } -> true
@@ -230,23 +260,11 @@ class tcx sess =
           encode_vec e adt.variants Ty.encode_variant);
       encode_hashmap enc fn_def Def_id.encode Fn.encode;
       encode_hashmap enc assoc_fn Def_id.encode (fun e methods ->
-          encode_hashmap
-            e
-            methods
-            (fun e s -> e#emit_str s)
-            (fun e did ->
-              Def_id.encode e did;
-              let path = def_id_to_qpath#unsafe_get did in
-              encode_vec e path (fun e s -> e#emit_str s)));
+          encode_hashmap e methods (fun e s -> e#emit_str s) Def_id.encode);
       encode_hashmap enc prim_ty_assoc_fn Ty.encode (fun e methods ->
-          encode_hashmap
-            e
-            methods
-            (fun e s -> e#emit_str s)
-            (fun e did ->
-              Def_id.encode e did;
-              let path = def_id_to_qpath#unsafe_get did in
-              encode_vec e path (fun e s -> e#emit_str s)))
+          encode_hashmap e methods (fun e s -> e#emit_str s) Def_id.encode);
+      encode_hashmap enc definitions Def_id.encode DefKey.encode;
+      encode_hashmap enc impls Def_id.encode Ty.encode
 
     method decode_metadata (dec : decoder) =
       decode_vec dec extern_mods (fun dec -> dec#read_str);
@@ -259,30 +277,14 @@ class tcx sess =
       decode_hashmap dec fn_def Def_id.decode (self |> decode_fn);
       decode_hashmap dec assoc_fn Def_id.decode (fun dec ->
           let methods = new hashmap in
-          decode_hashmap
-            dec
-            methods
-            (fun dec -> dec#read_str)
-            (fun dec ->
-              let did = Def_id.decode dec in
-              let path = new vec in
-              decode_vec dec path (fun dec -> dec#read_str);
-              def_id_to_qpath#insert' did path;
-              did);
+          decode_hashmap dec methods (fun dec -> dec#read_str) Def_id.decode;
           methods);
       decode_hashmap dec prim_ty_assoc_fn (self |> Ty.decode) (fun dec ->
           let methods = new hashmap in
-          decode_hashmap
-            dec
-            methods
-            (fun dec -> dec#read_str)
-            (fun dec ->
-              let did = Def_id.decode dec in
-              let path = new vec in
-              decode_vec dec path (fun dec -> dec#read_str);
-              def_id_to_qpath#insert' did path;
-              did);
-          methods)
+          decode_hashmap dec methods (fun dec -> dec#read_str) Def_id.decode;
+          methods);
+      decode_hashmap dec definitions Def_id.decode DefKey.decode;
+      decode_hashmap dec impls Def_id.decode (self |> Ty.decode)
 
     method unit name =
       match extmods#get name with
@@ -304,12 +306,16 @@ class tcx sess =
     method define parent id data =
       assert (data <> ModRoot);
       dbg
-        "define(parent = %d, id = %d, def_data = %s)\n"
-        parent
-        id
+        "define(parent = %s, id = %s, def_data = %s)\n"
+        (print_def_id parent)
+        (print_def_id id)
         (DefKey.print_def_data data);
       let key = DefKey.{ parent = Some parent; data } in
-      assert (definitions#insert id key = None);
+      (match definitions#insert id key with
+       | Some key' ->
+           printf "%s = %s\n" (DefKey.display key') (DefKey.display key);
+           assert (key' = key)
+       | None -> ());
       id
 
     method define_root id =
@@ -318,22 +324,43 @@ class tcx sess =
       id
 
     method def_path id =
+      (* printf "%s\n%!" (print_def_id id); *)
       let DefKey.{ parent; data } = definitions#unsafe_get id in
       match parent with
-      | Some id -> self#def_path id @ [data]
+      | Some id ->
+          let path = self#def_path id in
+          path @ [data]
       | None -> [data]
 
     method def_key id = definitions#unsafe_get id
 
+    method print_def_keys =
+      let nodes = new hashmap in
+      definitions#iter (fun did key ->
+          match key.parent with
+          | Some parent ->
+              nodes#insert' parent (new vec);
+              (nodes#unsafe_get parent)#push did
+          | None -> ());
+      let open Utils.Printer in
+      let printer = new printer in
+      render_children printer nodes (fun (k, v) prefix ->
+          printer#append @@ DefKey.print_def_data (self#def_key k).data;
+          printer#append "\n";
+          render_children ?prefix:(Some prefix) printer v (fun i _ ->
+              printer#append @@ DefKey.print_def_data (self#def_key i).data;
+              printer#append "\n"));
+      printer#print
+
     method into_segments id =
-      let DefKey.{ parent; _ } = self#def_key id.inner in
+      let DefKey.{ parent; _ } = self#def_key id in
       let parent = Option.get parent in
       let extern =
         match self#def_key parent with
         | { data = ExternMod; _ } -> true
         | _ -> false
       in
-      ( self#def_path id.inner
+      ( self#def_path id
         |> (function ModRoot :: rest -> rest | _ -> assert false)
         |> List.filter (function
                | TypeNs _ | ValueNs _ | Impl _ -> true
@@ -573,8 +600,9 @@ class tcx sess =
            segments#push "r";
            segments#append (self#render_ty_segments ty)
        | Adt def_id ->
-           let name = Option.get (def_id_to_qpath#unsafe_get def_id)#last in
-           segments#push name
+           self#def_key def_id |> ( function
+           | { data = TypeNs name; _ } -> segments#push name
+           | _ -> assert false )
        | Err -> assert false
        | _ -> segments#push (render_ty ty));
       segments
@@ -622,7 +650,7 @@ class tcx sess =
              ^ if is_variadic then ", ..." else String.empty)
             (self#render_ty ret)
       | Adt def_id ->
-          (self#def_key def_id.inner).data |> ( function
+          (self#def_key def_id).data |> ( function
           | TypeNs name -> name
           | _ -> assert false )
       | Param { name; _ } -> name

@@ -30,6 +30,7 @@ class ['k, 'v] hashmap =
     method len = Hashtbl.length inner
     method iter f = Hashtbl.iter f inner
     method iteri f = Seq.iteri f (Hashtbl.to_seq inner)
+    method values = Hashtbl.to_seq_values inner
 
     method print ?(depth = 0) key_print value_print =
       let indent = String.make (depth * 2) ' ' in

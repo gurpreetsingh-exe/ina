@@ -7,7 +7,7 @@ open Resolver
 
 class type_lowering resolver modd =
   object (self)
-    val modd = modd
+    val modd : Ast.modd = modd
     val resolver : resolver = resolver
     val mutable curr_fn = None
     method visit_ty _ = ()
@@ -68,7 +68,7 @@ class type_lowering resolver modd =
     method visit_generics generics =
       generics.params#iteri
         (fun i { kind = Ident name; generic_param_id; _ } ->
-          let did = def_id generic_param_id 0 in
+          let did = local_def_id generic_param_id in
           let ty = resolver#tcx#ty_param i name in
           resolver#tcx#create_def did ty)
 
@@ -92,10 +92,10 @@ class type_lowering resolver modd =
       let subst =
         Subst
           (map fn.fn_generics.params (fun { generic_param_id; _ } ->
-               let did = def_id generic_param_id 0 in
+               let did = local_def_id generic_param_id in
                Ty (resolver#tcx#get_def did)))
       in
-      let def_id = def_id fn.func_id 0 in
+      let def_id = local_def_id fn.func_id in
       let ty =
         resolver#tcx#fn_with_sig
           def_id
@@ -114,7 +114,7 @@ class type_lowering resolver modd =
       | None -> ()
 
     method visit_impl impl =
-      resolver#tcx#def_key impl.impl_id |> function
+      resolver#tcx#def_key (local_def_id impl.impl_id) |> function
       | { data = Impl id; _ } ->
           let ty = resolver#tcx#ast_ty_to_ty impl.impl_ty in
           resolver#tcx#link_impl id ty;
@@ -123,7 +123,7 @@ class type_lowering resolver modd =
 
     method visit_struct strukt =
       let id = strukt.struct_id in
-      let def_id = def_id id 0 in
+      let def_id = local_def_id id in
       let fields =
         map strukt.members (fun (ty, name) ->
             Field { ty = resolver#tcx#ast_ty_to_ty ty; name })
@@ -147,7 +147,7 @@ class type_lowering resolver modd =
       | ExternMod _ -> ()
 
     method visit_mod =
-      let def_id = def_id modd.mod_id 0 in
+      let def_id = local_def_id modd.mod_id in
       assert (resolver#tcx#node_id_to_def_id#insert modd.mod_id def_id = None);
       modd.items#iter self#visit_item
 

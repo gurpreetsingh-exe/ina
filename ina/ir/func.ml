@@ -1,5 +1,4 @@
 open Middle.Ty
-open Middle.Def_id
 open Structures.Vec
 open Printf
 

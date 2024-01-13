@@ -205,7 +205,7 @@ let gen cx =
              (* let ty = cx.tcx#get_def id in *)
              let ty = cx.tcx#fn id instance.subst in
              (match cx.gen'd_fns#get id with
-              | None when id.extmod_id <> 0 ->
+              | None when id.mod_id <> 0 ->
                   cx.gen'd_fns#insert' id ();
                   prelude ^ sprintf "extern %s;\n" (render_fn_header name ty)
               | None -> prelude ^ sprintf "%s;\n" (render_fn_header name ty)

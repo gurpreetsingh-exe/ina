@@ -358,7 +358,7 @@ let tychk_fn cx fn =
   and check_path path =
     tcx#res_map#unsafe_get path.path_id |> function
     | Def (id, Struct) -> tcx#get_def id
-    | Def (id, Fn) ->
+    | Def (id, (Fn | Intrinsic)) ->
         let ty = tcx#get_def id in
         let args = (Option.get path.segments#last).args in
         (match !ty, args with
@@ -380,7 +380,9 @@ let tychk_fn cx fn =
          | _ -> assert false)
     | Local id -> cx.locals#unsafe_get id
     | Err -> tcx#types.err
-    | _ -> assert false
+    | _ ->
+        print_endline @@ tcx#sess.parse_sess.sm#span_to_string path.span.lo;
+        assert false
   and check_call pexpr exprs { args; ret; is_variadic; _ } =
     if (not is_variadic) && exprs#len <> args#len
     then tcx#emit @@ mismatch_args args#len exprs#len pexpr.expr_span;
@@ -550,7 +552,7 @@ let tychk_fn cx fn =
              | Some ty -> ty
              | None ->
                  let name =
-                   (tcx#def_key variant.def_id.inner).data |> function
+                   (tcx#def_key variant.def_id).data |> function
                    | TypeNs name -> name
                    | _ -> assert false
                  in

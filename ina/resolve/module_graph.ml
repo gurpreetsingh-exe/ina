@@ -80,9 +80,9 @@ let mod_file_path name ownership dir =
   match ownership with Owned _ -> result | _ -> assert false
 ;;
 
-class visitor resolver modd parent dir_ownership =
+class visitor resolver (modd : Ast.modd) parent dir_ownership =
   let create_modul () =
-    let id = def_id modd.mod_id 0 in
+    let id = local_def_id modd.mod_id in
     let m =
       {
         mkind = Def (Mod, id, modd.mod_name)
@@ -97,7 +97,7 @@ class visitor resolver modd parent dir_ownership =
     val resolver : resolver = resolver
     val modd = modd
     val parent = parent
-    val mutable parent_id = 0
+    val mutable parent_id = local_def_id 0
     val mutable mdl = create_modul ()
     val mutable curr_fn = None
     val dir_ownership = dir_ownership
@@ -156,7 +156,7 @@ class visitor resolver modd parent dir_ownership =
                resolver#shadow mdl arg Value res);
            curr_fn <- None
        | None -> ());
-      let id = def_id block.block_id 0 in
+      let id = local_def_id block.block_id in
       assert (resolver#modules#insert id mdl = None);
       self#with_module mdl (fun () ->
           block.block_stmts#iter self#visit_stmt;
@@ -166,9 +166,9 @@ class visitor resolver modd parent dir_ownership =
 
     method visit_fn fn =
       let name = fn.name in
-      ignore (resolver#tcx#define parent_id fn.func_id (ValueNs name));
       resolver#tcx#insert_span fn.func_id fn.fn_sig.fn_span;
-      let did = def_id fn.func_id 0 in
+      let did = local_def_id fn.func_id in
+      ignore (resolver#tcx#define parent_id did (ValueNs name));
       let res =
         Res (Def (did, if fn.abi = "intrinsic" then Intrinsic else Fn))
       in
@@ -182,8 +182,9 @@ class visitor resolver modd parent dir_ownership =
 
     method visit_assoc_fn fn =
       resolver#tcx#insert_span fn.func_id fn.fn_sig.fn_span;
+      let did = local_def_id fn.func_id in
+      ignore (resolver#tcx#define parent_id did (ValueNs fn.name));
       assert (not fn.is_extern);
-      ignore (resolver#tcx#define parent_id fn.func_id (ValueNs fn.name));
       self#visit_fn_sig fn.fn_sig;
       match fn.body with
       | Some body ->
@@ -192,20 +193,16 @@ class visitor resolver modd parent dir_ownership =
       | None -> assert false
 
     method visit_impl impl =
-      let did =
-        resolver#tcx#define
-          parent_id
-          impl.impl_id
-          (Impl resolver#tcx#impl_id)
-      in
+      let did = local_def_id impl.impl_id in
+      let did = resolver#tcx#define parent_id did (Impl did) in
       self#with_parent did (fun () ->
           impl.impl_items#iter (function AssocFn fn ->
               self#visit_assoc_fn fn))
 
     method visit_struct { ident; struct_id; struct_span; _ } =
       resolver#tcx#insert_span struct_id struct_span;
-      let did = def_id struct_id 0 in
-      ignore (resolver#tcx#define parent_id struct_id (TypeNs ident));
+      let did = local_def_id struct_id in
+      ignore (resolver#tcx#define parent_id did (TypeNs ident));
       let res = Res (Def (did, Struct)) in
       resolver#define mdl ident Type res
 
@@ -214,7 +211,8 @@ class visitor resolver modd parent dir_ownership =
       | Ast.Fn (fn, _) -> self#visit_fn fn
       | Type (Struct s) -> self#visit_struct s
       | Foreign (fns, id) ->
-          let did = resolver#tcx#define parent_id id ExternMod in
+          let did = local_def_id id in
+          let did = resolver#tcx#define parent_id did ExternMod in
           self#with_parent did (fun () -> fns#iter self#visit_fn)
       | Impl impl -> self#visit_impl impl
       | Mod m ->
@@ -247,7 +245,6 @@ class visitor resolver modd parent dir_ownership =
            | true -> ()
            | _ ->
                let dir = Filename.dirname modd.mod_path in
-               let extmod_id = resolver#tcx#unit name in
                let lib = join [dir; sprintf "lib%s.o" name] in
                let lib =
                  if Sys.file_exists lib
@@ -259,22 +256,35 @@ class visitor resolver modd parent dir_ownership =
                let metadata =
                  Option.get @@ Object.read_section_by_name obj ".ina\000"
                in
+               let extmod_id = resolver#tcx#unit name in
                let dec = new decoder metadata extmod_id in
-               let dummy =
-                 {
-                   mkind =
-                     Def
-                       ( Mod
-                       , def_id (-1) extmod_id
-                       , sprintf "__%s_wrapper" name )
-                 ; parent = None
-                 ; resolutions = new hashmap
-                 }
-               in
-               let mdl' = Module.decode resolver dec None in
-               resolver#tcx#decode_metadata dec;
-               resolver#define dummy name Type (Module mdl');
-               resolver#extmods#push dummy)
+               let name' = ref "" in
+               decode_hashmap
+                 dec
+                 resolver#extmods
+                 (fun dec ->
+                   name' := dec#read_str;
+                   !name')
+                 (fun dec ->
+                   let extmod_id = Hashtbl.hash !name' in
+                   let extmod_id = def_id 0 extmod_id in
+                   let dummy =
+                     {
+                       mkind =
+                         Def (Mod, extmod_id, sprintf "__%s_wrapper" !name')
+                     ; parent = None
+                     ; resolutions = new hashmap
+                     }
+                   in
+                   let mdl' = Module.decode resolver dec None in
+                   (match mdl'.mkind with
+                    | Def (_, id, name) ->
+                        ignore
+                          (resolver#tcx#define extmod_id id (TypeNs name))
+                    | _ -> assert false);
+                   resolver#define dummy !name' Type (Module mdl');
+                   dummy);
+               resolver#tcx#decode_metadata dec)
 
     method with_parent def f =
       let tmp = parent_id in
@@ -283,12 +293,11 @@ class visitor resolver modd parent dir_ownership =
       parent_id <- tmp
 
     method visit_mod =
-      let did =
-        resolver#tcx#define parent_id modd.mod_id (TypeNs modd.mod_name)
-      in
+      let did = local_def_id modd.mod_id in
+      let did = resolver#tcx#define parent_id did (TypeNs modd.mod_name) in
       self#with_parent did (fun () -> modd.items#iter self#visit_item)
 
     method visit_mod_root =
-      let did = resolver#tcx#define_root 0 in
+      let did = resolver#tcx#define_root (local_def_id 0) in
       self#with_parent did (fun () -> self#visit_mod)
   end

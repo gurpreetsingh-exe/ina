@@ -1,9 +1,10 @@
 class decoder buf extmod_id =
   object (self)
     val buf = buf
-    val extmod_id : int = extmod_id
+    val mutable extmod_id : int = extmod_id
     val mutable pos = 0
     method extmod_id = extmod_id
+    method set_mod_id id = extmod_id <- id
 
     method read_usize : int =
       let n = Bytes.get_int64_be buf pos |> Int64.to_int in
