@@ -1,0 +1,11 @@
+// EXIT_CODE: 0
+
+fn identity[T](i: &T) -> T {
+    *i
+}
+
+fn main() -> i32 {
+    assert identity![i32](&69) == 69;
+    assert identity![i64](&420) == 420;
+    0
+}

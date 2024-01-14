@@ -24,7 +24,7 @@ type cx = {
     tcx: tcx
   ; irmdl: Ir.Module.t
   ; types: (ty, string) hashmap
-  ; gen'd_fns: (def_id, unit) hashmap
+  ; gen'd_fns: (instance, unit) hashmap
 }
 
 let mangle_adt cx did =
@@ -48,10 +48,6 @@ let mangle_def_path cx did =
         |> String.concat ""
       in
       String.concat "" ["_ZN"; name; "Ev"]
-;;
-
-let mangle cx instance =
-  match instance.def with Fn did | Intrinsic did -> mangle_def_path cx did
 ;;
 
 let rec backend_ty cx ty =
@@ -117,13 +113,22 @@ let rec backend_ty cx ty =
       print_endline @@ Middle.Ty.render_ty2 ty;
       assert false
 
+and mangle cx instance =
+  let name =
+    match instance.def with
+    | Fn did | Intrinsic did -> mangle_def_path cx did
+  in
+  match instance.subst with
+  | Subst subst when subst#empty -> name
+  | Subst subst ->
+      [name; "I"; subst#join "" (function Ty ty -> backend_ty cx ty); "E"]
+      |> String.concat ""
+
 and fn cx ty =
-  (* let subst = Fn.subst ty in *)
-  (* print_endline @@ subst#join ", " (function Ty ty -> cx.tcx#render_ty ty); *)
-  let { args; ret; is_variadic; _ } = Fn.get cx.tcx (ref ty) in
   match cx.types#get ty with
   | Some ty -> ty
   | None ->
+      let { args; ret; is_variadic; _ } = Fn.get cx.tcx (ref ty) in
       let name = sprintf "__fn_%d" cx.types#len in
       prelude
       ^ sprintf
@@ -204,9 +209,9 @@ let gen cx =
              let name = mangle cx instance in
              (* let ty = cx.tcx#get_def id in *)
              let ty = cx.tcx#fn id instance.subst in
-             (match cx.gen'd_fns#get id with
+             (match cx.gen'd_fns#get instance with
               | None when id.mod_id <> 0 ->
-                  cx.gen'd_fns#insert' id ();
+                  cx.gen'd_fns#insert' instance ();
                   prelude ^ sprintf "extern %s;\n" (render_fn_header name ty)
               | None -> prelude ^ sprintf "%s;\n" (render_fn_header name ty)
               | Some () -> ());
@@ -353,10 +358,9 @@ let gen cx =
     | _ -> out ^ sprintf "int main() {\n  return %s();\n}\n" name
   in
   cx.irmdl.items#iter (fun f ->
-      let did = instance_def_id f.instance in
-      if not (cx.gen'd_fns#has did)
+      if not (cx.gen'd_fns#has f.instance)
       then (
-        assert (cx.gen'd_fns#insert did () = None);
+        assert (cx.gen'd_fns#insert f.instance () = None);
         gen_function f));
   (match cx.tcx#main with
    | Some id ->

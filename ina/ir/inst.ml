@@ -68,16 +68,16 @@ and inst_kind =
   | Move of value
   | Gep of ty ref * value * int
   | Call of ty ref * value * value vec
-  | Intrinsic of string * value list
+  | Intrinsic of string * value vec
   | Trap of string
-  | BitCast of value * ty ref
-  | Zext of value * ty ref
-  | Trunc of value * ty ref
+  | BitCast of (value * ty ref)
+  | Zext of (value * ty ref)
+  | Trunc of (value * ty ref)
   (* Sext of ty * value *)
   (* Fpext of ty * value *)
   (* Fptrunc of ty * value *)
-  | PtrToInt of value * ty ref
-  | IntToPtr of value * ty ref
+  | PtrToInt of (value * ty ref)
+  | IntToPtr of (value * ty ref)
   | Nop
 
 and terminator =
@@ -243,10 +243,7 @@ let render_inst tcx inst : string =
         (render_value tcx fn)
         (args#join ", " (tcx |> render_value))
   | Intrinsic (name, args) ->
-      sprintf
-        "intrinsic %s(%s)"
-        name
-        (String.concat ", " (List.map (tcx |> render_value) args))
+      sprintf "intrinsic %s(%s)" name (args#join ", " (tcx |> render_value))
   | BitCast (value, ty) ->
       sprintf "bitcast %s to %s" (render_value tcx value) (tcx#render_ty ty)
   | Zext (value, ty) ->

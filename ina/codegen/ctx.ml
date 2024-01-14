@@ -22,8 +22,8 @@ module MakeCodegenBackend (T : CodegenBackend) = struct
 end
 
 let codegen (tcx : tcx) mdl =
-  (* let items = Collect.collect tcx mdl in *)
-  (* let mdl = Ir.Module.{ items } in *)
+  let items = Collect.collect tcx mdl in
+  let mdl = Ir.Module.{ items } in
   match tcx#sess.options.backend with
   | C ->
       let module Backend = MakeCodegenBackend (C) in

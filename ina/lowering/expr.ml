@@ -39,9 +39,9 @@ let rec lower_block (lcx : lcx) block =
             | Some msg ->
                 (match msg.expr_kind with
                  | Lit (LitStr msg) ->
-                     "  panic at 'assertion failed: `" ^ msg ^ "`', "
+                     "  assertion failed with `" ^ msg ^ "` at "
                  | _ -> assert false)
-            | None -> "  panic at 'assertion failed', "
+            | None -> "  assertion failed at "
           in
           let msg = msg ^ loc ^ "\n" in
           lcx#bx#trap msg expr.expr_span;
@@ -154,7 +154,7 @@ let rec lower_block (lcx : lcx) block =
              Global (Fn instance)
          | _ -> assert false)
     | Call (expr, args) ->
-        let ty = expr_ty expr |> tcx#ty_with_subst in
+        let ty = expr_ty expr in
         let fn = lower expr in
         let args = map args (fun arg -> lower arg) in
         lcx#bx#call ty fn args e.expr_span

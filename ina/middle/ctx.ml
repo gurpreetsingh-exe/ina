@@ -100,10 +100,20 @@ module DefKey = struct
 end
 
 module SubstFolder = struct
-  let fold_ty ty subst =
+  let rec fold_ty tcx ty subst =
     match !ty with
     | Param { index; _ } -> subst#get index |> ( function Ty ty -> ty )
+    | Ptr ty -> tcx#ptr (fold_ty tcx ty subst)
+    | Ref ty -> tcx#ref (fold_ty tcx ty subst)
+    | FnPtr fnsig ->
+        let { args; ret; is_variadic; abi } = fold_fnsig tcx fnsig subst in
+        tcx#fn_ptr args ret is_variadic abi
     | _ -> ty
+
+  and fold_fnsig tcx { args; ret; is_variadic; abi } subst =
+    let args = map args (fun ty -> fold_ty tcx ty subst) in
+    let ret = fold_ty tcx ret subst in
+    { args; ret; is_variadic; abi }
   ;;
 end
 
@@ -463,9 +473,7 @@ class tcx sess =
     method get_fn def_id = fn_def#unsafe_get def_id
 
     method subst fnsig (Subst subst) =
-      let args = map fnsig.args (fun ty -> SubstFolder.fold_ty ty subst) in
-      let ret = SubstFolder.fold_ty fnsig.ret subst in
-      { fnsig with args; ret }
+      SubstFolder.fold_fnsig self fnsig subst
 
     method ty_with_subst ty =
       match !ty with
@@ -619,21 +627,16 @@ class tcx sess =
       | Unit -> "unit"
       | Bool -> "bool"
       | Str -> "str"
-      | FnPtr { args; ret; is_variadic; abi } ->
-          sprintf
-            "%sfn(%s) -> %s"
-            (abi |> function
-             | Default -> ""
-             | Intrinsic -> "\"intrinsic\" "
-             | C -> "\"C\" ")
-            (args#join ", " (fun ty -> self#render_ty ty)
-             ^ if is_variadic then ", ..." else String.empty)
-            (self#render_ty ret)
+      | FnPtr fnsig -> Fn.render self fnsig
       | Ptr ty -> "*" ^ self#render_ty ty
       | Ref ty -> "&" ^ self#render_ty ty
       | Err -> "err"
       | Fn (def_id, Subst subst) ->
           let { args; ret; is_variadic; abi } = self#get_fn def_id in
+          let args =
+            map args (fun ty -> SubstFolder.fold_ty self ty subst)
+          in
+          let ret = SubstFolder.fold_ty self ret subst in
           sprintf
             "%sfn%s(%s) -> %s"
             (abi |> function

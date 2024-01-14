@@ -811,6 +811,10 @@ class parser pcx file tokenizer =
               Comma
               parse_generic_param
           in
+          if params#empty
+          then
+            self#emit_err
+              (self#err (self#mk_span s) "no generic parameters provided");
           Ok
             { params; generics_span = self#mk_span s; generics_id = self#id }
       | _ ->
