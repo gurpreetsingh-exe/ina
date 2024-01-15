@@ -96,7 +96,7 @@ let rec lower_block (lcx : lcx) block =
         (match res with
          | Local id -> lcx#locals#unsafe_get id
          | Def (id, (Fn | Intrinsic)) ->
-             let subst = Middle.Ty.Fn.subst !ty in
+             let subst = Middle.Ty.Fn.subst ty in
              let instance = Ir.Inst.{ def = Fn id; subst = Subst subst } in
              Global (Fn instance)
          | _ -> assert false)
@@ -149,7 +149,7 @@ let rec lower_block (lcx : lcx) block =
              let ptr = lcx#locals#unsafe_get id in
              lcx#bx#move ptr path.span
          | Def (id, (Fn | Intrinsic)) ->
-             let subst = Middle.Ty.Fn.subst !ty in
+             let subst = Middle.Ty.Fn.subst ty in
              let instance = Ir.Inst.{ def = Fn id; subst = Subst subst } in
              Global (Fn instance)
          | _ -> assert false)

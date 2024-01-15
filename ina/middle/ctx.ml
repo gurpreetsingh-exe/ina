@@ -114,6 +114,9 @@ module SubstFolder = struct
     let args = map args (fun ty -> fold_ty tcx ty subst) in
     let ret = fold_ty tcx ret subst in
     { args; ret; is_variadic; abi }
+
+  and fold_subst tcx subst subst' =
+    map subst (function Ty ty -> Ty (fold_ty tcx ty subst'))
   ;;
 end
 
@@ -614,6 +617,14 @@ class tcx sess =
        | Err -> assert false
        | _ -> segments#push (render_ty ty));
       segments
+
+    method render_subst (subst : generic_arg vec) =
+      if subst#empty
+      then ""
+      else
+        sprintf
+          "[%s]"
+          (subst#join ", " (function Ty ty -> self#render_ty ty))
 
     method render_ty ty =
       match !ty with

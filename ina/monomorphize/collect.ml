@@ -9,17 +9,28 @@ open Structures.Vec
 open Structures.Hashmap
 
 let collect tcx mdl =
-  let monomorphize fn (Subst subst) =
+  let mono_items = new vec in
+  let generic_items = new hashmap in
+  let instantiated_items = new vec in
+  let rec instantiate ty =
+    match !ty with
+    | Fn (def_id, subst) ->
+        let fn = generic_items#unsafe_get def_id in
+        let fn = monomorphize fn subst in
+        mono_items#push fn
+    | _ -> assert false
+  and monomorphize fn (Subst subst) =
     let fold_ty ty = SubstFolder.fold_ty tcx ty subst in
     let fold_instance instance = { instance with subst = Subst subst } in
     let rec fold_value value =
       match value with
       | Const const -> Const const
-      | VReg inst -> VReg (fold_inst inst)
+      | VReg inst -> VReg (fold_inst2 inst) (* this might be sus *)
       | Label bb -> Label bb
       | Param (ty, name, i) -> Param (fold_ty ty, name, i)
       | Global (Fn instance) -> Global (Fn (fold_instance instance))
     and fold_pair (value, ty) = fold_value value, fold_ty ty
+    and fold_inst2 inst = { inst with ty = fold_ty inst.ty }
     and fold_inst inst =
       let ty = fold_ty inst.ty in
       let kind =
@@ -36,7 +47,17 @@ let collect tcx mdl =
         | Move ptr -> Move (fold_value ptr)
         | Gep (ty, value, i) -> Gep (fold_ty ty, fold_value value, i)
         | Call (ty, value, args) ->
-            Call (fold_ty ty, fold_value value, map args fold_value)
+            let ty =
+              if Fn.is_generic ty
+              then (
+                let subst' = Fn.subst ty in
+                let subst' = SubstFolder.fold_subst tcx subst' subst in
+                let ty = Fn.with_subst tcx ty subst' in
+                instantiate ty;
+                ty)
+              else ty
+            in
+            Call (ty, fold_value value, map args fold_value)
         | Intrinsic (name, args) -> Intrinsic (name, map args fold_value)
         | Trap msg -> Trap msg
         | BitCast pair -> BitCast (fold_pair pair)
@@ -71,14 +92,11 @@ let collect tcx mdl =
     {
       fn with
       instance = fold_instance fn.instance
-    ; ty = tcx#intern (Fn.with_subst !(fn.ty) subst)
+    ; ty = Fn.with_subst tcx fn.ty subst
     ; args = map fn.args fold_value
     ; basic_blocks
     }
   in
-  let mono_items = new vec in
-  let generic_items = new hashmap in
-  let instantiated_items = new vec in
   mdl.items#iter (fun fn ->
       match Fn.is_generic fn.ty with
       | true ->
@@ -92,12 +110,6 @@ let collect tcx mdl =
                       instantiated_items#push ty
                   | _ -> ()));
           mono_items#push fn);
-  instantiated_items#iter (fun ty ->
-      match !ty with
-      | Fn (def_id, subst) ->
-          let fn = generic_items#unsafe_get def_id in
-          let fn = monomorphize fn subst in
-          mono_items#push fn
-      | _ -> assert false);
+  instantiated_items#iter instantiate;
   mono_items
 ;;

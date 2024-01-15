@@ -173,11 +173,13 @@ module Fn = struct
   ;;
 
   let subst ty =
-    match ty with Fn (_, Subst subst) -> subst | _ -> assert false
+    match !ty with Fn (_, Subst subst) -> subst | _ -> assert false
   ;;
 
-  let with_subst ty subst =
-    match ty with Fn (did, _) -> Fn (did, Subst subst) | _ -> assert false
+  let with_subst tcx ty subst =
+    match !ty with
+    | Fn (did, _) -> tcx#intern (Fn (did, Subst subst))
+    | _ -> assert false
   ;;
 
   let __encode_fn : (encoder -> fnsig -> unit) ref =
