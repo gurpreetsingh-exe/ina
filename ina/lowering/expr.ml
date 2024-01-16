@@ -64,11 +64,18 @@ let rec lower_block (lcx : lcx) block =
   and lower_field expr ident =
     let ptr, ty = lower_autoderef expr in
     lcx#bx#gep ty ptr ident expr.expr_span
-  and lower_method e expr name args =
+  and lower_method e expr seg args =
+    let name = (seg : path_segment).ident in
+    let subst =
+      match seg.args with
+      | Some args ->
+          map args (fun arg -> Middle.Ty.Ty (tcx#ast_ty_to_ty arg))
+      | _ -> new vec
+    in
     let first, ty = lower_autoderef expr in
+    let method' = tcx#lookup_method ty name in
     let first, ty =
       let open Middle.Ty in
-      let method' = tcx#lookup_method ty name in
       match Fn.args tcx method' with
       | args when args#empty -> assert false
       | args ->
@@ -77,9 +84,9 @@ let rec lower_block (lcx : lcx) block =
            | _ -> lcx#bx#move first expr.expr_span, ty)
     in
     let id = tcx#lookup_method_def_id ty name in
-    let instance = Ir.Inst.{ def = Fn id; subst = Subst (new vec) } in
+    let instance = Ir.Inst.{ def = Fn id; subst = Subst subst } in
     let fn = Ir.Inst.Global (Fn instance) in
-    let ty = tcx#lookup_method ty name in
+    let ty = Middle.Ty.Fn.with_subst tcx method' subst in
     let args' = new vec in
     args'#push first;
     args'#append @@ map args (fun arg -> lower arg);
@@ -102,7 +109,7 @@ let rec lower_block (lcx : lcx) block =
          | _ -> assert false)
     | Deref expr -> lower expr
     | Field (expr, ident) -> lower_field expr ident
-    | MethodCall (expr, seg, args) -> lower_method e expr seg.ident args
+    | MethodCall (expr, seg, args) -> lower_method e expr seg args
     | _ ->
         print_endline @@ tcx#sess.parse_sess.sm#span_to_string e.expr_span.lo;
         assert false
@@ -220,7 +227,7 @@ let rec lower_block (lcx : lcx) block =
              print_endline
              @@ tcx#sess.parse_sess.sm#span_to_string e.expr_span.lo;
              assert false)
-    | MethodCall (expr, seg, args) -> lower_method e expr seg.ident args
+    | MethodCall (expr, seg, args) -> lower_method e expr seg args
   in
   lower_block' ()
 ;;
