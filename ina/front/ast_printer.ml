@@ -122,9 +122,16 @@ and render_stmt stmt prefix =
       out += "\n";
       render_child ?prefix:(Some prefix) true binding_expr render_expr
 
-and render_path_segment (segment : path_segment) _ =
+and render_path_segment (segment : path_segment) =
   render_ident segment.ident;
-  out += "\n"
+  match segment.args with
+  | Some args ->
+      out += "\x1b[1;32m";
+      out += "[";
+      out += args#join ", " render_ty;
+      out += "]";
+      out += "\x1b[0m"
+  | None -> ()
 
 and render_ident ident = out += cyan ident
 
@@ -145,7 +152,9 @@ and render_binary_kind = function
   | Or -> "||"
 
 and render_path_ path =
-  cyan @@ q @@ path.segments#join "::" (fun s -> s.ident)
+  path.segments#iteri (fun i segment ->
+      render_path_segment segment;
+      if i <> path.segments#len - 1 then out += "::")
 
 and render_expr expr prefix =
   match expr.expr_kind with
@@ -162,7 +171,7 @@ and render_expr expr prefix =
   | Path path ->
       id "Path" path.path_id path.span;
       out += " ";
-      out += render_path_ path;
+      render_path_ path;
       out += "\n"
   | Call (expr, args) ->
       id "Call" expr.expr_id expr.expr_span;
@@ -209,7 +218,7 @@ and render_expr expr prefix =
       let has_fields = not fields#empty in
       id "StructExpr" struct_expr_id struct_expr_span;
       out += " ";
-      out += render_path_ struct_name;
+      render_path_ struct_name;
       if not has_fields then out += " empty";
       out += "\n";
       let render_field (name, expr) prefix =
@@ -228,11 +237,11 @@ and render_expr expr prefix =
       out += (green ?bold:(Some false) @@ q @@ render_ty ty);
       out += "\n";
       render_child ?prefix:(Some prefix) true expr render_expr
-  | MethodCall (expr, name, args) ->
+  | MethodCall (expr, seg, args) ->
       id "MethodCall" expr.expr_id expr.expr_span;
       let empty_args = args#empty in
       out += " ";
-      out += (cyan @@ q name);
+      render_path_segment seg;
       if empty_args then out += " no_args";
       out += "\n";
       render_child ?prefix:(Some prefix) empty_args expr render_expr;

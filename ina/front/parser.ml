@@ -595,45 +595,37 @@ class parser pcx file tokenizer =
       parse_spanned_with_sep self LBracket RBracket Comma (fun () ->
           self#parse_ty)
 
+    method parse_path_segment =
+      let s = token.span.lo in
+      let* ident = self#parse_ident in
+      let* args =
+        match token.kind with
+        | Bang ->
+            self#bump;
+            let* args = self#parse_bracket_args in
+            Ok (Some args)
+        | _ -> Ok None
+      in
+      Ok { ident; args; span = self#mk_span s }
+
     method parse_path =
       let s = token.span.lo in
       let segments = new vec in
       let rec parse_path_impl () =
+        let* segment =
+          match token.kind with
+          | Ident -> self#parse_path_segment
+          | Mod -> Ok { ident = "mod"; args = None; span = self#mk_span s }
+          | t ->
+              self#unexpected_token t ~line:__LINE__;
+              exit 1
+        in
+        segments#push segment;
         match token.kind with
-        | Ident ->
-            let s = token.span.lo in
-            let* ident = self#parse_ident in
-            let* args =
-              match token.kind with
-              | Bang ->
-                  self#bump;
-                  let* args = self#parse_bracket_args in
-                  Ok (Some args)
-              | _ -> Ok None
-            in
-            let segment = { ident; args; span = self#mk_span s } in
-            segments#push segment;
-            (match token.kind with
-             | Colon2 ->
-                 self#bump;
-                 let* _ = parse_path_impl () in
-                 Ok ()
-             | _ -> Ok ())
-        | Mod ->
-            let segment =
-              { ident = "mod"; args = None; span = self#mk_span s }
-            in
-            segments#push segment;
+        | Colon2 ->
             self#bump;
-            (match token.kind with
-             | Colon2 ->
-                 self#bump;
-                 let* _ = parse_path_impl () in
-                 Ok ()
-             | _ -> Ok ())
-        | _ ->
-            (* Sess.emit_err pcx.tcx.sess (unexpected_token pcx Ident token); *)
-            exit 1
+            parse_path_impl ()
+        | _ -> Ok ()
       in
       let* _ = parse_path_impl () in
       Ok { segments; span = self#mk_span s; path_id = self#id }
@@ -706,12 +698,12 @@ class parser pcx file tokenizer =
               match token.kind with
               | Dot ->
                   (match self#npeek 2 with
-                   | [Ident; LParen] ->
+                   | Ident :: (LParen | Bang) :: _ ->
                        let* _ = self#expect Dot in
-                       let* name = self#parse_ident in
+                       let* seg = self#parse_path_segment in
                        let* args = self#parse_call_args in
-                       Ok (MethodCall (!left, name, args))
-                   | [Ident; _] ->
+                       Ok (MethodCall (!left, seg, args))
+                   | Ident :: _ ->
                        let* _ = self#expect Dot in
                        let* field = self#parse_ident in
                        Ok (Field (!left, field))
@@ -732,7 +724,7 @@ class parser pcx file tokenizer =
               };
             Ok ()
           in
-          ignore (f ())
+          match f () with Ok () -> () | Error e -> self#emit_err e
         done;
         Ok !left)
       else Ok !left
@@ -902,7 +894,7 @@ class parser pcx file tokenizer =
           items#push item;
           Ok ()
         in
-        ignore (f ())
+        match f () with Ok () -> () | Error e -> self#emit_err e
       done;
       let* _ = self#expect RBrace in
       Ok

@@ -355,29 +355,30 @@ let tychk_fn cx fn =
     let ty = resolve_vars cx.infcx ty in
     write_ty expr.expr_id ty;
     ty
+  and check_generic_args ty args span =
+    match !ty, args with
+    | Middle.Ty.Fn (_, Subst subst), None when subst#empty -> ty
+    | Fn (_, Subst subst), None ->
+        tcx#emit @@ missing_generic_args subst#len span;
+        tcx#types.err
+    | Fn (did, Subst subst), Some args ->
+        if args#len <> subst#len
+        then tcx#emit @@ mismatch_generic_args subst#len args#len span;
+        let subst =
+          map args (fun arg : generic_arg -> Ty (tcx#ast_ty_to_ty arg))
+        in
+        tcx#fn did (Subst subst)
+    | FnPtr _, Some _ ->
+        (* TODO(error): function pointers cannot be generic *)
+        assert false
+    | _ -> assert false
   and check_path path =
     tcx#res_map#unsafe_get path.path_id |> function
     | Def (id, Struct) -> tcx#get_def id
     | Def (id, (Fn | Intrinsic)) ->
         let ty = tcx#get_def id in
         let args = (Option.get path.segments#last).args in
-        (match !ty, args with
-         | Fn (_, Subst subst), None when subst#empty -> ty
-         | Fn (_, Subst subst), None ->
-             tcx#emit @@ missing_generic_args subst#len path.span;
-             tcx#types.err
-         | Fn (did, Subst subst), Some args ->
-             if args#len <> subst#len
-             then
-               tcx#emit @@ mismatch_generic_args subst#len args#len path.span;
-             let subst =
-               map args (fun arg : generic_arg -> Ty (tcx#ast_ty_to_ty arg))
-             in
-             tcx#fn did (Subst subst)
-         | FnPtr _, Some _ ->
-             (* TODO(error): function pointers cannot be generic *)
-             assert false
-         | _ -> assert false)
+        check_generic_args ty args path.span
     | Local id -> cx.locals#unsafe_get id
     | Err -> tcx#types.err
     | _ ->
@@ -570,13 +571,17 @@ let tychk_fn cx fn =
          | _ ->
              ty_err_emit tcx (InvalidCast (ty, cty)) expr.expr_span;
              cty)
-    | MethodCall (expr', name, args) ->
+    | MethodCall (expr', seg, args) ->
+        let name = seg.ident in
         let ty = check_expr expr' NoExpectation in
         let ty = tcx#autoderef ty in
         let method' = tcx#lookup_method ty name in
+        let method' = check_generic_args method' seg.args seg.span in
         (match !method' with
-         | Fn (did, _) -> tcx#get_fn did |> check_method ty name expr args
-         | FnPtr sign -> check_method ty name expr args sign
+         | Fn (did, subst) ->
+             let fnsig = tcx#get_fn did in
+             tcx#subst fnsig subst |> check_method ty name expr args
+         | FnPtr fnsig -> check_method ty name expr args fnsig
          | Err -> ty
          | _ ->
              ty_err_emit tcx (InvalidCall ty) expr.expr_span;

@@ -102,7 +102,7 @@ let rec lower_block (lcx : lcx) block =
          | _ -> assert false)
     | Deref expr -> lower expr
     | Field (expr, ident) -> lower_field expr ident
-    | MethodCall (expr, name, args) -> lower_method e expr name args
+    | MethodCall (expr, seg, args) -> lower_method e expr seg.ident args
     | _ ->
         print_endline @@ tcx#sess.parse_sess.sm#span_to_string e.expr_span.lo;
         assert false
@@ -220,7 +220,7 @@ let rec lower_block (lcx : lcx) block =
              print_endline
              @@ tcx#sess.parse_sess.sm#span_to_string e.expr_span.lo;
              assert false)
-    | MethodCall (expr, name, args) -> lower_method e expr name args
+    | MethodCall (expr, seg, args) -> lower_method e expr seg.ident args
   in
   lower_block' ()
 ;;
