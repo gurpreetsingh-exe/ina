@@ -415,13 +415,21 @@ class tcx sess =
       | Def _ | Local _ | Err -> assert false
 
     method lookup_method ty name =
-      self#lookup_method_def_id ty name |> self#get_def
+      match self#lookup_method_def_id ty name with
+      | Some did -> self#get_def did
+      | None -> self#types.err
 
     method lookup_method_def_id ty name =
       match !ty with
-      | Adt did -> (assoc_fn#unsafe_get did)#unsafe_get name
-      | Err -> assert false
-      | _ -> (prim_ty_assoc_fn#unsafe_get ty)#unsafe_get name
+      | Adt did ->
+          assoc_fn#get did
+          |> Option.map (fun map -> map#get name)
+          |> Option.join
+      | Err -> None
+      | _ ->
+          prim_ty_assoc_fn#get ty
+          |> Option.map (fun map -> map#get name)
+          |> Option.join
 
     method print_assoc_fns =
       let open Utils.Printer in

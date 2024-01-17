@@ -459,6 +459,10 @@ class resolver tcx modd =
         | _ ->
             print_endline (Front.Ast_printer.render_ty ty);
             assert false
+      and visit_segment (segment : path_segment) =
+        match segment.args with
+        | Some args -> args#iter resolve_ty
+        | None -> ()
       and visit_path path mdl ns =
         let resolved =
           match self#resolve_path mdl path ns with
@@ -476,10 +480,7 @@ class resolver tcx modd =
               resolved
           | res -> res
         in
-        path.segments#iter (fun s ->
-            match s.args with
-            | Some args -> args#iter resolve_ty
-            | None -> ());
+        path.segments#iter visit_segment;
         dbg "res_map { %d -> %s }\n" path.path_id (print_res resolved);
         assert (tcx#res_map#insert path.path_id resolved = None)
       and visit_expr expr (mdl : Module.t) =
@@ -507,8 +508,9 @@ class resolver tcx modd =
         | Cast (expr, ty) ->
             visit_expr expr mdl;
             resolve_ty ty
-        | MethodCall (expr, _, args) ->
+        | MethodCall (expr, seg, args) ->
             visit_expr expr mdl;
+            visit_segment seg;
             args#iter (fun expr -> visit_expr expr mdl)
       and visit_block body =
         let mdl = modules#unsafe_get (local_def_id body.block_id) in

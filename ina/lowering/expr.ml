@@ -83,7 +83,7 @@ let rec lower_block (lcx : lcx) block =
            | Ref ty -> first, ty
            | _ -> lcx#bx#move first expr.expr_span, ty)
     in
-    let id = tcx#lookup_method_def_id ty name in
+    let id = tcx#lookup_method_def_id ty name |> Option.get in
     let instance = Ir.Inst.{ def = Fn id; subst = Subst subst } in
     let fn = Ir.Inst.Global (Fn instance) in
     let ty = Middle.Ty.Fn.with_subst tcx method' subst in
