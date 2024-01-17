@@ -24,7 +24,13 @@ let collect tcx mdl =
     let fold_instance instance = { instance with subst = Subst subst } in
     let rec fold_value value =
       match value with
-      | Const const -> Const const
+      | Const { kind; ty } ->
+          let kind =
+            match kind with
+            | Struct values -> Struct (map values fold_value)
+            | _ -> kind
+          in
+          Const { kind; ty = fold_ty ty }
       | VReg inst -> VReg (fold_inst2 inst) (* this might be sus *)
       | Label bb -> Label bb
       | Param (ty, name, i) -> Param (fold_ty ty, name, i)
@@ -92,7 +98,7 @@ let collect tcx mdl =
     {
       fn with
       instance = fold_instance fn.instance
-    ; ty = Fn.with_subst tcx fn.ty subst
+    ; ty = Fn.with_subst tcx fn.ty (Subst subst)
     ; args = map fn.args fold_value
     ; basic_blocks
     }

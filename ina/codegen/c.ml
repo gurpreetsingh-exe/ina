@@ -33,7 +33,7 @@ let mangle_adt cx did =
   let path =
     segments
     |> List.map (fun s -> sprintf "%d%s" (String.length s) s)
-    |> String.concat ""
+    |> String.concat "$"
   in
   String.concat "" ["_ZN"; path; "Ev"]
 ;;
@@ -101,6 +101,7 @@ let rec backend_ty cx ty =
                  ]
                  |> String.concat ""
            in
+           prelude ^ sprintf "// %s\n" (cx.tcx#render_ty ty);
            prelude ^ sprintf "typedef struct %s %s;\n" name name;
            assert (cx.types#insert ty' name = None);
            define cx name ty;
@@ -170,6 +171,7 @@ and define cx name ty =
              | None -> define cx name' ty);
             sprintf "  %s %s;" (backend_ty cx ty) name)
       in
+      prelude ^ sprintf "// %s\n" (cx.tcx#render_ty ty);
       prelude ^ sprintf "typedef struct %s {\n%s\n} %s;\n\n" name fields name
   | Fn _ | FnPtr _ | Str -> ()
   | _ -> ()
@@ -236,8 +238,11 @@ let gen cx =
              (match cx.gen'd_fns#get instance with
               | None when id.mod_id <> 0 ->
                   cx.gen'd_fns#insert' instance ();
+                  prelude ^ sprintf "// %s\n" (cx.tcx#render_ty ty);
                   prelude ^ sprintf "extern %s;\n" (render_fn_header name ty)
-              | None -> prelude ^ sprintf "%s;\n" (render_fn_header name ty)
+              | None ->
+                  prelude ^ sprintf "// %s\n" (cx.tcx#render_ty ty);
+                  prelude ^ sprintf "%s;\n" (render_fn_header name ty)
               | Some () -> ());
              name)
     | Const { kind; ty } -> get_const ty kind

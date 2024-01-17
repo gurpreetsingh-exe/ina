@@ -1,0 +1,23 @@
+// EXIT_CODE: 0
+
+type uniq[T] = {
+    inner: *T,
+}
+
+fn uniq[T](i: &T) -> uniq[T] {
+    let ptr = uniq![T] { inner: i as *T };
+    ptr
+}
+
+fn deref[T](ptr: &uniq[T]) -> T {
+    *(ptr.inner)
+}
+
+fn main() -> i32 {
+    let a = uniq![i32](&69);
+    let b = uniq![uniq[i32]](&a);
+
+    let c = deref![uniq[i32]](&b);
+    assert deref![i32](&c) == 69;
+    0
+}

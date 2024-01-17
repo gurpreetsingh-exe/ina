@@ -108,6 +108,10 @@ module SubstFolder = struct
     | FnPtr fnsig ->
         let { args; ret; is_variadic; abi } = fold_fnsig tcx fnsig subst in
         tcx#fn_ptr args ret is_variadic abi
+    | Fn (did, Subst subst') ->
+        tcx#fn did (fold_subst tcx subst' subst)
+    | Adt (did, Subst subst') ->
+        tcx#adt did (fold_subst tcx subst' subst)
     | _ -> ty
 
   and fold_fnsig tcx { args; ret; is_variadic; abi } subst =
@@ -129,7 +133,7 @@ module SubstFolder = struct
     { variants = map adt.variants (fun v -> fold_variant tcx v subst) }
 
   and fold_subst tcx subst subst' =
-    map subst (function Ty ty -> Ty (fold_ty tcx ty subst'))
+    Subst (map subst (function Ty ty -> Ty (fold_ty tcx ty subst')))
   ;;
 end
 

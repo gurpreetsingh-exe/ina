@@ -41,6 +41,10 @@ type parse_sess = {
   ; mutable node_id: node_id
 }
 
+type path_namespace =
+  | Value
+  | Type
+
 let prec = function
   | Dot -> 80
   | Star | Slash -> 70
@@ -308,7 +312,7 @@ class parser pcx file tokenizer =
                self#bump;
                Ok (mk_ty ty (self#mk_span s) self#id)
            | None ->
-               let* path = self#parse_path in
+               let* path = self#parse_path Type in
                let ty : ty_kind = Path path in
                Ok (mk_ty ty (self#mk_span s) self#id))
       | Star ->
@@ -595,26 +599,28 @@ class parser pcx file tokenizer =
       parse_spanned_with_sep self LBracket RBracket Comma (fun () ->
           self#parse_ty)
 
-    method parse_path_segment =
+    method parse_path_segment namespace =
       let s = token.span.lo in
       let* ident = self#parse_ident in
       let* args =
-        match token.kind with
-        | Bang ->
-            self#bump;
+        match namespace with
+        | Type when self#check LBracket ->
+            let* args = self#parse_bracket_args in
+            Ok (Some args)
+        | Value when self#eat Bang ->
             let* args = self#parse_bracket_args in
             Ok (Some args)
         | _ -> Ok None
       in
       Ok { ident; args; span = self#mk_span s }
 
-    method parse_path =
+    method parse_path namespace =
       let s = token.span.lo in
       let segments = new vec in
       let rec parse_path_impl () =
         let* segment =
           match token.kind with
-          | Ident -> self#parse_path_segment
+          | Ident -> self#parse_path_segment namespace
           | Mod -> Ok { ident = "mod"; args = None; span = self#mk_span s }
           | t ->
               self#unexpected_token t ~line:__LINE__;
@@ -636,7 +642,7 @@ class parser pcx file tokenizer =
 
     method parse_path_or_call =
       let s = token.span.lo in
-      let* path = self#parse_path in
+      let* path = self#parse_path Value in
       match token.kind with
       | LParen ->
           let* args = self#parse_call_args in
@@ -700,7 +706,7 @@ class parser pcx file tokenizer =
                   (match self#npeek 2 with
                    | Ident :: (LParen | Bang) :: _ ->
                        let* _ = self#expect Dot in
-                       let* seg = self#parse_path_segment in
+                       let* seg = self#parse_path_segment Value in
                        let* args = self#parse_call_args in
                        Ok (MethodCall (!left, seg, args))
                    | Ident :: _ ->

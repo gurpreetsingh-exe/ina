@@ -178,7 +178,7 @@ module Fn = struct
 
   let with_subst tcx ty subst =
     match !ty with
-    | Fn (did, _) -> tcx#intern (Fn (did, Subst subst))
+    | Fn (did, _) -> tcx#intern (Fn (did, subst))
     | _ -> assert false
   ;;
 

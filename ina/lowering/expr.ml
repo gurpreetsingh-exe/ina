@@ -2,6 +2,8 @@ open Ast
 open Context
 open Structures.Vec
 open Middle.Def_id
+open Middle.Ty
+open Ir.Inst
 
 let rec lower_block (lcx : lcx) block =
   let tcx = lcx#tcx in
@@ -84,9 +86,10 @@ let rec lower_block (lcx : lcx) block =
            | _ -> lcx#bx#move first expr.expr_span, ty)
     in
     let id = tcx#lookup_method_def_id ty name |> Option.get in
-    let instance = Ir.Inst.{ def = Fn id; subst = Subst subst } in
-    let fn = Ir.Inst.Global (Fn instance) in
-    let ty = Middle.Ty.Fn.with_subst tcx method' subst in
+    let subst = Subst subst in
+    let instance = { def = Fn id; subst } in
+    let fn = Global (Fn instance) in
+    let ty = Fn.with_subst tcx method' subst in
     let args' = new vec in
     args'#push first;
     args'#append @@ map args (fun arg -> lower arg);
@@ -103,8 +106,8 @@ let rec lower_block (lcx : lcx) block =
         (match res with
          | Local id -> lcx#locals#unsafe_get id
          | Def (id, (Fn | Intrinsic)) ->
-             let subst = Middle.Ty.Fn.subst ty in
-             let instance = Ir.Inst.{ def = Fn id; subst = Subst subst } in
+             let subst = Fn.subst ty in
+             let instance = { def = Fn id; subst = Subst subst } in
              Global (Fn instance)
          | _ -> assert false)
     | Deref expr -> lower expr
@@ -119,7 +122,6 @@ let rec lower_block (lcx : lcx) block =
     | Binary (kind, left, right) ->
         let lazy_eval value =
           let open Ir in
-          let open Inst in
           let left = lower left in
           let bb = lcx#bx#block in
           let right_bb = Basicblock.create () in
@@ -140,7 +142,7 @@ let rec lower_block (lcx : lcx) block =
           let phi = lcx#bx#phi ty branches e.expr_span in
           phi
         in
-        let inst_kind = Ir.Inst.binary_kind_to_inst kind in
+        let inst_kind = binary_kind_to_inst kind in
         (match inst_kind, tcx#types.bool = ty with
          | And, true -> lazy_eval false
          | Or, true -> lazy_eval true
@@ -156,8 +158,8 @@ let rec lower_block (lcx : lcx) block =
              let ptr = lcx#locals#unsafe_get id in
              lcx#bx#move ptr path.span
          | Def (id, (Fn | Intrinsic)) ->
-             let subst = Middle.Ty.Fn.subst ty in
-             let instance = Ir.Inst.{ def = Fn id; subst = Subst subst } in
+             let subst = Fn.subst ty in
+             let instance = { def = Fn id; subst = Subst subst } in
              Global (Fn instance)
          | _ -> assert false)
     | Call (expr, args) ->
@@ -171,7 +173,6 @@ let rec lower_block (lcx : lcx) block =
     | Ref expr -> lcx#bx#bitcast (lower_lvalue expr) ty e.expr_span
     | If { cond; then_block; else_block; _ } ->
         let open Ir in
-        let open Inst in
         let cond = lower cond in
         let then_bb = Basicblock.create () in
         let last_then_bb = ref then_bb in
