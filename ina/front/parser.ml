@@ -786,12 +786,7 @@ class parser pcx file tokenizer =
       let parse_generic_param () =
         let s = token.span.lo in
         let* name = self#parse_ident in
-        Ok
-          {
-            kind = Ident name
-          ; generic_param_span = self#mk_span s
-          ; generic_param_id = self#id
-          }
+        Ok { kind = Ident name; span = self#mk_span s; id = self#id }
       in
       match token.kind with
       | LBracket ->
@@ -807,15 +802,8 @@ class parser pcx file tokenizer =
           then
             self#emit_err
               (self#err (self#mk_span s) "no generic parameters provided");
-          Ok
-            { params; generics_span = self#mk_span s; generics_id = self#id }
-      | _ ->
-          Ok
-            {
-              params = new vec
-            ; generics_span = self#mk_span s
-            ; generics_id = self#id
-            }
+          Ok { params; span = self#mk_span s; id = self#id }
+      | _ -> Ok { params = new vec; span = self#mk_span s; id = self#id }
 
     method parse_fn abi is_extern =
       let s = token.span.lo in
@@ -855,6 +843,7 @@ class parser pcx file tokenizer =
       let s = token.span.lo in
       self#bump;
       let* name = self#parse_ident in
+      let* generics = self#parse_generics in
       let* _ = self#expect Eq in
       let parse_field () =
         let* ident = self#parse_ident in
@@ -867,12 +856,7 @@ class parser pcx file tokenizer =
       in
       Ok
         (Struct
-           {
-             ident = name
-           ; members = fields
-           ; struct_span = self#mk_span s
-           ; struct_id = self#id
-           })
+           { name; fields; generics; span = self#mk_span s; id = self#id })
 
     method parse_impl =
       let s = token.span.lo in

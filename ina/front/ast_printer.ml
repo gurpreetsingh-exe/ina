@@ -262,19 +262,17 @@ and render_block block prefix =
   | Some expr -> render_child ?prefix:(Some prefix) true expr render_expr
   | None -> ()
 
-and render_generics generics prefix =
-  id "Generics" 0 generics.generics_span;
+and render_generics (generics : generics) prefix =
+  id "Generics" 0 generics.span;
   out += "\n";
   let rendre_generic_param param _ =
-    let { kind = Ident name; generic_param_span; generic_param_id } =
-      param
-    in
+    let { kind = Ident name; span; id } = param in
     out
     += sprintf
          "%s %s %s\n"
          (cyan @@ q name)
-         (render_id generic_param_id)
-         (render_span generic_param_span)
+         (render_id id)
+         (render_span span)
   in
   render_children generics.params rendre_generic_param ?prefix:(Some prefix)
 
@@ -301,16 +299,16 @@ and render_fn fn prefix =
   | None -> ()
 
 and render_struct strukt prefix =
-  id "Struct" strukt.struct_id strukt.struct_span;
+  id "Struct" strukt.id strukt.span;
   out += " ";
-  out += (green ?bold:(Some false) @@ q strukt.ident ^ "\n");
+  out += (green ?bold:(Some false) @@ q strukt.name ^ "\n");
   let render_field (ty, name) _ =
     out += (cyan @@ q name);
     out += ": ";
     out += (green ?bold:(Some false) @@ q @@ render_ty ty);
     out += "\n"
   in
-  render_children ?prefix:(Some prefix) strukt.members render_field
+  render_children ?prefix:(Some prefix) strukt.fields render_field
 
 and render_type ty = match ty with Struct strukt -> render_struct strukt
 

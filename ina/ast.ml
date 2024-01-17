@@ -88,21 +88,22 @@ and generic_param_kind = Ident of ident
 
 and generic_param = {
     kind: generic_param_kind
-  ; generic_param_span: Span.t
-  ; generic_param_id: node_id
+  ; span: Span.t
+  ; id: node_id
 }
 
 and generics = {
     params: generic_param vec
-  ; generics_span: Span.t
-  ; generics_id: node_id
+  ; span: Span.t
+  ; id: node_id
 }
 
 and strukt = {
-    ident: string
-  ; mutable members: (ty * string) vec
-  ; struct_span: Span.t
-  ; struct_id: node_id
+    name: string
+  ; mutable fields: (ty * string) vec
+  ; generics: generics
+  ; span: Span.t
+  ; id: node_id
 }
 
 and typ = Struct of strukt

@@ -207,8 +207,8 @@ class scope =
 
 let with_generics_params resolver generics f =
   let type_scope = new scope in
-  generics.params#iter (fun { kind = Ident name; generic_param_id; _ } ->
-      let did = local_def_id generic_param_id in
+  generics.params#iter (fun { kind = Ident name; id; _ } ->
+      let did = local_def_id id in
       let res = Middle.Ctx.Def (did, TyParam) in
       type_scope#define name Type res);
   resolver#scopes#push type_scope;
@@ -549,7 +549,8 @@ class resolver tcx modd =
         visit_fn fn
       in
       let visit_struct strukt =
-        strukt.members#iter (fun (ty, _) -> resolve_ty ty)
+        with_generics_params self strukt.generics (fun () ->
+            strukt.fields#iter (fun (ty, _) -> resolve_ty ty))
       in
       let visit_item (item : item) =
         match item with

@@ -199,12 +199,12 @@ class visitor resolver (modd : Ast.modd) parent dir_ownership =
           impl.impl_items#iter (function AssocFn fn ->
               self#visit_assoc_fn fn))
 
-    method visit_struct { ident; struct_id; struct_span; _ } =
-      resolver#tcx#insert_span struct_id struct_span;
-      let did = local_def_id struct_id in
-      ignore (resolver#tcx#define parent_id did (TypeNs ident));
+    method visit_struct { name; id; span; _ } =
+      resolver#tcx#insert_span id span;
+      let did = local_def_id id in
+      ignore (resolver#tcx#define parent_id did (TypeNs name));
       let res = Res (Def (did, Struct)) in
-      resolver#define mdl ident Type res
+      resolver#define mdl name Type res
 
     method visit_item item =
       match item with

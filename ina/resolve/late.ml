@@ -66,9 +66,8 @@ class type_lowering resolver modd =
       | None -> ()
 
     method visit_generics generics =
-      generics.params#iteri
-        (fun i { kind = Ident name; generic_param_id; _ } ->
-          let did = local_def_id generic_param_id in
+      generics.params#iteri (fun i { kind = Ident name; id; _ } ->
+          let did = local_def_id id in
           let ty = resolver#tcx#ty_param i name in
           resolver#tcx#create_def did ty)
 
@@ -91,8 +90,8 @@ class type_lowering resolver modd =
       in
       let subst =
         Subst
-          (map fn.fn_generics.params (fun { generic_param_id; _ } ->
-               let did = local_def_id generic_param_id in
+          (map fn.fn_generics.params (fun { id; _ } ->
+               let did = local_def_id id in
                Ty (resolver#tcx#get_def did)))
       in
       let def_id = local_def_id fn.func_id in
@@ -122,10 +121,11 @@ class type_lowering resolver modd =
       | _ -> assert false
 
     method visit_struct strukt =
-      let id = strukt.struct_id in
+      self#visit_generics strukt.generics;
+      let id = strukt.id in
       let def_id = local_def_id id in
       let fields =
-        map strukt.members (fun (ty, name) ->
+        map strukt.fields (fun (ty, name) ->
             Field { ty = resolver#tcx#ast_ty_to_ty ty; name })
       in
       let variants = new vec in
