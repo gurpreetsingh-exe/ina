@@ -108,10 +108,8 @@ module SubstFolder = struct
     | FnPtr fnsig ->
         let { args; ret; is_variadic; abi } = fold_fnsig tcx fnsig subst in
         tcx#fn_ptr args ret is_variadic abi
-    | Fn (did, Subst subst') ->
-        tcx#fn did (fold_subst tcx subst' subst)
-    | Adt (did, Subst subst') ->
-        tcx#adt did (fold_subst tcx subst' subst)
+    | Fn (did, Subst subst') -> tcx#fn did (fold_subst tcx subst' subst)
+    | Adt (did, Subst subst') -> tcx#adt did (fold_subst tcx subst' subst)
     | _ -> ty
 
   and fold_fnsig tcx { args; ret; is_variadic; abi } subst =
@@ -354,7 +352,6 @@ class tcx sess =
       id
 
     method def_path id =
-      (* printf "%s\n%!" (print_def_id id); *)
       let DefKey.{ parent; data } = definitions#unsafe_get id in
       match parent with
       | Some id ->
@@ -405,7 +402,12 @@ class tcx sess =
 
     method create_def id ty =
       match def_id_to_ty#insert id ty with
-      | Some ty' -> assert (ty = ty')
+      | Some ty' ->
+          dbg
+            "create_def(did = %s, ty = %s)\n  overriding %s\n"
+            (print_def_id id)
+            (self#render_ty ty)
+            (self#render_ty ty')
       | None -> ()
 
     method get_def id =
@@ -529,6 +531,22 @@ class tcx sess =
 
     method ty_param index name = self#intern (Param { index; name })
     method ty_param_from_def_id def_id = self#get_def def_id
+
+    method get_ty_param ty =
+      (* TODO: check if there are multiple parameters *)
+      match !ty with
+      | Param param -> Some param
+      | Ref ty | Ptr ty -> self#get_ty_param ty
+      | _ -> None
+
+    method unfold_ty_param typaram ty =
+      assert (self#get_ty_param typaram |> Option.is_some);
+      match !typaram, !ty with
+      | Ptr ty, Ptr ty' -> self#unfold_ty_param ty ty'
+      | Ref ty, Ref ty' -> self#unfold_ty_param ty ty'
+      | Param param, _ -> Ok (param, ty)
+      | _, (FnPtr _ | Fn _ | Adt _) -> assert false
+      | _ -> Error self#types.err
 
     method sizeof_int_ty =
       function

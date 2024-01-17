@@ -111,6 +111,14 @@ let mapi v (f : int -> 'a -> 'b) =
   mapped
 ;;
 
+let iter2 v1 v2 (f : 'a -> 'b -> unit) =
+  assert (v1#len = v2#len);
+  let l = v1#len in
+  for i = 0 to l - 1 do
+    f (v1#get i) (v2#get i)
+  done
+;;
+
 let find f vec = Array.find_map f vec#inner
 let fold_left f init vec = Array.fold_left f init vec#inner
 let ( / ) (v : 'a vec) (i : int) = v#get i

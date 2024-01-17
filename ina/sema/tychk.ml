@@ -10,6 +10,9 @@ open Printf
 open Utils.Panic
 open Infer
 
+(* TODO: it's becoming a common pattern to `equate` after using `check_expr`,
+   so just `equate` variables in `check_expr` when a type is expected *)
+
 let ( let* ) v f = Result.bind v f
 
 type cx = {
@@ -381,16 +384,20 @@ let tychk_fn cx fn =
         check_generic_args ty args path.span tcx#adt
     | Def (id, (Fn | Intrinsic)) ->
         let ty = tcx#get_def id in
-        let args = (Option.get path.segments#last).args in
-        check_generic_args ty args path.span tcx#fn
+        let last = Option.get path.segments#last in
+        (match last.args with
+         | Some args -> check_generic_args ty (Some args) path.span tcx#fn
+         | None -> ty)
     | Local id -> cx.locals#unsafe_get id
     | Err -> tcx#types.err
     | _ ->
         print_endline @@ tcx#sess.parse_sess.sm#span_to_string path.span.lo;
         assert false
-  and check_call pexpr exprs { args; ret; is_variadic; _ } =
+  and check_arguments ?(is_variadic = false) pexpr exprs args =
     if (not is_variadic) && exprs#len <> args#len
-    then tcx#emit @@ mismatch_args args#len exprs#len pexpr.expr_span;
+    then tcx#emit @@ mismatch_args args#len exprs#len pexpr.expr_span
+  and check_call pexpr exprs { args; ret; is_variadic; _ } =
+    check_arguments pexpr exprs args ?is_variadic:(Some is_variadic);
     exprs#iteri (fun i arg ->
         let expected =
           if i < args#len then ExpectTy (args#get i) else NoExpectation
@@ -454,9 +461,36 @@ let tychk_fn cx fn =
         let ty = check_expr expr NoExpectation in
         (match !ty with
          | FnPtr fnsig -> check_call expr args fnsig
-         | Fn (def_id, subst) ->
+         | Fn (def_id, Subst subst) when Fn.is_generic ty ->
              let fnsig = tcx#get_fn def_id in
-             tcx#subst fnsig subst |> check_call expr args
+             let subst' = new vec in
+             subst'#copy subst;
+             check_arguments expr args fnsig.args;
+             let maybe_infer_typaram i arg =
+               let argty =
+                 SubstFolder.fold_ty tcx (fnsig.args#get i) subst'
+               in
+               match tcx#get_ty_param argty with
+               | Some _ ->
+                   let ty = check_expr arg NoExpectation in
+                   (match tcx#unfold_ty_param argty ty with
+                    | Ok ({ index; _ }, ty) -> subst'#set index (Ty ty)
+                    | Error _ ->
+                        ty_err_emit
+                          tcx
+                          (MismatchTy (argty, ty))
+                          expr.expr_span)
+               | None ->
+                   let ty = check_expr arg (ExpectTy argty) in
+                   (match equate argty ty with
+                    | Ok _ -> ()
+                    | Error e -> ty_err_emit tcx e arg.expr_span)
+             in
+             args#iteri maybe_infer_typaram;
+             let fn = tcx#fn def_id (Subst subst') in
+             write_ty expr.expr_id fn;
+             SubstFolder.fold_ty tcx fnsig.ret subst'
+         | Fn (def_id, _) -> tcx#get_fn def_id |> check_call expr args
          | Err ->
              args#iter (fun arg -> ignore (check_expr arg NoExpectation));
              ty
