@@ -24,6 +24,7 @@ type cx = {
     tcx: tcx
   ; irmdl: Ir.Module.t
   ; types: (ty, string) hashmap
+  ; defined_types: (string, unit) hashmap
   ; gen'd_fns: (instance, unit) hashmap
 }
 
@@ -83,13 +84,26 @@ let rec backend_ty cx ty =
                name;
            assert (cx.types#insert ty name = None);
            name)
-  | Adt def_id as ty' ->
+  | Adt (def_id, Subst subst) as ty' ->
       (match cx.types#get ty' with
        | Some ty -> ty
        | None ->
            let name = mangle_adt cx def_id in
-           assert (cx.types#insert ty' name = None);
+           let name =
+             match subst with
+             | subst when subst#empty -> name
+             | subst ->
+                 [
+                   name
+                 ; "I"
+                 ; subst#join "" (function Ty ty -> backend_ty cx ty)
+                 ; "E"
+                 ]
+                 |> String.concat ""
+           in
            prelude ^ sprintf "typedef struct %s %s;\n" name name;
+           assert (cx.types#insert ty' name = None);
+           define cx name ty;
            name)
   | FnPtr { args; ret; is_variadic; _ } as ty ->
       (match cx.types#get ty with
@@ -142,25 +156,35 @@ and fn cx ty =
            | _ -> "");
       assert (cx.types#insert ty name = None);
       name
+
+and define cx name ty =
+  match !ty with
+  | Adt _ ->
+      cx.defined_types#insert' name ();
+      let (Variant variant) = cx.tcx#non_enum_variant ty in
+      let fields =
+        variant.fields#join "\n" (fun (Field { ty; name }) ->
+            let name' = backend_ty cx ty in
+            (match cx.defined_types#get name' with
+             | Some () -> ()
+             | None -> define cx name' ty);
+            sprintf "  %s %s;" (backend_ty cx ty) name)
+      in
+      prelude ^ sprintf "typedef struct %s {\n%s\n} %s;\n\n" name fields name
+  | Fn _ | FnPtr _ | Str -> ()
+  | _ -> ()
 ;;
 
-let gen_types cx =
-  cx.types#iter (fun ty name ->
-      match ty with
-      | Adt _ ->
-          let (Variant variant) = cx.tcx#non_enum_variant (ref ty) in
-          let fields =
-            variant.fields#join "\n" (fun (Field { ty; name }) ->
-                sprintf "  %s %s;" (backend_ty cx ty) name)
-          in
-          prelude
-          ^ sprintf "typedef struct %s {\n%s\n} %s;\n\n" name fields name
-      | Fn _ | FnPtr _ | Str -> ()
-      | _ -> assert false)
-;;
+let gen_types cx = cx.types#iter (fun ty name -> define cx name @@ ref ty)
 
 let create tcx irmdl =
-  { tcx; irmdl; types = new hashmap; gen'd_fns = new hashmap }
+  {
+    tcx
+  ; irmdl
+  ; types = new hashmap
+  ; defined_types = new hashmap
+  ; gen'd_fns = new hashmap
+  }
 ;;
 
 let gen cx =
@@ -368,7 +392,7 @@ let gen cx =
        gen_main instance
    | _ when cx.tcx#sess.options.output_type = Exe -> assert false
    | _ -> ());
-  gen_types cx;
+  (* gen_types cx; *)
   (match cx.tcx#sess.options.output_type with
    | ExtMod ->
        let data =

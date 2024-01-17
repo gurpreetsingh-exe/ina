@@ -122,6 +122,12 @@ class type_lowering resolver modd =
 
     method visit_struct strukt =
       self#visit_generics strukt.generics;
+      let subst =
+        Subst
+          (map strukt.generics.params (fun { id; _ } ->
+               let did = local_def_id id in
+               Ty (resolver#tcx#get_def did)))
+      in
       let id = strukt.id in
       let def_id = local_def_id id in
       let fields =
@@ -130,7 +136,7 @@ class type_lowering resolver modd =
       in
       let variants = new vec in
       variants#push (Variant { def_id; fields });
-      let ty = resolver#tcx#adt_with_variants def_id variants in
+      let ty = resolver#tcx#adt_with_variants def_id variants subst in
       assert (resolver#tcx#node_id_to_def_id#insert id def_id = None);
       resolver#tcx#create_def def_id ty
 

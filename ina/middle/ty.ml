@@ -107,7 +107,7 @@ and ty =
   | Str
   | Ptr of ty ref
   | Ref of ty ref
-  | Adt of def_id
+  | Adt of (def_id * subst)
   | Fn of (def_id * subst)
   | FnPtr of fnsig
   | Param of typaram
@@ -200,7 +200,7 @@ let rec encode enc ty =
       enc#emit_with disc (fun e -> float_ty_to_enum f |> e#emit_usize)
   | Bool | Str | Unit -> enc#emit_with disc (fun _ -> ())
   | Ptr ty | Ref ty -> enc#emit_with disc (fun e -> encode e ty)
-  | Adt id -> enc#emit_with disc (fun e -> Def_id.encode e id)
+  | Adt (id, _) -> enc#emit_with disc (fun e -> Def_id.encode e id)
   | Fn (id, _) -> enc#emit_with disc (fun e -> Def_id.encode e id)
   | FnPtr fn -> enc#emit_with disc (fun e -> Fn.encode e fn)
   | _ ->
@@ -224,7 +224,7 @@ let rec decode tcx dec =
    | 4 -> Str
    | 5 -> Ptr (decode tcx dec)
    | 6 -> Ref (decode tcx dec)
-   | 7 -> Adt (Def_id.decode dec)
+   | 7 -> Adt (Def_id.decode dec, Subst (new vec))
    | 8 ->
        let args = new vec in
        let nargs = dec#read_usize in
@@ -287,9 +287,10 @@ let rec hash hasher ty =
   | Float f -> g (float_ty_to_enum f + 1)
   | Bool | Str | Unit | Err -> ()
   | Ptr ty | Ref ty -> f !ty
-  | Adt { inner; mod_id } ->
+  | Adt ({ inner; mod_id }, Subst subst) ->
       g inner;
-      g mod_id
+      g mod_id;
+      subst#iter (function Ty ty -> f !ty)
   | Fn ({ inner; mod_id }, Subst subst) ->
       g inner;
       g mod_id;
@@ -354,7 +355,7 @@ let rec render_ty2 ty =
   | Err -> "err"
   | Ptr ty -> "*" ^ render_ty2 ty
   | Ref ty -> "&" ^ render_ty2 ty
-  | Adt def_id -> sprintf "adt(%s)" (print_def_id def_id)
+  | Adt (def_id, _) -> sprintf "adt(%s)" (print_def_id def_id)
   | Fn (def_id, _) -> sprintf "fn(%s)" (print_def_id def_id)
   | Param { index; name } -> sprintf "%s%d" name index
 ;;

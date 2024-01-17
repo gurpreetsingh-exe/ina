@@ -115,6 +115,19 @@ module SubstFolder = struct
     let ret = fold_ty tcx ret subst in
     { args; ret; is_variadic; abi }
 
+  and fold_field tcx (Field { ty; name }) subst =
+    Field { ty = fold_ty tcx ty subst; name }
+
+  and fold_variant tcx (Variant variant) subst =
+    Variant
+      {
+        variant with
+        fields = map variant.fields (fun f -> fold_field tcx f subst)
+      }
+
+  and fold_adt tcx adt subst =
+    { variants = map adt.variants (fun v -> fold_variant tcx v subst) }
+
   and fold_subst tcx subst subst' =
     map subst (function Ty ty -> Ty (fold_ty tcx ty subst'))
   ;;
@@ -421,7 +434,7 @@ class tcx sess =
 
     method lookup_method_def_id ty name =
       match !ty with
-      | Adt did ->
+      | Adt (did, _) ->
           assoc_fn#get did
           |> Option.map (fun map -> map#get name)
           |> Option.join
@@ -478,7 +491,7 @@ class tcx sess =
     method fn_ptr args ret is_variadic abi =
       self#intern (FnPtr { args; ret; is_variadic; abi })
 
-    method adt def_id = self#intern (Adt def_id)
+    method adt def_id subst = self#intern (Adt (def_id, subst))
     method get_adt def_id = adt_def#unsafe_get def_id
     method fn def_id subst = self#intern (Fn (def_id, subst))
     method get_fn def_id = fn_def#unsafe_get def_id
@@ -534,8 +547,9 @@ class tcx sess =
 
     method non_enum_variant ty =
       match !ty with
-      | Adt def_id ->
-          let variants = (self#get_adt def_id).variants in
+      | Adt (def_id, Subst subst) ->
+          let adt = SubstFolder.fold_adt self (self#get_adt def_id) subst in
+          let variants = adt.variants in
           assert (variants#len = 1);
           variants#get 0
       | _ -> assert false
@@ -591,15 +605,25 @@ class tcx sess =
                })
       | Err -> assert false
       | Path path ->
+          let args = (path.segments#last |> Option.get).args in
+          let subst =
+            match args with
+            | Some args ->
+                map args (fun arg : generic_arg ->
+                    Ty (self#ast_ty_to_ty arg))
+            | None -> new vec
+          in
           let res = res_map#unsafe_get path.path_id in
           res |> ( function
-          | Def (def_id, Struct) -> self#adt def_id
+          | Def (def_id, Struct) -> self#adt def_id (Subst subst)
           | Def (def_id, TyParam) -> self#ty_param_from_def_id def_id
           | _ -> assert false )
       | ImplicitSelf ->
           let res = res_map#unsafe_get ty.ty_id in
           res |> ( function
-          | Def (def_id, _) -> self#adt def_id
+          | Def (def_id, _) ->
+              (* TODO: maybe save the type parameters somewhere *)
+              self#adt def_id (Subst (new vec))
           | Ty ty -> ty
           | _ -> assert false )
       | CVarArgs -> assert false
@@ -618,7 +642,7 @@ class tcx sess =
        | Ref ty ->
            segments#push "r";
            segments#append (self#render_ty_segments ty)
-       | Adt def_id ->
+       | Adt (def_id, _) ->
            self#def_key def_id |> ( function
            | { data = TypeNs name; _ } -> segments#push name
            | _ -> assert false )
@@ -662,18 +686,13 @@ class tcx sess =
              | Default -> ""
              | Intrinsic -> "\"intrinsic\" "
              | C -> "\"C\" ")
-            (if subst#empty
-             then ""
-             else
-               sprintf
-                 "[%s]"
-                 (subst#join ", " (function Ty ty -> self#render_ty ty)))
+            (self#render_subst subst)
             (args#join ", " (fun ty -> self#render_ty ty)
              ^ if is_variadic then ", ..." else String.empty)
             (self#render_ty ret)
-      | Adt def_id ->
+      | Adt (def_id, Subst subst) ->
           (self#def_key def_id).data |> ( function
-          | TypeNs name -> name
+          | TypeNs name -> name ^ self#render_subst subst
           | _ -> assert false )
       | Param { name; _ } -> name
   end
