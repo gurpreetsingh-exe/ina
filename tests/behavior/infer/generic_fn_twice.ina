@@ -1,0 +1,10 @@
+// EXIT_CODE: 0
+
+mod foomod {
+    fn foo[T]() {}
+}
+
+fn main() {
+    foomod::foo![isize]();
+    foomod::foo![isize]();
+}

@@ -1,0 +1,29 @@
+// EXIT_CODE: 0
+// STDOUT: Hello World
+
+extern mod std;
+
+type pair[T, V] = {
+    a: T,
+    b: V,
+}
+
+fn pair[T, V](i: T, j: V) -> pair[T, V] {
+    pair![T, V] { a: i, b: j }
+}
+
+fn first[T, V](t: pair[T, V]) -> T {
+    t.a
+}
+
+fn second[T, V](t: pair[T, V]) -> V {
+    t.b
+}
+
+fn main() -> i32 {
+    let pair = pair("Hello World", 69);
+    std::io::println(first(pair));
+    let chk: i64 = 69;
+    assert second(pair) == chk;
+    0
+}

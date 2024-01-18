@@ -470,21 +470,25 @@ let tychk_fn cx fn =
                let argty =
                  SubstFolder.fold_ty tcx (fnsig.args#get i) subst'
                in
-               match tcx#get_ty_param argty with
-               | Some _ ->
+               match tcx#get_ty_params argty with
+               | [] ->
+                   let ty = check_expr arg (ExpectTy argty) in
+                   (match equate argty ty with
+                    | Ok _ -> ()
+                    | Error e -> ty_err_emit tcx e arg.expr_span)
+               | _ ->
                    let ty = check_expr arg NoExpectation in
                    (match tcx#unfold_ty_param argty ty with
-                    | Ok ({ index; _ }, ty) -> subst'#set index (Ty ty)
+                    | Ok pairs ->
+                        List.iter
+                          (fun ({ index; _ }, ty) ->
+                            subst'#set index (Ty ty))
+                          pairs
                     | Error _ ->
                         ty_err_emit
                           tcx
                           (MismatchTy (argty, ty))
                           expr.expr_span)
-               | None ->
-                   let ty = check_expr arg (ExpectTy argty) in
-                   (match equate argty ty with
-                    | Ok _ -> ()
-                    | Error e -> ty_err_emit tcx e arg.expr_span)
              in
              args#iteri maybe_infer_typaram;
              let fn = tcx#fn def_id (Subst subst') in

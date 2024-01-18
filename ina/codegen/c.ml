@@ -23,7 +23,7 @@ let newline () = out ^ "\n"
 type cx = {
     tcx: tcx
   ; irmdl: Ir.Module.t
-  ; types: (ty, string) hashmap
+  ; types: string TypeMap.t
   ; defined_types: (string, unit) hashmap
   ; gen'd_fns: (instance, unit) hashmap
 }
@@ -70,7 +70,7 @@ let rec backend_ty cx ty =
   | Ptr ty | Ref ty -> sprintf "%s*" (backend_ty cx ty)
   | Unit -> "void"
   | Str as ty ->
-      (match cx.types#get ty with
+      (match TypeMap.find_opt cx.types ty with
        | Some ty -> ty
        | None ->
            let name = "__ina_string" in
@@ -82,10 +82,10 @@ let rec backend_ty cx ty =
                 } %s;\n\n"
                name
                name;
-           assert (cx.types#insert ty name = None);
+           TypeMap.add cx.types ty name;
            name)
   | Adt (def_id, Subst subst) as ty' ->
-      (match cx.types#get ty' with
+      (match TypeMap.find_opt cx.types ty' with
        | Some ty -> ty
        | None ->
            let name = mangle_adt cx def_id in
@@ -103,14 +103,14 @@ let rec backend_ty cx ty =
            in
            prelude ^ sprintf "// %s\n" (cx.tcx#render_ty ty);
            prelude ^ sprintf "typedef struct %s %s;\n" name name;
-           assert (cx.types#insert ty' name = None);
+           TypeMap.add cx.types ty' name;
            define cx name ty;
            name)
   | FnPtr { args; ret; is_variadic; _ } as ty ->
-      (match cx.types#get ty with
+      (match TypeMap.find_opt cx.types ty with
        | Some ty -> ty
        | None ->
-           let name = sprintf "__fn_%d" cx.types#len in
+           let name = sprintf "__fn_%d" (TypeMap.length cx.types) in
            prelude
            ^ sprintf
                "typedef %s (*%s)(%s%s);\n\n"
@@ -121,7 +121,7 @@ let rec backend_ty cx ty =
                 | true, true -> "..."
                 | true, false -> ", ..."
                 | _ -> "");
-           assert (cx.types#insert ty name = None);
+           TypeMap.add cx.types ty name;
            name)
   | Fn _ as ty -> fn cx ty
   | _ ->
@@ -140,11 +140,11 @@ and mangle cx instance =
       |> String.concat ""
 
 and fn cx ty =
-  match cx.types#get ty with
+  match TypeMap.find_opt cx.types ty with
   | Some ty -> ty
   | None ->
       let { args; ret; is_variadic; _ } = Fn.get cx.tcx (ref ty) in
-      let name = sprintf "__fn_%d" cx.types#len in
+      let name = sprintf "__fn_%d" (TypeMap.length cx.types) in
       prelude
       ^ sprintf
           "typedef %s (*%s)(%s%s);\n\n"
@@ -155,7 +155,7 @@ and fn cx ty =
            | true, true -> "..."
            | true, false -> ", ..."
            | _ -> "");
-      assert (cx.types#insert ty name = None);
+      TypeMap.add cx.types ty name;
       name
 
 and define cx name ty =
@@ -177,13 +177,11 @@ and define cx name ty =
   | _ -> ()
 ;;
 
-let gen_types cx = cx.types#iter (fun ty name -> define cx name @@ ref ty)
-
 let create tcx irmdl =
   {
     tcx
   ; irmdl
-  ; types = new hashmap
+  ; types = TypeMap.create 0
   ; defined_types = new hashmap
   ; gen'd_fns = new hashmap
   }

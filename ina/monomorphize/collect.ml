@@ -12,12 +12,15 @@ let collect tcx mdl =
   let mono_items = new vec in
   let generic_items = new hashmap in
   let instantiated_items = new vec in
+  let cache = TypeMap.create 0 in
   let rec instantiate ty =
     match !ty with
-    | Fn (def_id, subst) ->
+    | Fn (def_id, subst) when not (TypeMap.mem cache !ty) ->
+        TypeMap.add cache !ty ();
         let fn = generic_items#unsafe_get def_id in
         let fn = monomorphize fn subst in
         mono_items#push fn
+    | Fn _ -> ()
     | _ -> assert false
   and monomorphize fn (Subst subst) =
     let fold_ty ty = SubstFolder.fold_ty tcx ty subst in

@@ -11,6 +11,8 @@ open Encoder
 open Decoder
 module TypeMap = Hashtbl.Make (Ty)
 
+let ( let* ) r f = Result.bind r f
+
 type def_data =
   | ModRoot
   | ExternMod
@@ -532,19 +534,34 @@ class tcx sess =
     method ty_param index name = self#intern (Param { index; name })
     method ty_param_from_def_id def_id = self#get_def def_id
 
-    method get_ty_param ty =
+    method get_ty_params ty =
       (* TODO: check if there are multiple parameters *)
       match !ty with
-      | Param param -> Some param
-      | Ref ty | Ptr ty -> self#get_ty_param ty
-      | _ -> None
+      | Param param -> [param]
+      | Ref ty | Ptr ty -> self#get_ty_params ty
+      | Adt (_, Subst subst) ->
+          fold_left
+            (fun params (Ty ty : generic_arg) ->
+              params @ self#get_ty_params ty)
+            []
+            subst
+      | _ -> []
 
     method unfold_ty_param typaram ty =
-      assert (self#get_ty_param typaram |> Option.is_some);
+      assert (self#get_ty_params typaram <> []);
       match !typaram, !ty with
       | Ptr ty, Ptr ty' -> self#unfold_ty_param ty ty'
       | Ref ty, Ref ty' -> self#unfold_ty_param ty ty'
-      | Param param, _ -> Ok (param, ty)
+      | Adt (did, _), Adt (did', _) when did <> did' -> Error self#types.err
+      | Adt (_, Subst subst), Adt (_, Subst subst') ->
+          map2 subst subst' (fun (Ty ty) (Ty ty') -> ty, ty')
+          |> fold_left
+               (fun res (ty, ty') ->
+                 let* pair = res in
+                 let* res = self#unfold_ty_param ty ty' in
+                 Ok (pair @ res))
+               (Ok [])
+      | Param param, _ -> Ok [param, ty]
       | _, (FnPtr _ | Fn _ | Adt _) -> assert false
       | _ -> Error self#types.err
 
