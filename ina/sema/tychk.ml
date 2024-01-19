@@ -376,12 +376,32 @@ let tychk_fn cx fn =
         (* TODO(error): function pointers cannot be generic *)
         assert false
     | _ -> assert false
+  and infer_type_argument_from_expr expr typaram subst =
+    let expected = SubstFolder.fold_ty tcx typaram subst in
+    match tcx#get_ty_params expected with
+    | [] ->
+        let ty = check_expr expr (ExpectTy expected) in
+        (match equate expected ty with
+         | Ok _ -> ()
+         | Error e -> ty_err_emit tcx e expr.expr_span)
+    | _ ->
+        let ty = check_expr expr NoExpectation in
+        (match tcx#unfold_ty_param expected ty with
+         | Ok pairs ->
+             List.iter
+               (fun ({ index; _ }, ty) ->
+                 subst#set index (Ty ty : generic_arg))
+               pairs
+         | Error _ ->
+             ty_err_emit tcx (MismatchTy (expected, ty)) expr.expr_span)
   and check_path path =
     tcx#res_map#unsafe_get path.path_id |> function
     | Def (id, Struct) ->
         let ty = tcx#get_def id in
-        let args = (Option.get path.segments#last).args in
-        check_generic_args ty args path.span tcx#adt
+        let last = Option.get path.segments#last in
+        (match last.args with
+         | Some args -> check_generic_args ty (Some args) path.span tcx#adt
+         | None -> ty)
     | Def (id, (Fn | Intrinsic)) ->
         let ty = tcx#get_def id in
         let last = Option.get path.segments#last in
@@ -467,28 +487,7 @@ let tychk_fn cx fn =
              subst'#copy subst;
              check_arguments expr args fnsig.args;
              let maybe_infer_typaram i arg =
-               let argty =
-                 SubstFolder.fold_ty tcx (fnsig.args#get i) subst'
-               in
-               match tcx#get_ty_params argty with
-               | [] ->
-                   let ty = check_expr arg (ExpectTy argty) in
-                   (match equate argty ty with
-                    | Ok _ -> ()
-                    | Error e -> ty_err_emit tcx e arg.expr_span)
-               | _ ->
-                   let ty = check_expr arg NoExpectation in
-                   (match tcx#unfold_ty_param argty ty with
-                    | Ok pairs ->
-                        List.iter
-                          (fun ({ index; _ }, ty) ->
-                            subst'#set index (Ty ty))
-                          pairs
-                    | Error _ ->
-                        ty_err_emit
-                          tcx
-                          (MismatchTy (argty, ty))
-                          expr.expr_span)
+               infer_type_argument_from_expr arg (fnsig.args#get i) subst'
              in
              args#iteri maybe_infer_typaram;
              let fn = tcx#fn def_id (Subst subst') in
@@ -562,18 +561,36 @@ let tychk_fn cx fn =
         let remaining_fields = new hashmap in
         variant.fields#iter (fun (Field { ty; name }) ->
             remaining_fields#insert' name ty);
-        let check_field (ident, expr) =
-          match remaining_fields#remove ident with
-          | Some expected ->
-              let ty = check_expr expr (ExpectTy expected) in
-              (match equate expected ty with
-               | Ok _ -> ()
-               | Error e -> ty_err_emit tcx e expr.expr_span)
-          | None ->
-              let err = UnknownField (name, ident) in
-              ty_err_emit tcx err expr.expr_span
+        let ty =
+          match !ty with
+          | Adt (def_id, Subst subst) when tcx#is_generic ty ->
+              let subst' = new vec in
+              subst'#copy subst;
+              let maybe_infer_field (ident, expr) =
+                match remaining_fields#remove ident with
+                | Some expected ->
+                    infer_type_argument_from_expr expr expected subst'
+                | None ->
+                    let err = UnknownField (name, ident) in
+                    ty_err_emit tcx err expr.expr_span
+              in
+              expr.fields#iter maybe_infer_field;
+              tcx#adt def_id (Subst subst')
+          | _ ->
+              let check_field (ident, expr) =
+                match remaining_fields#remove ident with
+                | Some expected ->
+                    let ty = check_expr expr (ExpectTy expected) in
+                    (match equate expected ty with
+                     | Ok _ -> ()
+                     | Error e -> ty_err_emit tcx e expr.expr_span)
+                | None ->
+                    let err = UnknownField (name, ident) in
+                    ty_err_emit tcx err expr.expr_span
+              in
+              expr.fields#iter check_field;
+              ty
         in
-        expr.fields#iter check_field;
         (if remaining_fields#len <> 0
          then
            (* TODO: display all missing fields *)

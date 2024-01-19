@@ -1,0 +1,14 @@
+// EXIT_CODE: 0
+
+type Uniq[T] = {
+    inner: T
+}
+
+fn f[T](x: Uniq[T]) -> Uniq[T] {
+    x
+}
+
+fn main() -> i32 {
+    let x = f(Uniq { inner: 0 });
+    x.inner
+}

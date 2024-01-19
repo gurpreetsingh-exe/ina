@@ -9,7 +9,7 @@ type pair[T, V] = {
 }
 
 fn pair[T, V](i: T, j: V) -> pair[T, V] {
-    pair![T, V] { a: i, b: j }
+    pair { a: i, b: j }
 }
 
 fn first[T, V](t: pair[T, V]) -> T {

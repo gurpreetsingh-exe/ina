@@ -534,6 +534,13 @@ class tcx sess =
     method ty_param index name = self#intern (Param { index; name })
     method ty_param_from_def_id def_id = self#get_def def_id
 
+    method is_generic ty =
+      match !ty with
+      | Adt (_, Subst subst) | Fn (_, Subst subst) -> not subst#empty
+      | Param _ -> true
+      | Ptr ty | Ref ty -> self#is_generic ty
+      | _ -> false
+
     method get_ty_params ty =
       (* TODO: check if there are multiple parameters *)
       match !ty with
