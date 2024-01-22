@@ -84,23 +84,11 @@ let rec backend_ty cx ty =
                name;
            TypeMap.add cx.types ty name;
            name)
-  | Adt (def_id, Subst subst) as ty' ->
+  | Adt _ as ty' ->
       (match TypeMap.find_opt cx.types ty' with
        | Some ty -> ty
        | None ->
-           let name = mangle_adt cx def_id in
-           let name =
-             match subst with
-             | subst when subst#empty -> name
-             | subst ->
-                 [
-                   name
-                 ; "I"
-                 ; subst#join "" (function Ty ty -> backend_ty cx ty)
-                 ; "E"
-                 ]
-                 |> String.concat ""
-           in
+           let name = Mangle.mangle_ty cx.tcx ty in
            prelude ^ sprintf "// %s\n" (cx.tcx#render_ty ty);
            prelude ^ sprintf "typedef struct %s %s;\n" name name;
            TypeMap.add cx.types ty' name;
@@ -230,7 +218,7 @@ let gen cx =
     | Global (Fn instance) ->
         (match instance.def with
          | Fn id | Intrinsic id ->
-             let name = mangle cx instance in
+             let name = Mangle.mangle cx.tcx instance in
              (* let ty = cx.tcx#get_def id in *)
              let ty = cx.tcx#fn id instance.subst in
              (match cx.gen'd_fns#get instance with
@@ -239,7 +227,7 @@ let gen cx =
                   prelude ^ sprintf "// %s\n" (cx.tcx#render_ty ty);
                   prelude ^ sprintf "extern %s;\n" (render_fn_header name ty)
               | None ->
-                  prelude ^ sprintf "// %s\n" (cx.tcx#render_ty ty);
+                  (* prelude ^ sprintf "// %s\n" (cx.tcx#render_ty ty); *)
                   prelude ^ sprintf "%s;\n" (render_fn_header name ty)
               | Some () -> ());
              name)
@@ -348,7 +336,7 @@ let gen cx =
     | Jmp bb -> out ^ sprintf "goto %s;\n" (get_value bb)
   and gen_function func =
     let open Ir.Func in
-    let name = mangle cx func.instance in
+    let name = Mangle.mangle cx.tcx func.instance in
     let { args; ret; is_variadic; _ } = Fn.get cx.tcx func.ty in
     let gen_arg ty arg =
       sprintf "%s %s" (backend_ty cx ty) (get_value arg)
@@ -377,7 +365,7 @@ let gen cx =
       out ^ "}\n\n")
   in
   let gen_main main =
-    let name = mangle cx main in
+    let name = Mangle.mangle cx.tcx main in
     let ty = cx.tcx#get_def (instance_def_id main) in
     match Fn.ret cx.tcx ty with
     | ret when ret = cx.tcx#types.unit ->

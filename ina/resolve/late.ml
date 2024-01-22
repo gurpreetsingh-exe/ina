@@ -3,6 +3,7 @@ open Middle.Ctx
 open Middle.Ty
 open Middle.Def_id
 open Structures.Vec
+open Structures.Hashmap
 open Resolver
 
 class type_lowering resolver modd =
@@ -10,7 +11,13 @@ class type_lowering resolver modd =
     val modd : Ast.modd = modd
     val resolver : resolver = resolver
     val mutable curr_fn = None
+    val mutable parent = None
     method visit_ty _ = ()
+
+    method with_parent did f =
+      parent <- Some did;
+      f ();
+      parent <- None
 
     method visit_expr expr =
       match expr.expr_kind with
@@ -38,7 +45,8 @@ class type_lowering resolver modd =
                let name = (Option.get path.segments#last).ident in
                (match tcx#lookup_assoc_fn res name with
                 | Some did ->
-                    ignore (tcx#res_map#insert path.path_id (Def (did, Fn)))
+                    ignore
+                      (tcx#res_map#insert path.path_id (Def (did, AssocFn)))
                 | None ->
                     ignore (tcx#res_map#insert path.path_id Err);
                     resolver#not_found path)
@@ -66,13 +74,33 @@ class type_lowering resolver modd =
       | None -> ()
 
     method visit_generics generics =
-      generics.params#iteri (fun i { kind = Ident name; id; _ } ->
-          let did = local_def_id id in
-          let ty = resolver#tcx#ty_param i name in
-          resolver#tcx#create_def did ty)
+      let parent_count =
+        Option.fold
+          ~none:0
+          ~some:(fun did ->
+            let generics = resolver#tcx#generics_of did in
+            Generics.count generics)
+          parent
+      in
+      let param_def_id_to_index = new hashmap in
+      let params =
+        mapi generics.params (fun i param ->
+            match param.kind with
+            | Ident name ->
+                let def_id = local_def_id param.id in
+                let index = parent_count + i in
+                assert (param_def_id_to_index#insert def_id index = None);
+                let ty = resolver#tcx#ty_param index name in
+                resolver#tcx#create_def def_id ty;
+                Generics.{ name; def_id; index })
+      in
+      let generics' =
+        Generics.{ parent; parent_count; params; param_def_id_to_index }
+      in
+      generics', Subst (Generics.to_subst generics' resolver#tcx)
 
     method visit_fn (fn : func) =
-      self#visit_generics fn.fn_generics;
+      let generics, subst = self#visit_generics fn.fn_generics in
       let abi : abi =
         match fn.abi with
         | "intrinsic" -> Intrinsic
@@ -88,13 +116,8 @@ class type_lowering resolver modd =
         | Some ty -> resolver#tcx#ast_ty_to_ty ty
         | None -> resolver#tcx#types.unit
       in
-      let subst =
-        Subst
-          (map fn.fn_generics.params (fun { id; _ } ->
-               let did = local_def_id id in
-               Ty (resolver#tcx#get_def did)))
-      in
       let def_id = local_def_id fn.func_id in
+      resolver#tcx#define_generics def_id generics;
       let ty =
         resolver#tcx#fn_with_sig
           def_id
@@ -113,23 +136,22 @@ class type_lowering resolver modd =
       | None -> ()
 
     method visit_impl impl =
-      resolver#tcx#def_key (local_def_id impl.impl_id) |> function
-      | { data = Impl id; _ } ->
-          let ty = resolver#tcx#ast_ty_to_ty impl.impl_ty in
-          resolver#tcx#link_impl id ty;
-          impl.impl_items#iter (function AssocFn fn -> self#visit_fn fn)
-      | _ -> assert false
+      let generics, _ = self#visit_generics impl.generics in
+      let did = local_def_id impl.id in
+      resolver#tcx#define_generics did generics;
+      self#with_parent did (fun () ->
+          resolver#tcx#def_key did |> function
+          | { data = Impl id; _ } ->
+              let ty = resolver#tcx#ast_ty_to_ty impl.ty in
+              resolver#tcx#link_impl id ty;
+              impl.items#iter (function AssocFn fn -> self#visit_fn fn)
+          | _ -> assert false)
 
-    method visit_struct strukt =
-      self#visit_generics strukt.generics;
-      let subst =
-        Subst
-          (map strukt.generics.params (fun { id; _ } ->
-               let did = local_def_id id in
-               Ty (resolver#tcx#get_def did)))
-      in
+    method visit_struct (strukt : strukt) =
+      let generics, subst = self#visit_generics strukt.generics in
       let id = strukt.id in
       let def_id = local_def_id id in
+      resolver#tcx#define_generics def_id generics;
       let fields =
         map strukt.fields (fun (ty, name) ->
             Field { ty = resolver#tcx#ast_ty_to_ty ty; name })

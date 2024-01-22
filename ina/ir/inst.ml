@@ -19,7 +19,7 @@ let instance_def_id instance =
   instance.def |> function Fn id | Intrinsic id -> id
 ;;
 
-let render_instance tcx instance =
+let render_instance (tcx: Middle.Ctx.tcx) instance =
   match instance.def with
   | Fn id | Intrinsic id ->
       let (Subst subst) = instance.subst in

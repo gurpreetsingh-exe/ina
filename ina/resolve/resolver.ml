@@ -224,7 +224,6 @@ class resolver tcx modd =
     val modules : (def_id, Module.t) hashmap = new hashmap
     val extmods : (string, Module.t) hashmap = new hashmap
     val mutable current_impl : res option = None
-    val impl_map : (res, (def_id, unit) hashmap) hashmap = new hashmap
     val scopes : scope vec = new vec
 
     val binding_parent_module : (name_resolution, Module.t) hashmap =
@@ -260,7 +259,6 @@ class resolver tcx modd =
       | Some old_modul -> if not @@ pcmp old_modul mdl then assert false
       | None -> ()
 
-    method find_impls res = impl_map#unsafe_get res
     method resolutions mdl = mdl.resolutions
 
     method resolution mdl key =
@@ -296,7 +294,8 @@ class resolver tcx modd =
            | Some m -> self#get_root_mod m
            | _ -> assert false)
 
-    method resolve_ident_in_lexical_scope mdl ident ns =
+    method resolve_ident_in_lexical_scope mdl (segment : path_segment) ns =
+      let ident = segment.ident in
       let key = { ident; ns; disambiguator = 0 } in
       dbg
         "resolve_ident_in_lexical_scope(module = %s, ident = %s, ns = %s) = "
@@ -319,7 +318,7 @@ class resolver tcx modd =
                  (* recursive function *)
                  self#resolve_ident_in_lexical_scope
                    (self#get_root_mod mdl)
-                   ident
+                   segment
                    ns)
         | None ->
             (match mdl.parent with
@@ -330,10 +329,11 @@ class resolver tcx modd =
                       @@ Utils.Printer.green
                            ?bold:(Some false)
                            (print_mkind modul'.mkind);
-                      self#resolve_ident_in_lexical_scope modul' ident ns
+                      self#resolve_ident_in_lexical_scope modul' segment ns
                   | _ -> Err)
              | _ -> Err)
       in
+      tcx#res_map#insert' segment.id res;
       res
 
     method resolve_path_in_modul mdl (segs : path_segment vec) ns =
@@ -352,26 +352,30 @@ class resolver tcx modd =
           i
           (print_mkind mdl.mkind)
           seg.ident;
-        if i <> 0 && seg.ident = "mod" && not !mod_in_path_report
-        then Err
-        else
-          let key = { ident = seg.ident; ns; disambiguator = 0 } in
-          match mdl.resolutions#get key with
-          | Some r ->
-              (match r with
-               | Res r ->
-                   dbg "%s\n"
-                   @@ Utils.Printer.green ?bold:(Some false) (print_res r);
-                   r
-               | Module mdl ->
-                   dbg "%s\n"
-                   @@ Utils.Printer.green
-                        ?bold:(Some false)
-                        (print_mkind mdl.mkind);
-                   f (i + 1) mdl)
-          | None ->
-              dbg "%s\n" (Utils.Printer.red "err");
-              Err
+        let res =
+          if i <> 0 && seg.ident = "mod" && not !mod_in_path_report
+          then (Err : res)
+          else
+            let key = { ident = seg.ident; ns; disambiguator = 0 } in
+            match mdl.resolutions#get key with
+            | Some r ->
+                (match r with
+                 | Res r ->
+                     dbg "%s\n"
+                     @@ Utils.Printer.green ?bold:(Some false) (print_res r);
+                     r
+                 | Module mdl ->
+                     dbg "%s\n"
+                     @@ Utils.Printer.green
+                          ?bold:(Some false)
+                          (print_mkind mdl.mkind);
+                     f (i + 1) mdl)
+            | None ->
+                dbg "%s\n" (Utils.Printer.red "err");
+                Err
+        in
+        tcx#res_map#insert' seg.id res;
+        res
       in
       f 0 mdl
 
@@ -388,9 +392,10 @@ class resolver tcx modd =
         match ns, segs_len, (segs#get 0).ident with
         | Value, 1, "mod" -> Err
         | Value, 1, _ ->
-            self#resolve_ident_in_lexical_scope mdl (segs#get 0).ident Value
+            self#resolve_ident_in_lexical_scope mdl (segs#get 0) Value
         | Type, 1, _ when not scopes#empty ->
-            let ident = (segs#get 0).ident in
+            let seg = segs#get 0 in
+            let ident = seg.ident in
             let key = { ident; ns; disambiguator = 0 } in
             let rec f i =
               match (scopes#get i)#bindings#get key with
@@ -400,7 +405,9 @@ class resolver tcx modd =
                   self#resolve_path_in_modul mdl segs ns
               | None -> f (i - 1)
             in
-            f (scopes#len - 1)
+            let res = f (scopes#len - 1) in
+            tcx#res_map#insert' seg.id res;
+            res
         | _, _, "mod" ->
             segs#pop_front;
             self#resolve_path_in_modul mod_root segs ns
@@ -419,7 +426,8 @@ class resolver tcx modd =
     method resolve_main =
       let mdl = self#get_root_mod mod_root in
       let segs = new vec in
-      segs#push { ident = "main"; args = None; span = Source.Span.make 0 0 };
+      segs#push
+        { ident = "main"; args = None; span = Source.Span.make 0 0; id = 0 };
       self#resolve_path_in_modul mdl segs Value
 
     method resolve =
@@ -548,9 +556,19 @@ class resolver tcx modd =
         tcx#define_assoc_fn ty fn.name did;
         visit_fn fn
       in
-      let visit_struct strukt =
+      let visit_struct (strukt : strukt) =
         with_generics_params self strukt.generics (fun () ->
             strukt.fields#iter (fun (ty, _) -> resolve_ty ty))
+      in
+      let visit_impl { ty; generics; items; _ } =
+        with_generics_params self generics (fun () ->
+            resolve_ty ty;
+            match tcx#ast_ty_to_res ty with
+            | Some res ->
+                current_impl <- Some res;
+                items#iter (function AssocFn fn -> visit_assoc_fn res fn);
+                current_impl <- None
+            | None -> assert false)
       in
       let visit_item (item : item) =
         match item with
@@ -564,25 +582,7 @@ class resolver tcx modd =
         | Fn (func, _) -> visit_fn func
         | Type (Struct strukt) -> visit_struct strukt
         | Foreign (fns, _) -> fns#iter (fun f -> visit_fn f)
-        | Impl { impl_ty; impl_items; impl_id; _ } ->
-            let did = local_def_id impl_id in
-            resolve_ty impl_ty;
-            (match tcx#ast_ty_to_res impl_ty with
-             | Some res ->
-                 current_impl <- Some res;
-                 let impls =
-                   match impl_map#get res with
-                   | Some impls -> impls
-                   | None ->
-                       let impls = new hashmap in
-                       impl_map#insert' res impls;
-                       impls
-                 in
-                 assert (impls#insert did () = None);
-                 impl_items#iter (function AssocFn fn ->
-                     visit_assoc_fn res fn);
-                 current_impl <- None
-             | None -> assert false)
+        | Impl impl -> visit_impl impl
         | ExternMod _ -> ()
       in
       modd.items#iter visit_item

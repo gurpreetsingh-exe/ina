@@ -7,7 +7,7 @@ class ['a] vec =
 
     method get i =
       assert (i < Array.length inner);
-      Array.unsafe_get inner i
+      Array.unsafe_get inner (if i < 0 then Array.length inner + i else i)
 
     method set i v = Array.unsafe_set inner i v
     method replace v = inner <- v

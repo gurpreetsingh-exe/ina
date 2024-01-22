@@ -39,6 +39,7 @@ and path_segment = {
     ident: ident
   ; args: ty vec option
   ; span: Span.t
+  ; id: node_id
 }
 
 and path = {
@@ -110,10 +111,11 @@ and typ = Struct of strukt
 and assoc_item = AssocFn of func
 
 and impl = {
-    impl_ty: ty
-  ; impl_items: assoc_item vec
-  ; impl_span: Span.t
-  ; impl_id: node_id
+    ty: ty
+  ; generics: generics
+  ; items: assoc_item vec
+  ; span: Span.t
+  ; id: node_id
 }
 
 and item =

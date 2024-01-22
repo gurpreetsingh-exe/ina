@@ -612,7 +612,7 @@ class parser pcx file tokenizer =
             Ok (Some args)
         | _ -> Ok None
       in
-      Ok { ident; args; span = self#mk_span s }
+      Ok { ident; args; span = self#mk_span s; id = self#id }
 
     method parse_path namespace =
       let s = token.span.lo in
@@ -621,7 +621,15 @@ class parser pcx file tokenizer =
         let* segment =
           match token.kind with
           | Ident -> self#parse_path_segment namespace
-          | Mod -> Ok { ident = "mod"; args = None; span = self#mk_span s }
+          | Mod ->
+              self#bump;
+              Ok
+                {
+                  ident = "mod"
+                ; args = None
+                ; span = self#mk_span s
+                ; id = self#id
+                }
           | t ->
               self#unexpected_token t ~line:__LINE__;
               exit 1
@@ -867,7 +875,8 @@ class parser pcx file tokenizer =
     method parse_impl =
       let s = token.span.lo in
       self#bump;
-      let* impl_ty = self#parse_ty in
+      let* generics = self#parse_generics in
+      let* ty = self#parse_ty in
       let* _ = self#expect LBrace in
       let items = new vec in
       while token.kind <> RBrace do
@@ -887,13 +896,7 @@ class parser pcx file tokenizer =
         match f () with Ok () -> () | Error e -> self#emit_err e
       done;
       let* _ = self#expect RBrace in
-      Ok
-        {
-          impl_ty
-        ; impl_items = items
-        ; impl_span = self#mk_span s
-        ; impl_id = self#id
-        }
+      Ok { ty; generics; items; span = self#mk_span s; id = self#id }
 
     method parse_extern =
       let abi =

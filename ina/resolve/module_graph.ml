@@ -193,11 +193,10 @@ class visitor resolver (modd : Ast.modd) parent dir_ownership =
       | None -> assert false
 
     method visit_impl impl =
-      let did = local_def_id impl.impl_id in
+      let did = local_def_id impl.id in
       let did = resolver#tcx#define parent_id did (Impl did) in
       self#with_parent did (fun () ->
-          impl.impl_items#iter (function AssocFn fn ->
-              self#visit_assoc_fn fn))
+          impl.items#iter (function AssocFn fn -> self#visit_assoc_fn fn))
 
     method visit_struct { name; id; span; _ } =
       resolver#tcx#insert_span id span;

@@ -12,6 +12,7 @@ type def_kind =
   | TyParam
   (* Value namespace *)
   | Fn
+  | AssocFn
   | Intrinsic
   | Impl
 [@@deriving enum]
@@ -37,6 +38,7 @@ let print_def_kind = function
   | Struct -> "struct"
   | TyParam -> "type parameter"
   | Fn -> "function"
+  | AssocFn -> "associated function"
   | Intrinsic -> "intrinsic"
   | Impl -> "impl"
 ;;

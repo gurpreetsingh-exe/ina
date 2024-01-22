@@ -298,7 +298,7 @@ and render_fn fn prefix =
   | Some body -> render_child ?prefix:(Some prefix) true body render_block
   | None -> ()
 
-and render_struct strukt prefix =
+and render_struct (strukt : strukt) prefix =
   id "Struct" strukt.id strukt.span;
   out += " ";
   out += (green ?bold:(Some false) @@ q strukt.name ^ "\n");
@@ -313,12 +313,12 @@ and render_struct strukt prefix =
 and render_type ty = match ty with Struct strukt -> render_struct strukt
 
 and render_impl impl prefix =
-  id "Extension" impl.impl_id impl.impl_span;
+  id "Extension" impl.id impl.span;
   out += " ";
-  out += (green ?bold:(Some false) @@ q @@ render_ty impl.impl_ty);
+  out += (green ?bold:(Some false) @@ q @@ render_ty impl.ty);
   out += "\n";
   let render_item item = match item with AssocFn fn -> render_fn fn in
-  render_children ?prefix:(Some prefix) impl.impl_items render_item
+  render_children ?prefix:(Some prefix) impl.items render_item
 
 and render_item item prefix =
   match item with

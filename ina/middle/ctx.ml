@@ -13,6 +13,8 @@ module TypeMap = Hashtbl.Make (Ty)
 
 let ( let* ) r f = Result.bind r f
 
+type pathseg = def_id * int
+
 type def_data =
   | ModRoot
   | ExternMod
@@ -228,6 +230,8 @@ class tcx sess =
     val extern_mods : string vec = new vec
     val definitions : (def_id, DefKey.t) hashmap = new hashmap
     val impls : (def_id, ty ref) hashmap = new hashmap
+    val generics : (def_id, Generics.t) hashmap = new hashmap
+    val substs : (def_id, generic_arg vec) hashmap = new hashmap
     val mutable impl_id = 0
 
     val prim_ty_assoc_fn : (ty ref, (string, def_id) hashmap) hashmap =
@@ -381,7 +385,7 @@ class tcx sess =
               printer#append "\n"));
       printer#print
 
-    method into_segments id =
+    method into_segments ?(f = self#render_ty) id =
       let DefKey.{ parent; _ } = self#def_key id in
       let parent = Option.get parent in
       let extern =
@@ -396,7 +400,7 @@ class tcx sess =
                | _ -> false)
         |> List.map (function
                | ModRoot | ExternMod -> assert false
-               | Impl id -> self#render_ty (impls#unsafe_get id)
+               | Impl id -> f (impls#unsafe_get id)
                | TypeNs name | ValueNs name -> name)
       , extern )
 
@@ -466,11 +470,44 @@ class tcx sess =
               |> printer#append));
       printer#print
 
+    method define_generics did generics' =
+      assert (generics#insert did generics' = None)
+
+    method generics_of did = generics#unsafe_get did
+    method write_substs did subst = assert (substs#insert did subst = None)
+    method subst_of did = substs#get did
+
+    method generics_of_ty ty =
+      match !ty with
+      | Adt (did, _) | Fn (did, _) -> Some (self#generics_of did)
+      | _ -> None
+
     method ast_ty_to_res (ty : Ast.ty) =
       match ty.kind with
       | Path path -> Some (res_map#unsafe_get path.path_id)
       | Err -> None
       | _ -> Some (Ty (self#ast_ty_to_ty ty))
+
+    method def_ids_for_path_segments
+        (segments : Ast.path_segment vec)
+        kind
+        did =
+      let last = segments#len - 1 in
+      let segs = new vec in
+      (match kind with
+       | Struct ->
+           let generics = self#generics_of did in
+           let generics_def_id = Option.value generics.parent ~default:did in
+           segs#push (generics_def_id, last)
+       | AssocFn ->
+           (if segments#len >= 2
+            then
+              let generics = self#generics_of did in
+              segs#push (Option.get generics.parent, last - 1));
+           segs#push (did, last)
+       | Fn -> segs#push (did, last)
+       | _ -> assert false);
+      segs
 
     method invalidate old_ty new_ty =
       let ty = self#intern old_ty in
@@ -506,6 +543,11 @@ class tcx sess =
 
     method subst fnsig (Subst subst) =
       SubstFolder.fold_fnsig self fnsig subst
+
+    method get_subst ty =
+      match !ty with
+      | Adt (_, Subst subst) | Fn (_, Subst subst) -> Some subst
+      | _ -> None
 
     method ty_with_subst ty =
       match !ty with
@@ -546,7 +588,7 @@ class tcx sess =
       match !ty with
       | Param param -> [param]
       | Ref ty | Ptr ty -> self#get_ty_params ty
-      | Adt (_, Subst subst) ->
+      | Fn (_, Subst subst) | Adt (_, Subst subst) ->
           fold_left
             (fun params (Ty ty : generic_arg) ->
               params @ self#get_ty_params ty)
@@ -740,5 +782,5 @@ class tcx sess =
           (self#def_key def_id).data |> ( function
           | TypeNs name -> name ^ self#render_subst subst
           | _ -> assert false )
-      | Param { name; _ } -> name
+      | Param { name; index } -> name ^ string_of_int index
   end

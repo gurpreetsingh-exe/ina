@@ -3,6 +3,7 @@ open Structures.Vec
 open Def_id
 open Metadata.Encoder
 open Metadata.Decoder
+open Structures.Hashmap
 
 type int_ty =
   | I8
@@ -139,6 +140,66 @@ let rotl64c x n = (x lsl n) lor (x lsr (-n land 62))
 let rotate_left5 x = (x lsl 5) lor (x lsr 27)
 let k = 0x145f306dc9c882ef
 let fx_add_to_hash fx i = fx.hash <- rotl64c fx.hash 5 lxor i * k
+
+module Generics = struct
+  type generic_param_def = {
+      name: string
+    ; def_id: def_id
+    ; index: int
+  }
+
+  type t = {
+      parent: def_id option
+    ; parent_count: int
+    ; params: generic_param_def vec
+    ; param_def_id_to_index: (def_id, int) hashmap
+  }
+
+  let count self = self.parent_count + self.params#len
+
+  let rec to_subst self tcx =
+    let parent_subst =
+      match self.parent with
+      | Some did -> to_subst (tcx#generics_of did) tcx
+      | None -> new vec
+    in
+    let child_subst =
+      map self.params (fun { name; index; _ } ->
+          Ty (tcx#ty_param index name))
+    in
+    parent_subst#append child_subst;
+    parent_subst
+  ;;
+
+  let rec param_def_id_to_index' self tcx did =
+    self.param_def_id_to_index#get did |> function
+    | Some idx -> Some idx
+    | None ->
+        self.parent |> ( function
+        | Some parent ->
+            let parent = tcx#generics_of parent in
+            param_def_id_to_index' parent tcx did
+        | None -> None )
+  ;;
+
+  let display_param param =
+    sprintf
+      "{ name = %s; def_id = %s; index = %d }"
+      param.name
+      (print_def_id param.def_id)
+      param.index
+  ;;
+
+  let display self =
+    sprintf
+      "{ parent = %s; parent_count = %d; params = [%s] }"
+      (match self.parent with
+       | Some parent -> print_def_id parent
+       | None -> "None")
+      self.parent_count
+      (self.params#join ", " display_param)
+  ;;
+end
 
 module Fn = struct
   let render tcx { args; ret; is_variadic; abi } =

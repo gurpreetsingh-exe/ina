@@ -408,8 +408,33 @@ let tychk_fn cx fn =
         (match last.args with
          | Some args -> check_generic_args ty (Some args) path.span tcx#fn
          | None -> ty)
+    | Def (id, AssocFn) ->
+        let ty = tcx#get_def id in
+        let last = Option.get path.segments#last in
+        let second_last = path.segments#get (-2) in
+        let adtty =
+          tcx#res_map#unsafe_get second_last.id |> function
+          | Def (id, Struct) ->
+              let ty = tcx#get_def id in
+              let ty =
+                match second_last.args with
+                | Some args ->
+                    check_generic_args ty (Some args) path.span tcx#adt
+                | None -> ty
+              in
+              ty
+          | _ -> assert false
+        in
+        let ty =
+          match last.args with
+          | Some args -> check_generic_args ty (Some args) path.span tcx#fn
+          | None -> ty
+        in
+        (match tcx#get_subst adtty with
+         | Some subst -> SubstFolder.fold_ty tcx ty subst
+         | None -> ty)
     | Local id -> cx.locals#unsafe_get id
-    | Err -> tcx#types.err
+    | Err | Def (_, TyParam) -> tcx#types.err
     | _ ->
         print_endline @@ tcx#sess.parse_sess.sm#span_to_string path.span.lo;
         assert false
@@ -482,17 +507,16 @@ let tychk_fn cx fn =
         (match !ty with
          | FnPtr fnsig -> check_call expr args fnsig
          | Fn (def_id, Subst subst) when Fn.is_generic ty ->
+             tcx#render_subst subst |> print_endline;
              let fnsig = tcx#get_fn def_id in
-             let subst' = new vec in
-             subst'#copy subst;
              check_arguments expr args fnsig.args;
              let maybe_infer_typaram i arg =
-               infer_type_argument_from_expr arg (fnsig.args#get i) subst'
+               infer_type_argument_from_expr arg (fnsig.args#get i) subst
              in
              args#iteri maybe_infer_typaram;
-             let fn = tcx#fn def_id (Subst subst') in
+             let fn = tcx#fn def_id (Subst subst) in
              write_ty expr.expr_id fn;
-             SubstFolder.fold_ty tcx fnsig.ret subst'
+             SubstFolder.fold_ty tcx fnsig.ret subst
          | Fn (def_id, _) -> tcx#get_fn def_id |> check_call expr args
          | Err ->
              args#iter (fun arg -> ignore (check_expr arg NoExpectation));
@@ -674,8 +698,7 @@ let rec tychk cx (modd : modd) =
     match item with
     | Fn (func, _) -> tychk_fn cx func
     | Foreign (funcs, _) -> funcs#iter (fun f -> tychk_fn cx f)
-    | Impl { impl_items; _ } ->
-        impl_items#iter (function AssocFn f -> tychk_fn cx f)
+    | Impl { items; _ } -> items#iter (function AssocFn f -> tychk_fn cx f)
     | Type _ | ExternMod _ -> ()
     | Mod m ->
         (match m.resolved_mod with Some modd -> tychk cx modd | None -> ())

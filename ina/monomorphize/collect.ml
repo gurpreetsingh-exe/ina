@@ -107,7 +107,8 @@ let collect tcx mdl =
     }
   in
   mdl.items#iter (fun fn ->
-      match Fn.is_generic fn.ty with
+      let generics = tcx#generics_of (instance_def_id fn.instance) in
+      match Generics.count generics <> 0 with
       | true ->
           assert (
             generic_items#insert (Inst.instance_def_id fn.instance) fn = None)
