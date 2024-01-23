@@ -385,6 +385,7 @@ let tychk_fn cx fn =
     | FnPtr _, Some _ ->
         (* TODO(error): function pointers cannot be generic *)
         assert false
+    | Err, _ -> ty
     | _ -> assert false
   and infer_type_argument_from_expr expr typaram subst =
     let expected = SubstFolder.fold_ty tcx typaram subst in

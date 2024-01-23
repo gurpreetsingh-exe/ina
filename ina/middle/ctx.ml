@@ -769,5 +769,5 @@ class tcx sess =
           (self#def_key def_id).data |> ( function
           | TypeNs name -> name ^ self#render_subst subst
           | _ -> assert false )
-      | Param { name; index } -> name ^ string_of_int index
+      | Param { name; _ } -> name
   end
