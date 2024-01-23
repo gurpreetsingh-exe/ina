@@ -106,7 +106,10 @@ end
 module SubstFolder = struct
   let rec fold_ty tcx ty subst =
     match !ty with
-    | Param { index; _ } -> subst#get index |> ( function Ty ty -> ty )
+    | Param { index; _ } ->
+        if index < subst#len
+        then subst#get index |> function Ty ty -> ty
+        else ty
     | Ptr ty -> tcx#ptr (fold_ty tcx ty subst)
     | Ref ty -> tcx#ref (fold_ty tcx ty subst)
     | FnPtr fnsig ->
@@ -473,7 +476,11 @@ class tcx sess =
     method define_generics did generics' =
       assert (generics#insert did generics' = None)
 
-    method generics_of did = generics#unsafe_get did
+    method generics_of did =
+      match generics#get did with
+      | Some generics -> generics
+      | None -> Generics.empty
+
     method write_substs did subst = assert (substs#insert did subst = None)
     method subst_of did = substs#get did
 
@@ -487,27 +494,6 @@ class tcx sess =
       | Path path -> Some (res_map#unsafe_get path.path_id)
       | Err -> None
       | _ -> Some (Ty (self#ast_ty_to_ty ty))
-
-    method def_ids_for_path_segments
-        (segments : Ast.path_segment vec)
-        kind
-        did =
-      let last = segments#len - 1 in
-      let segs = new vec in
-      (match kind with
-       | Struct ->
-           let generics = self#generics_of did in
-           let generics_def_id = Option.value generics.parent ~default:did in
-           segs#push (generics_def_id, last)
-       | AssocFn ->
-           (if segments#len >= 2
-            then
-              let generics = self#generics_of did in
-              segs#push (Option.get generics.parent, last - 1));
-           segs#push (did, last)
-       | Fn -> segs#push (did, last)
-       | _ -> assert false);
-      segs
 
     method invalidate old_ty new_ty =
       let ty = self#intern old_ty in
@@ -710,8 +696,9 @@ class tcx sess =
           let res = res_map#unsafe_get ty.ty_id in
           res |> ( function
           | Def (def_id, _) ->
-              (* TODO: maybe save the type parameters somewhere *)
-              self#adt def_id (Subst (new vec))
+              let generics = self#generics_of def_id in
+              let subst = Generics.to_subst generics self in
+              self#adt def_id (Subst subst)
           | Ty ty -> ty
           | _ -> assert false )
       | CVarArgs -> assert false

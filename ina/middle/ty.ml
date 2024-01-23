@@ -155,6 +155,15 @@ module Generics = struct
     ; param_def_id_to_index: (def_id, int) hashmap
   }
 
+  let empty =
+    {
+      parent = None
+    ; params = new vec
+    ; parent_count = 0
+    ; param_def_id_to_index = new hashmap
+    }
+  ;;
+
   let count self = self.parent_count + self.params#len
 
   let rec to_subst self tcx =
@@ -169,6 +178,19 @@ module Generics = struct
     in
     parent_subst#append child_subst;
     parent_subst
+  ;;
+
+  let to_subst_parent self tcx =
+    match self.parent with
+    | Some did ->
+        let parent = tcx#generics_of did in
+        to_subst parent tcx
+    | None -> new vec
+  ;;
+
+  let to_subst_child self tcx =
+    map self.params (fun { name; index; _ } ->
+        Ty (tcx#ty_param (index - self.parent_count) name))
   ;;
 
   let rec param_def_id_to_index' self tcx did =

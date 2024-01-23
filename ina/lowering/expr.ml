@@ -4,6 +4,7 @@ open Structures.Vec
 open Middle.Def_id
 open Middle.Ty
 open Ir.Inst
+open Middle.Ctx
 
 let rec lower_block (lcx : lcx) block =
   let tcx = lcx#tcx in
@@ -76,6 +77,13 @@ let rec lower_block (lcx : lcx) block =
     in
     let first, ty = lower_autoderef expr in
     let method' = tcx#lookup_method ty name in
+    let method' = SubstFolder.fold_ty tcx method' subst in
+    let method' =
+      Option.fold
+        ~none:method'
+        ~some:(fun subst -> SubstFolder.fold_ty tcx method' subst)
+        (tcx#get_subst ty)
+    in
     let first, ty =
       let open Middle.Ty in
       match Fn.args tcx method' with
@@ -86,14 +94,13 @@ let rec lower_block (lcx : lcx) block =
            | _ -> lcx#bx#move first expr.expr_span, ty)
     in
     let id = tcx#lookup_method_def_id ty name |> Option.get in
-    let subst = Subst subst in
+    let subst = Subst (tcx#get_subst method' |> Option.get) in
     let instance = { def = Fn id; subst } in
     let fn = Global (Fn instance) in
-    let ty = Fn.with_subst tcx method' subst in
     let args' = new vec in
     args'#push first;
     args'#append @@ map args (fun arg -> lower arg);
-    lcx#bx#call ty fn args' e.expr_span
+    lcx#bx#call method' fn args' e.expr_span
   and lower_lvalue e =
     let ty = expr_ty e in
     match e.expr_kind with

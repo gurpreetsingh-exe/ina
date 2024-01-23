@@ -360,16 +360,26 @@ let tychk_fn cx fn =
     ty
   and check_generic_args ty args span f =
     match !ty, args with
-    | (Adt (_, Subst subst) | Fn (_, Subst subst)), None when subst#empty ->
+    | (Adt (did, _) | Fn (did, _)), None
+      when (tcx#generics_of did).params#empty ->
         ty
-    | (Adt (_, Subst subst) | Fn (_, Subst subst)), None ->
-        tcx#emit @@ missing_generic_args subst#len span;
+    | (Adt (did, _) | Fn (did, _)), None ->
+        tcx#emit
+        @@ missing_generic_args (tcx#generics_of did).params#len span;
         tcx#types.err
-    | (Adt (did, Subst subst) | Fn (did, Subst subst)), Some args ->
-        if args#len <> subst#len
-        then tcx#emit @@ mismatch_generic_args subst#len args#len span;
+    | (Adt (did, _) | Fn (did, _)), Some args ->
         let subst =
-          map args (fun arg : generic_arg -> Ty (tcx#ast_ty_to_ty arg))
+          let generics = tcx#generics_of did in
+          if args#len <> generics.params#len
+          then
+            tcx#emit
+            @@ mismatch_generic_args generics.params#len args#len span;
+          let subst =
+            map args (fun arg : generic_arg -> Ty (tcx#ast_ty_to_ty arg))
+          in
+          let psubst' = Generics.to_subst_parent generics tcx in
+          psubst'#append subst;
+          psubst'
         in
         f did (Subst subst)
     | FnPtr _, Some _ ->
@@ -507,7 +517,6 @@ let tychk_fn cx fn =
         (match !ty with
          | FnPtr fnsig -> check_call expr args fnsig
          | Fn (def_id, Subst subst) when Fn.is_generic ty ->
-             tcx#render_subst subst |> print_endline;
              let fnsig = tcx#get_fn def_id in
              check_arguments expr args fnsig.args;
              let maybe_infer_typaram i arg =
@@ -659,6 +668,12 @@ let tychk_fn cx fn =
         let ty = check_expr expr' NoExpectation in
         let ty = tcx#autoderef ty in
         let method' = tcx#lookup_method ty name in
+        let method' =
+          Option.fold
+            ~none:method'
+            ~some:(fun subst -> SubstFolder.fold_ty tcx method' subst)
+            (tcx#get_subst ty)
+        in
         let method' = check_generic_args method' seg.args seg.span tcx#fn in
         (match !method' with
          | Fn (did, subst) ->
