@@ -19,12 +19,13 @@ let instance_def_id instance =
   instance.def |> function Fn id | Intrinsic id -> id
 ;;
 
-let render_instance (tcx: Middle.Ctx.tcx) instance =
+let render_instance (tcx : Middle.Ctx.tcx) instance =
   match instance.def with
   | Fn id | Intrinsic id ->
       let (Subst subst) = instance.subst in
       sprintf
-        "@%s%s"
+        "%s@%s%s"
+        (match instance.def with Intrinsic _ -> "i" | _ -> "")
         (tcx#into_segments id |> function
          | segments, _ -> segments |> String.concat "::")
         (if subst#empty
@@ -170,8 +171,11 @@ let get_ty tcx = function
   | Param (ty, _, _) -> ty
   | Const c -> c.ty
   | VReg v -> v.ty
-  | Global (Fn { def; _ }) ->
-      (match def with Fn id | Intrinsic id -> tcx#get_def id)
+  | Global (Fn { def; subst = Subst subst }) ->
+      Middle.Ctx.SubstFolder.fold_ty
+        tcx
+        (match def with Fn id | Intrinsic id -> tcx#get_def id)
+        subst
   | _ -> assert false
 ;;
 

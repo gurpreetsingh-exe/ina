@@ -11,7 +11,10 @@ let rec lower (lcx : Context.lcx) mdl =
     let subst = Middle.Ty.Fn.subst ty in
     let arg_tys = Fn.args tcx ty in
     let def_id = tcx#node_id_to_def_id#unsafe_get fn.func_id in
-    let instance = Inst.{ def = Fn def_id; subst = Subst subst } in
+    let def : Inst.instance_def =
+      if Fn.abi tcx ty = Intrinsic then Intrinsic def_id else Fn def_id
+    in
+    let instance = Inst.{ def; subst = Subst subst } in
     let args =
       mapi fn.fn_sig.args (fun i { arg; _ } ->
           Inst.Param (arg_tys#get i, arg, i))

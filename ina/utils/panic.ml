@@ -1,6 +1,20 @@
 open Printf
 (* [%%if profile = "dev"] *)
 
+let trace () =
+  let stack = Printexc.get_callstack 10 in
+  let slots = Printexc.backtrace_slots stack in
+  match slots with
+  | Some slots ->
+      Array.iter
+        (fun slot ->
+          Printexc.Slot.format 0 slot |> function
+          | Some fmt -> printf "  %s\n" fmt
+          | _ -> ())
+        slots
+  | None -> ()
+;;
+
 let display_loc (loc : Printexc.location) =
   Printf.sprintf "%s:%d:%d" loc.filename loc.line_number loc.start_char
 ;;

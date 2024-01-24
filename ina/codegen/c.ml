@@ -28,29 +28,6 @@ type cx = {
   ; gen'd_fns: (instance, unit) hashmap
 }
 
-let mangle_adt cx did =
-  let segments, _ = cx.tcx#into_segments did in
-  let path =
-    segments
-    |> List.map (fun s -> sprintf "%d%s" (String.length s) s)
-    |> String.concat "$"
-  in
-  String.concat "" ["_ZN"; path; "Ev"]
-;;
-
-let mangle_def_path cx did =
-  let segments, extern = cx.tcx#into_segments did in
-  match extern with
-  | true -> List.nth segments (List.length segments - 1)
-  | false ->
-      let name =
-        segments
-        |> List.map (fun s -> sprintf "%d%s" (String.length s) s)
-        |> String.concat ""
-      in
-      String.concat "" ["_ZN"; name; "Ev"]
-;;
-
 let rec backend_ty cx ty =
   !ty |> function
   | Middle.Ty.Int intty ->
@@ -116,22 +93,12 @@ let rec backend_ty cx ty =
       print_endline @@ Middle.Ty.render_ty2 ty;
       assert false
 
-and mangle cx instance =
-  let name =
-    match instance.def with
-    | Fn did | Intrinsic did -> mangle_def_path cx did
-  in
-  match instance.subst with
-  | Subst subst when subst#empty -> name
-  | Subst subst ->
-      [name; "I"; subst#join "" (function Ty ty -> backend_ty cx ty); "E"]
-      |> String.concat ""
-
 and fn cx ty =
   match TypeMap.find_opt cx.types ty with
   | Some ty -> ty
   | None ->
-      let { args; ret; is_variadic; _ } = Fn.get cx.tcx (ref ty) in
+      let ty = cx.tcx#ty_with_subst (ref ty) in
+      let { args; ret; is_variadic; _ } = Fn.get cx.tcx ty in
       let name = sprintf "__fn_%d" (TypeMap.length cx.types) in
       prelude
       ^ sprintf
@@ -143,7 +110,7 @@ and fn cx ty =
            | true, true -> "..."
            | true, false -> ", ..."
            | _ -> "");
-      TypeMap.add cx.types ty name;
+      TypeMap.add cx.types !ty name;
       name
 
 and define cx name ty =
@@ -217,9 +184,9 @@ let gen cx =
     | VReg i -> inst_name i
     | Global (Fn instance) ->
         (match instance.def with
-         | Fn id | Intrinsic id ->
+         | Intrinsic _ -> Mangle.mangle cx.tcx instance
+         | Fn id ->
              let name = Mangle.mangle cx.tcx instance in
-             (* let ty = cx.tcx#get_def id in *)
              let ty = cx.tcx#fn id instance.subst in
              (match cx.gen'd_fns#get instance with
               | None when id.mod_id <> 0 ->
@@ -262,6 +229,11 @@ let gen cx =
                (get_value first)
                (get_value (args#get 1))
          | _ -> assert false)
+    | "sizeof" ->
+        let ty = get_ty cx.tcx value in
+        let subst = cx.tcx#get_subst ty |> Option.get in
+        let ty = subst#get 0 |> function Ty ty -> ty in
+        out ^ sprintf "%d;\n" (cx.tcx#sizeof ty)
     | name ->
         print_endline name;
         assert false
@@ -373,17 +345,19 @@ let gen cx =
     | _ -> out ^ sprintf "int main() {\n  return %s();\n}\n" name
   in
   cx.irmdl.items#iter (fun f ->
-      if not (cx.gen'd_fns#has f.instance)
-      then (
-        assert (cx.gen'd_fns#insert f.instance () = None);
-        gen_function f));
+      match f.instance.def with
+      | Intrinsic _ -> ()
+      | _ ->
+          if not (cx.gen'd_fns#has f.instance)
+          then (
+            assert (cx.gen'd_fns#insert f.instance () = None);
+            gen_function f));
   (match cx.tcx#main with
    | Some id ->
        let instance = { def = Fn id; subst = Subst (new vec) } in
        gen_main instance
    | _ when cx.tcx#sess.options.output_type = Exe -> assert false
    | _ -> ());
-  (* gen_types cx; *)
   (match cx.tcx#sess.options.output_type with
    | ExtMod ->
        let data =

@@ -611,7 +611,7 @@ class tcx sess =
 
     method sizeof ty =
       match !ty with
-      | Ty.Int i -> self#sizeof_int_ty i
+      | Int i -> self#sizeof_int_ty i
       | Float f -> self#sizeof_float_ty f
       | Ptr _ | Ref _ | FnPtr _ | Fn _ -> 8
       | Str -> 16

@@ -62,16 +62,23 @@ let mangle_def_path (tcx : tcx) did =
       String.concat "" ["_IN"; name]
 ;;
 
-let mangle tcx instance =
-  let name =
-    match instance.def with
-    | Fn did | Intrinsic did -> mangle_def_path tcx did
+let mangle (tcx : tcx) instance =
+  let { def = Fn did | Intrinsic did; subst = Subst subst } = instance in
+  let segments, extern =
+    tcx#into_segments ~f:(fun ty -> mangle_ty tcx ty) did
   in
-  match instance.subst with
-  | Subst subst when subst#empty -> name
-  | Subst subst ->
-      [
-        name; "SB"; subst#join "" (function Ty ty -> mangle_ty tcx ty); "SE"
-      ]
-      |> String.concat ""
+  match extern with
+  | true -> List.nth segments (List.length segments - 1)
+  | false ->
+      String.concat
+        ""
+        [
+          "_IN"
+        ; segments
+          |> List.map (fun s -> sprintf "%d%s" (String.length s) s)
+          |> String.concat ""
+        ; (if subst#empty
+           then ""
+           else subst#join "" (function Ty ty -> mangle_ty tcx ty))
+        ]
 ;;

@@ -10,7 +10,6 @@ module type CodegenBackend = sig
   val create : tcx -> Ir.Module.t -> cx
   val gen : cx -> unit
   val emit : cx -> string -> unit
-  val mangle : cx -> Ir.Inst.instance -> string
 end
 
 module MakeCodegenBackend (T : CodegenBackend) = struct
