@@ -36,7 +36,7 @@ class file (name : string) (src : string) =
           let e = lines#get line in
           s, e
       in
-      String.sub src s (e - s)
+      String.sub src s (e - s - 1)
 
     method lookup_line pos =
       match lines#partition_point (fun x -> x <= pos) with
@@ -114,6 +114,15 @@ class source_map =
     method lookup_line_pos pos =
       let file = self#lookup_file pos in
       file#lookup_file_pos pos
+
+    method is_same_line (span : Span.t) =
+      let file = self#lookup_file span.lo in
+      file#lookup_line span.lo = file#lookup_line span.hi
+
+    method lookup_line_src pos =
+      let file = self#lookup_file pos in
+      let line, _ = file#lookup_file_pos pos in
+      file#lookup_line_src line
 
     method span_to_string pos =
       let file = self#lookup_file pos in

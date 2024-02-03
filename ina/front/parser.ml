@@ -10,7 +10,7 @@ open Span
 open Structures.Vec
 open Printf
 
-type 'a presult = ('a, diagnostic) result
+type 'a presult = ('a, Diagnostic.t) result
 
 let ( let* ) res f = match res with Ok v -> f v | Error e -> Error e
 

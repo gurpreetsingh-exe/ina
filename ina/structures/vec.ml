@@ -121,4 +121,3 @@ let iter2 v1 v2 (f : 'a -> 'b -> unit) =
 
 let find f vec = Array.find_map f vec#inner
 let fold_left f init vec = Array.fold_left f init vec#inner
-let ( / ) (v : 'a vec) (i : int) = v#get i

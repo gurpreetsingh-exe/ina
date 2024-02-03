@@ -1,7 +1,7 @@
-open Printf
 open Source
 open Structures.Vec
 
+let ( $ ) f g h = f (g h)
 let e = "\x1b[0m"
 
 type level =
@@ -12,10 +12,10 @@ type level =
   | Help
 
 let level_to_color = function
-  | Note -> "\x1b[1;36m"
-  | Warn -> "\x1b[1;33m"
-  | Err | Bug -> "\x1b[1;31m"
-  | Help -> "\x1b[1m"
+  | Note -> Color.Fg Cyan
+  | Warn -> Color.Fg Yellow
+  | Err | Bug -> Color.Fg Red
+  | Help -> Color.Fg White
 ;;
 
 let display_level = function
@@ -26,87 +26,42 @@ let display_level = function
   | Help -> "help"
 ;;
 
-let render_level level =
-  sprintf "%s%s%s" (level_to_color level) (display_level level) e
-;;
+module Priority = struct
+  type t =
+    | Primary
+    | Secondary
 
-type style =
-  | MainHeaderMsg
-  | HeaderMsg
-  | LineAndColumn
-  | LineNumber
-  | Quotation
-  | UnderlinePrimary
-  | UnderlineSecondary
-  | LabelPrimary
-  | LabelSecondary
-  | NoStyle
-  | Level
-  | Highlight
-  | Addition
-  | Removal
+  let is_primary = function Primary -> true | Secondary -> false
+  let is_secondary = not $ is_primary
+end
 
-type message = {
-    style: style
-  ; msg: string
+module Label = struct
+  type t = {
+      message: string
+    ; priority: Priority.t
+    ; color: Color.t
+    ; span: Span.t
+  }
+
+  let primary ?(color = Color.next ()) message span =
+    { priority = Primary; message; color; span }
+  ;;
+
+  let secondary ?(color = Color.Fg Cyan) message span =
+    { priority = Secondary; message; color; span }
+  ;;
+
+  let is_primary label = Priority.is_primary label.priority
+  let is_secondary label = Priority.is_secondary label.priority
+end
+
+type t = {
+    level: level
+  ; message: string
+  ; labels: Label.t list
 }
 
-class multi_span ?(primary_spans = new vec) ?(labels = new vec) () =
-  object (self)
-    val primary_spans : Span.t vec = primary_spans
-    val span_labels : (Span.t * message) vec = labels
-    method primary_spans = primary_spans
-    method labels = span_labels
-    method dummy = primary_spans#all (fun s -> s.lo = 0 && s.hi = 0)
-    method has_primary_span = not self#dummy
-    method primary_span = primary_spans#first
-
-    method has_span_labels =
-      span_labels#any (fun (s, _) -> s.lo = 0 && s.hi = 0)
-  end
-
-let multi_span span =
-  let primary_spans = new vec in
-  primary_spans#push span;
-  let ms = new multi_span ~primary_spans () in
-  ms
-;;
-
-class diagnostic ?(multi_span = new multi_span ()) ?(message = new vec) level
-  =
-  object
-    val level : level = level
-    val message : message vec = message
-    val span : multi_span = multi_span
-    val children : diagnostic vec = new vec
-
-    (* getters *)
-    method level = level
-    method message = message
-    method span = span
-    method children = children
-  end
-
-let message msg diag =
-  diag#message#push { msg; style = NoStyle };
-  diag
-;;
-
-let label msg span diag =
-  diag#span#labels#push (span, msg);
-  diag
-;;
-
-let note msg diag =
-  diag#children#push (new diagnostic Note |> message msg);
-  diag
-;;
-
-let help msg diag =
-  diag#children#push (new diagnostic Help |> message msg);
-  diag
-;;
-
-let mk_err msg span =
-  new diagnostic Err ~multi_span:(multi_span span) |> message msg
-;;
+let create ?(level = Err) ?(labels = []) message = { level; message; labels }
+let label label dg = { dg with labels = label :: dg.labels }
+let primary labels = List.nth_opt (List.filter Label.is_primary labels) 0
+let mk_err msg span = create ~labels:[Label.primary "" span] msg

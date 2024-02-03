@@ -445,9 +445,7 @@ class resolver tcx modd =
           "cannot find `%s` in this scope"
           (path.segments#join "::" (fun s -> s.ident))
       in
-      let err =
-        new diagnostic Err ~multi_span:(multi_span path.span) |> message msg
-      in
+      let err = mk_err msg path.span in
       tcx#emit err
 
     method resolve_paths (mdl : Module.t) (modd : modd) : unit =

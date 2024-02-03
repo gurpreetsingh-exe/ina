@@ -77,9 +77,7 @@ let mismatch_args expected found span =
       (if expected = 1 then "" else "s")
       found
   in
-  new diagnostic Err ~multi_span:(multi_span span)
-  |> message "mismatch arguments"
-  |> label { msg; style = NoStyle } span
+  Diagnostic.create "mismatch arguments" |> label (Label.primary msg span)
 ;;
 
 let mismatch_generic_args expected found span =
@@ -90,9 +88,8 @@ let mismatch_generic_args expected found span =
       (if expected = 1 then "" else "s")
       found
   in
-  new diagnostic Err ~multi_span:(multi_span span)
-  |> message "mismatch generic arguments"
-  |> label { msg; style = NoStyle } span
+  Diagnostic.create "mismatch generic arguments"
+  |> label (Label.primary msg span)
 ;;
 
 let missing_generic_args expected span =
@@ -102,18 +99,15 @@ let missing_generic_args expected span =
       expected
       (if expected = 1 then "" else "s")
   in
-  new diagnostic Err ~multi_span:(multi_span span)
-  |> message "function is missing generic arguments"
-  |> label { msg; style = NoStyle } span
+  Diagnostic.create "function is missing generic arguments"
+  |> label (Label.primary msg span)
 ;;
 
 let unused_value span = mk_err "expression result unused" span
 
 let uninitialized_fields name span =
   let msg = sprintf "`%s` has uninitialized fields" name in
-  new diagnostic Err ~multi_span:(multi_span span)
-  |> message "uninitialized fields"
-  |> label { msg; style = NoStyle } span
+  Diagnostic.create "uninitialized fields" |> label (Label.primary msg span)
 ;;
 
 let unknown_field strukt name span =
@@ -132,9 +126,8 @@ let ty_err_emit (tcx : tcx) err span =
       in
       if ty <> tcx#types.err && expected <> tcx#types.err
       then
-        new diagnostic Err ~multi_span:(multi_span span)
-        |> message "mismatch types"
-        |> label { msg; style = NoStyle } span
+        Diagnostic.create "mismatch types"
+        |> label (Label.primary msg span)
         |> tcx#emit
   | UninitializedFields name -> tcx#emit (uninitialized_fields name span)
   | UnknownField (strukt, name) -> tcx#emit (unknown_field strukt name span)
@@ -171,15 +164,13 @@ let ty_err_emit (tcx : tcx) err span =
       tcx#emit (mismatch_float_ty expected found span)
   | InvalidDeref ty ->
       let msg = sprintf "`%s` cannot be dereferenced" (tcx#render_ty ty) in
-      new diagnostic Err ~multi_span:(multi_span span)
-      |> message "invalid dereference"
-      |> label { msg; style = NoStyle } span
+      Diagnostic.create "invalid dereference"
+      |> label (Label.primary msg span)
       |> tcx#emit
   | InvalidCall ty ->
       let msg = sprintf "`%s` is not callable" (tcx#render_ty ty) in
-      new diagnostic Err ~multi_span:(multi_span span)
-      |> message "invalid function call"
-      |> label { msg; style = NoStyle } span
+      Diagnostic.create "invalid function call"
+      |> label (Label.primary msg span)
       |> tcx#emit
   | InvalidCast (of', to') ->
       let msg =
@@ -193,9 +184,8 @@ let ty_err_emit (tcx : tcx) err span =
       let msg =
         sprintf "`%s::%s` is an associated function" (tcx#render_ty ty) name
       in
-      new diagnostic Err ~multi_span:(multi_span span)
-      |> message "invalid function call"
-      |> label { msg; style = NoStyle } span
+      Diagnostic.create "invalid function call"
+      |> label (Label.primary msg span)
       |> tcx#emit
 ;;
 
@@ -299,6 +289,19 @@ let tychk_fn cx fn =
     | Ref ty -> tcx#ref (fold_ty ty)
     | _ -> ty
   in
+  let last_stmt_span block =
+    match block.last_expr with
+    | Some expr -> Some expr.expr_span
+    | None ->
+        Option.map
+          (function
+           | Stmt expr | Expr expr -> expr.expr_span
+           | Binding { binding_span; _ } -> binding_span
+           | Assign (lhs, rhs) ->
+               Source.Span.from_spans lhs.expr_span rhs.expr_span
+           | Assert (expr, _) -> expr.expr_span)
+          block.block_stmts#last
+  in
   let rec check_block block =
     block.block_stmts#iter check_stmt;
     match block.last_expr with
@@ -366,9 +369,8 @@ let tychk_fn cx fn =
     match name with
     | "sizeof" when Option.is_none args ->
         let msg = "add annotation with ![T] where T is the actual type" in
-        new diagnostic Err ~multi_span:(multi_span span)
-        |> message "type annotation required"
-        |> label { msg; style = NoStyle } span
+        Diagnostic.create "type annotation required"
+        |> label (Label.primary msg span)
         |> tcx#emit;
         tcx#types.err
     | _ when Option.is_some args ->
@@ -597,16 +599,55 @@ let tychk_fn cx fn =
          | None ->
              let ty = check_expr expr' NoExpectation in
              tcx#ref ty)
-    | If { cond; then_block; else_block; if_span; _ } ->
+    | If { cond; then_block; else_block; _ } ->
         ignore (check_expr cond (ExpectTy tcx#types.bool));
         let if_ty = check_block_with_expected then_block expected in
         Option.fold
-          ~some:(fun expr ->
-            let else_ty = check_expr expr expected in
+          ~some:(fun expr' ->
+            let else_ty = check_expr expr' expected in
             Result.fold
               ~ok:(fun ty -> ty)
-              ~error:(fun e ->
-                ty_err_emit tcx e if_span;
+              ~error:(fun _ ->
+                let last_then_span = last_stmt_span then_block in
+                let last_else_span =
+                  last_stmt_span
+                    (match expr'.expr_kind with
+                     | Block block -> block
+                     | _ -> assert false)
+                in
+                let dg =
+                  Diagnostic.create "mismatch types"
+                  |> label
+                       (Label.secondary
+                          "if and else branches have incompatible types"
+                          expr.expr_span)
+                in
+                let dg =
+                  Option.fold
+                    ~none:dg
+                    ~some:(fun span ->
+                      dg
+                      |> label
+                           (Label.secondary
+                              (sprintf
+                                 "expected because this has `%s` type"
+                                 (tcx#render_ty if_ty))
+                              span))
+                    last_then_span
+                in
+                Option.fold
+                  ~none:dg
+                  ~some:(fun span ->
+                    dg
+                    |> label
+                         (Label.primary
+                            (sprintf
+                               "expected `%s`, found `%s`"
+                               (tcx#render_ty if_ty)
+                               (tcx#render_ty else_ty))
+                            span))
+                  last_else_span
+                |> tcx#emit;
                 else_ty)
               (equate if_ty else_ty))
           ~none:tcx#types.unit

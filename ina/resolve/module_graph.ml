@@ -33,12 +33,13 @@ let mod_error_emit tcx span = function
           def
           sec
       in
-      let diag =
-        new diagnostic Err ~multi_span:(multi_span span)
-        |> message msg
-        |> help sugg
-      in
-      tcx#emit diag
+      mk_err msg span |> tcx#emit
+      (* let diag = *)
+      (*   new diagnostic Err ~multi_span:(multi_span span) *)
+      (*   |> message msg *)
+      (*   |> help sugg *)
+      (* in *)
+      (* tcx#emit diag *)
   | MultipleCandidates (name, def, sec) ->
       let msg = sprintf "file for `%s` at `%s` and `%s`" name def sec in
       tcx#emit (Errors.Diagnostic.mk_err msg span)

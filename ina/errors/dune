@@ -1,4 +1,4 @@
 (library
  (name errors)
- (modules diagnostic emitter styled_buffer handler)
- (libraries token source))
+ (modules diagnostic emitter handler color)
+ (libraries token source uutf))
