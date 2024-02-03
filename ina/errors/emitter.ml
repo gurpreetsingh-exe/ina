@@ -86,15 +86,64 @@ class emitter sm ui_testing =
     (* private methods *)
     method private emit_messages diagnostic =
       let max_span = max_span diagnostic.labels in
-      let annotation span c =
-        let range = Span.range span in
-        let hrange = range / 2 in
-        let head = repeat ~c:chars.hbar hrange in
-        let tail = repeat ~c:chars.hbar (range - hrange - 1) in
-        [c, head; c, chars.t; c, tail]
-      in
       match sm with
       | Some sm ->
+          let open Span in
+          let annotation span =
+            let _, column = sm#lookup_line_pos span.lo in
+            let padding = repeat column in
+            let range = Span.range span in
+            (if range = 2
+             then [padding; chars.halfslab; chars.rtop]
+             else
+               let hrange = range / 2 in
+               let head = repeat ~c:chars.hbar hrange in
+               let tail = repeat ~c:chars.hbar (range - hrange - 1) in
+               [padding; head; chars.t; tail])
+            |> String.concat ""
+          in
+          let message span =
+            let _, column = sm#lookup_line_pos span.lo in
+            let range = Span.range span in
+            let hrange = range / 2 in
+            let head = repeat hrange in
+            let padding = repeat column in
+            padding ^ head ^ chars.vbar
+          in
+          let ustring_to_str ustr =
+            let b = Buffer.create 0 in
+            Array.iter
+              (fun (c, u) ->
+                let b' = Buffer.create 0 in
+                Array.iter (fun u -> Uutf.Buffer.add_utf_8 b' u) u;
+                Buffer.add_string b (format [c, Buffer.contents b']))
+              ustr;
+            Buffer.contents b
+          in
+          let fold_annotation labels f =
+            List.fold_left
+              (fun acc label ->
+                let buf =
+                  Array.fold_left
+                    (fun acc (_, buf) -> Array.append acc buf)
+                    [||]
+                    acc
+                in
+                let span = label.span in
+                let buf' = f span in
+                let buf' = ustring buf' in
+                Array.append
+                  acc
+                  [|
+                     ( (if Label.is_primary label then red else label.color)
+                     , Array.sub
+                         buf'
+                         (Array.length buf)
+                         (Array.length buf' - Array.length buf) )
+                  |])
+              [||]
+              labels
+          in
           let line, _ = sm#lookup_line_pos max_span in
           let padding =
             String.make (1 + (String.length @@ string_of_int line)) ' '
@@ -210,14 +259,14 @@ class emitter sm ui_testing =
                           Label.{ label with span = Span.make 0 col }
                         in
                         [
-                          Blank (1, false)
+                          Blank (i + 1, false)
                         ; NestingEnd
-                            (0, { label' with span = Span.make x (x + col) })
-                        ; Blank (1, true)
-                        ; Message (0, true, label')
-                        ; Blank (0, false)
+                            (i, { label' with span = Span.make x (x + col) })
+                            ; Blank (i + 1, true)
+                        ; Message (i - 1, true, label')
+                        ; Blank (i - 1, false)
                         ]
-                      else [])
+                      else [Blank (i + 1, false)])
                 labels)
           @ [[Footer]]
           |> List.fold_left ( @ ) []
@@ -263,123 +312,21 @@ class emitter sm ui_testing =
                           ]
                     | Annotation (nest, [label]) ->
                         let span = label.span in
-                        let _, col = sm#lookup_line_pos span.lo in
                         let c =
                           if Label.is_primary label then red else label.color
                         in
-                        let ann = format (annotation span c) in
-                        let padding = repeat col in
+                        let ann = format [Bold, ""; c, annotation span] in
                         let nest = nesting nest in
-                        sprintf "%s %s%s" nest padding ann
+                        sprintf "%s %s" nest ann
                     | Annotation (nest, labels) ->
-                        let buf =
-                          List.fold_left
-                            (fun acc label ->
-                              let buf =
-                                Array.fold_left
-                                  (fun acc (_, buf) -> Array.append acc buf)
-                                  [||]
-                                  acc
-                              in
-                              let span = label.span in
-                              let _, col = sm#lookup_line_pos span.lo in
-                              let c =
-                                if Label.is_primary label
-                                then red
-                                else label.color
-                              in
-                              let spansize = Span.range span in
-                              let ann =
-                                if spansize = 1
-                                then chars.t
-                                else
-                                  let halfspan = spansize / 2 in
-                                  let head =
-                                    if spansize mod 2 = 0 && halfspan = 1
-                                    then chars.halfslab
-                                    else repeat ~c:chars.hbar halfspan
-                                  in
-                                  let tail =
-                                    repeat
-                                      ~c:chars.hbar
-                                      (spansize - halfspan - 1)
-                                  in
-                                  [
-                                    head
-                                  ; (if spansize - halfspan - 1 = 0
-                                     then chars.rtop
-                                     else chars.t)
-                                  ; tail
-                                  ]
-                                  |> String.concat ""
-                              in
-                              let pad = repeat col in
-                              let buf' = pad ^ ann in
-                              let buf' = ustring buf' in
-                              Array.append
-                                acc
-                                [|
-                                   ( c
-                                   , Array.sub
-                                       buf'
-                                       (Array.length buf)
-                                       (Array.length buf' - Array.length buf)
-                                   )
-                                |])
-                            [||]
-                            labels
-                        in
+                        let buf = fold_annotation labels annotation in
                         let nest = nesting nest in
-                        let b = Buffer.create 0 in
-                        Array.iter
-                          (fun (c, u) ->
-                            let b' = Buffer.create 0 in
-                            Array.iter
-                              (fun u -> Uutf.Buffer.add_utf_8 b' u)
-                              u;
-                            Buffer.add_string
-                              b
-                              (format [c, Buffer.contents b']))
-                          buf;
-                        let buf = Buffer.contents b in
-                        sprintf "%s %s" nest buf
+                        sprintf
+                          "%s %s"
+                          nest
+                          (format [Bold, ustring_to_str buf])
                     | MultispanMessage (nest, labels, label) ->
-                        let acc =
-                          List.fold_left
-                            (fun acc label ->
-                              let buf =
-                                Array.fold_left
-                                  (fun acc (_, buf) -> Array.append acc buf)
-                                  [||]
-                                  acc
-                              in
-                              let span = label.span in
-                              let _, col = sm#lookup_line_pos span.lo in
-                              let spansize = Span.range span in
-                              let halfspan = spansize / 2 in
-                              let head = repeat halfspan in
-                              let ann =
-                                [head; chars.vbar] |> String.concat ""
-                              in
-                              let pad = repeat col in
-                              let buf' = pad ^ ann in
-                              let buf' = ustring buf' in
-                              let buf' =
-                                Array.sub
-                                  buf'
-                                  (Array.length buf)
-                                  (Array.length buf' - Array.length buf)
-                              in
-                              let c =
-                                if Label.is_primary label
-                                then red
-                                else label.color
-                              in
-                              let buf = Array.append acc [|c, buf'|] in
-                              buf)
-                            [||]
-                            labels
-                        in
+                        let acc = fold_annotation labels message in
                         let _, col = sm#lookup_line_pos label.span.lo in
                         let spansize = Span.range label.span in
                         let halfspan = spansize / 2 in
@@ -405,82 +352,29 @@ class emitter sm ui_testing =
                         in
                         let buf = Array.append acc [|c, buf'|] in
                         let nest = nesting nest in
-                        let b = Buffer.create 0 in
-                        Array.iter
-                          (fun (c, u) ->
-                            let b' = Buffer.create 0 in
-                            Array.iter
-                              (fun u -> Uutf.Buffer.add_utf_8 b' u)
-                              u;
-                            Buffer.add_string
-                              b
-                              (format [c, Buffer.contents b']))
-                          buf;
-                        let buf = Buffer.contents b in
                         let m =
                           format
                             [
-                              c, repeat ~c:chars.hbar 2
+                              Bold, ""
+                            ; c, repeat ~c:chars.hbar 2
                             ; Normal, " "
                             ; Bold, label.message
                             ]
                         in
-                        sprintf "%s %s%s" nest buf m
+                        sprintf
+                          "%s %s%s"
+                          nest
+                          (format [Bold, ustring_to_str buf])
+                          m
                     | AnnotationAnchor (nest, labels) ->
-                        let buf =
-                          List.fold_left
-                            (fun acc label ->
-                              let buf =
-                                Array.fold_left
-                                  (fun acc (_, buf) -> Array.append acc buf)
-                                  [||]
-                                  acc
-                              in
-                              let span = label.span in
-                              let c =
-                                if Label.is_primary label
-                                then red
-                                else label.color
-                              in
-                              let _, col = sm#lookup_line_pos span.lo in
-                              let spansize = Span.range span in
-                              let halfspan = spansize / 2 in
-                              let head = repeat halfspan in
-                              let ann =
-                                [head; chars.vbar] |> String.concat ""
-                              in
-                              let pad = repeat col in
-                              let buf' = pad ^ ann in
-                              let buf' = ustring buf' in
-                              Array.append
-                                acc
-                                [|
-                                   ( c
-                                   , Array.sub
-                                       buf'
-                                       (Array.length buf)
-                                       (Array.length buf' - Array.length buf)
-                                   )
-                                |])
-                            [||]
-                            labels
-                        in
+                        let buf = fold_annotation labels message in
                         let nest = nesting nest in
-                        let b = Buffer.create 0 in
-                        Array.iter
-                          (fun (c, u) ->
-                            let b' = Buffer.create 0 in
-                            Array.iter
-                              (fun u -> Uutf.Buffer.add_utf_8 b' u)
-                              u;
-                            Buffer.add_string
-                              b
-                              (format [c, Buffer.contents b']))
-                          buf;
-                        let buf = Buffer.contents b in
-                        sprintf "%s %s" nest buf
+                        sprintf
+                          "%s %s"
+                          nest
+                          (format [Bold, ustring_to_str buf])
                     | Blank (nest, _end') ->
-                        let nest = repeat ~c:(" " ^ chars.vbar) nest in
+                        let nest = nesting nest in
                         sprintf "%s" nest
                     | Message (nest, end', label) ->
                         let nest = nesting nest in
@@ -496,7 +390,9 @@ class emitter sm ui_testing =
                           let head = repeat ~c:chars.hbar halfspan in
                           let pad = repeat (col + halfspan) in
                           let m = String.concat "" [pad; chars.lbot; head] in
-                          let m = format [c, m; Normal, " "; Bold, msg] in
+                          let m =
+                            format [Bold, ""; c, m; Normal, " "; Bold, msg]
+                          in
                           sprintf "%s%s" nest m
                         else
                           sprintf
@@ -504,7 +400,7 @@ class emitter sm ui_testing =
                             nest
                             chars.lbot
                             (repeat ~c:chars.hbar (span.hi + 4))
-                            msg
+                            (format [Bold, msg])
                     | SourceLine (nest, [label]) ->
                         let line = label.span.lo in
                         let _, start = sm#lookup_line_pos line in

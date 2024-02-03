@@ -290,17 +290,7 @@ let tychk_fn cx fn =
     | _ -> ty
   in
   let last_stmt_span block =
-    match block.last_expr with
-    | Some expr -> Some expr.expr_span
-    | None ->
-        Option.map
-          (function
-           | Stmt expr | Expr expr -> expr.expr_span
-           | Binding { binding_span; _ } -> binding_span
-           | Assign (lhs, rhs) ->
-               Source.Span.from_spans lhs.expr_span rhs.expr_span
-           | Assert (expr, _) -> expr.expr_span)
-          block.block_stmts#last
+    Option.map (fun e -> e.expr_span) block.last_expr
   in
   let rec check_block block =
     block.block_stmts#iter check_stmt;
@@ -608,46 +598,32 @@ let tychk_fn cx fn =
             Result.fold
               ~ok:(fun ty -> ty)
               ~error:(fun _ ->
-                let last_then_span = last_stmt_span then_block in
-                let last_else_span =
-                  last_stmt_span
-                    (match expr'.expr_kind with
-                     | Block block -> block
-                     | _ -> assert false)
+                let labels =
+                  [
+                    Label.secondary
+                      "if and else have incompatible types"
+                      expr.expr_span
+                  ]
+                  @ (last_stmt_span then_block
+                     |> Option.map (fun span ->
+                            [Label.secondary "expected because of this" span])
+                     |> Option.value ~default:[])
+                  @ ((match expr'.expr_kind with
+                      | Block block -> block
+                      | _ -> assert false)
+                     |> last_stmt_span
+                     |> Option.map (fun span ->
+                            [
+                              Label.primary
+                                (sprintf
+                                   "expected `%s`, found `%s`"
+                                   (tcx#render_ty if_ty)
+                                   (tcx#render_ty else_ty))
+                                span
+                            ])
+                     |> Option.value ~default:[])
                 in
-                let dg =
-                  Diagnostic.create "mismatch types"
-                  |> label
-                       (Label.secondary
-                          "if and else branches have incompatible types"
-                          expr.expr_span)
-                in
-                let dg =
-                  Option.fold
-                    ~none:dg
-                    ~some:(fun span ->
-                      dg
-                      |> label
-                           (Label.secondary
-                              (sprintf
-                                 "expected because this has `%s` type"
-                                 (tcx#render_ty if_ty))
-                              span))
-                    last_then_span
-                in
-                Option.fold
-                  ~none:dg
-                  ~some:(fun span ->
-                    dg
-                    |> label
-                         (Label.primary
-                            (sprintf
-                               "expected `%s`, found `%s`"
-                               (tcx#render_ty if_ty)
-                               (tcx#render_ty else_ty))
-                            span))
-                  last_else_span
-                |> tcx#emit;
+                Diagnostic.create "mismatch types" ~labels |> tcx#emit;
                 else_ty)
               (equate if_ty else_ty))
           ~none:tcx#types.unit

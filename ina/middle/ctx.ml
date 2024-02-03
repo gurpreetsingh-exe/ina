@@ -739,10 +739,10 @@ class tcx sess =
       | Float f -> display_float_ty f
       | Infer i ->
           (match i with
-           | IntVar _ -> "{int}"
-           | FloatVar _ -> "{float}"
+           | IntVar _ -> "integer"
+           | FloatVar _ -> "float"
            | TyVar _ -> "infer")
-      | Unit -> "unit"
+      | Unit -> "()"
       | Bool -> "bool"
       | Str -> "str"
       | FnPtr fnsig -> Fn.render self fnsig
