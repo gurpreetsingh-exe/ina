@@ -251,9 +251,12 @@ let tychk_fn cx fn =
           in
           Ok t0
       | Infer _, _ | _, Infer _ -> Error (MismatchTy (t0, t1))
-      | Ref t0, Ref t1 ->
+      | Ref (Mut, t0), Ref (Mut, t1) ->
           let* ty = equate t0 t1 in
-          Ok (tcx#ref ty)
+          Ok (tcx#ref Mut ty)
+      | Ref (Imm, t0), Ref (_, t1) ->
+          let* ty = equate t0 t1 in
+          Ok (tcx#ref Imm ty)
       | FnPtr t0', Fn (def_id, _) ->
           let t1' = tcx#get_fn def_id in
           if fnhash t0' = fnhash t1'
@@ -285,8 +288,8 @@ let tychk_fn cx fn =
     | Infer (FloatVar f) ->
         fold_float_ty f ty;
         tcx#types.f32
-    | Ptr ty -> tcx#ptr (fold_ty ty)
-    | Ref ty -> tcx#ref (fold_ty ty)
+    | Ptr (m, ty) -> tcx#ptr m (fold_ty ty)
+    | Ref (m, ty) -> tcx#ref m (fold_ty ty)
     | _ -> ty
   in
   let last_stmt_span block =
@@ -459,7 +462,7 @@ let tychk_fn cx fn =
         (match tcx#get_subst adtty with
          | Some subst -> SubstFolder.fold_ty tcx ty subst
          | None -> ty)
-    | Local id -> cx.locals#unsafe_get id
+    | Local (_, id) -> cx.locals#unsafe_get id
     | Err | Def (_, TyParam) -> tcx#types.err
     | _ ->
         print_endline @@ tcx#sess.parse_sess.sm#span_to_string path.span.lo;
@@ -574,21 +577,22 @@ let tychk_fn cx fn =
     | Deref expr ->
         let ty = check_expr expr NoExpectation in
         (match !ty with
-         | Ptr ty | Ref ty -> ty
+         | Ptr (_, ty) | Ref (_, ty) -> ty
          | _ ->
              ty_err_emit tcx (InvalidDeref ty) expr.expr_span;
              tcx#types.err)
-    | Ref expr' ->
+    | Ref (m, expr') ->
+        let m = tcx#ast_mut_to_mut m in
         (match resolve_expected expected with
          | Some expected ->
              let ty = check_expr expr' NoExpectation in
-             (match equate expected (tcx#ref ty) with
+             (match equate expected (tcx#ref m ty) with
               | Ok _ -> ()
               | Error e -> ty_err_emit tcx e expr.expr_span);
              expected
          | None ->
              let ty = check_expr expr' NoExpectation in
-             tcx#ref ty)
+             tcx#ref m ty)
     | If { cond; then_block; else_block; _ } ->
         ignore (check_expr cond (ExpectTy tcx#types.bool));
         let if_ty = check_block_with_expected then_block expected in

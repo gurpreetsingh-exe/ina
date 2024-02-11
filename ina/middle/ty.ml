@@ -101,13 +101,17 @@ and fnsig = {
 and generic_arg = Ty of ty ref
 and subst = Subst of generic_arg vec
 
+and mutability =
+  | Mut
+  | Imm
+
 and ty =
   | Int of int_ty
   | Float of float_ty
   | Bool
   | Str
-  | Ptr of ty ref
-  | Ref of ty ref
+  | Ptr of (mutability * ty ref)
+  | Ref of (mutability * ty ref)
   | Adt of (def_id * subst)
   | Fn of (def_id * subst)
   | FnPtr of fnsig
@@ -282,7 +286,7 @@ let rec encode enc ty =
   | Float f ->
       enc#emit_with disc (fun e -> float_ty_to_enum f |> e#emit_usize)
   | Bool | Str | Unit -> enc#emit_with disc (fun _ -> ())
-  | Ptr ty | Ref ty -> enc#emit_with disc (fun e -> encode e ty)
+  | Ptr (m, ty) | Ref (m, ty) -> enc#emit_with disc (fun e -> encode e ty)
   | Adt (id, _) -> enc#emit_with disc (fun e -> Def_id.encode e id)
   | Fn (id, _) -> enc#emit_with disc (fun e -> Def_id.encode e id)
   | FnPtr fn -> enc#emit_with disc (fun e -> Fn.encode e fn)
@@ -305,8 +309,8 @@ let rec decode tcx dec =
    | 2 -> Float (dec#read_usize |> float_ty_of_enum |> Option.get)
    | 3 -> Bool
    | 4 -> Str
-   | 5 -> Ptr (decode tcx dec)
-   | 6 -> Ref (decode tcx dec)
+   | 5 -> Ptr (Imm, decode tcx dec)
+   | 6 -> Ref (Imm, decode tcx dec)
    | 7 -> Adt (Def_id.decode dec, Subst (new vec))
    | 8 ->
        let args = new vec in
@@ -369,7 +373,9 @@ let rec hash hasher ty =
   | Int i -> g (int_ty_to_enum i + 1)
   | Float f -> g (float_ty_to_enum f + 1)
   | Bool | Str | Unit | Err -> ()
-  | Ptr ty | Ref ty -> f !ty
+  | Ptr (m, ty) | Ref (m, ty) ->
+      g (m |> function Mut -> 1 | Imm -> 2);
+      f !ty
   | Adt ({ inner; mod_id }, Subst subst) ->
       g inner;
       g mod_id;
@@ -406,7 +412,8 @@ let fnhash { args; ret; is_variadic; abi } =
   args#iter (fun ty -> f !ty);
   f !ret;
   if is_variadic then g 1;
-  g (abi_to_enum abi + 1)
+  g (abi_to_enum abi + 1);
+  hasher.hash
 ;;
 
 let hash ty =
@@ -416,6 +423,7 @@ let hash ty =
 ;;
 
 let equal t0 t1 = hash t0 = hash t1
+let mut = function Mut -> "mut " | Imm -> ""
 
 let rec render_ty2 ty =
   match !ty with
@@ -436,8 +444,8 @@ let rec render_ty2 ty =
          ^ if is_variadic then ", ..." else String.empty)
         (render_ty2 ret)
   | Err -> "err"
-  | Ptr ty -> "*" ^ render_ty2 ty
-  | Ref ty -> "&" ^ render_ty2 ty
+  | Ptr (m, ty) -> "*" ^ mut m ^ render_ty2 ty
+  | Ref (m, ty) -> "&" ^ mut m ^ render_ty2 ty
   | Adt (def_id, _) -> sprintf "adt(%s)" (print_def_id def_id)
   | Fn (def_id, _) -> sprintf "fn(%s)" (print_def_id def_id)
   | Param { index; name } -> sprintf "%s%d" name index

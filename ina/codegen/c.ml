@@ -44,7 +44,7 @@ let rec backend_ty cx ty =
        | Usize -> "size_t")
   | Float floatty -> (match floatty with F32 -> "float" | F64 -> "double")
   | Bool -> "bool"
-  | Ptr ty | Ref ty -> sprintf "%s*" (backend_ty cx ty)
+  | Ptr (_, ty) | Ref (_, ty) -> sprintf "%s*" (backend_ty cx ty)
   | Unit -> "void"
   | Str as ty ->
       (match TypeMap.find_opt cx.types ty with

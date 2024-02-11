@@ -63,7 +63,8 @@ let () =
       Timer.time (fun () ->
           let infcx = Infer.infer_ctx_create tcx in
           let cx = Tychk.create infcx in
-          Tychk.tychk cx mdl)
+          Tychk.tychk cx mdl;
+          Linearity.analyze_module tcx mdl)
     in
     sess.timings.sema <- time;
     if tcx#has_errors then exit 1

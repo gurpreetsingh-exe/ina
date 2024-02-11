@@ -62,7 +62,7 @@ let rec lower_block (lcx : lcx) block =
   and lower_autoderef expr =
     let ty = expr_ty expr in
     match !ty with
-    | Ptr ty | Ref ty -> lower expr, ty
+    | Ptr (_, ty) | Ref (_, ty) -> lower expr, ty
     | _ -> lower_lvalue expr, ty
   and lower_field expr ident =
     let ptr, ty = lower_autoderef expr in
@@ -90,7 +90,7 @@ let rec lower_block (lcx : lcx) block =
       | args when args#empty -> assert false
       | args ->
           (match !(args#get 0) with
-           | Ref ty -> first, ty
+           | Ref (_, ty) -> first, ty
            | _ -> lcx#bx#move first expr.expr_span, ty)
     in
     let id = tcx#lookup_method_def_id ty name |> Option.get in
@@ -111,7 +111,7 @@ let rec lower_block (lcx : lcx) block =
     | Path path ->
         let res = tcx#res_map#unsafe_get path.path_id in
         (match res with
-         | Local id -> lcx#locals#unsafe_get id
+         | Local (_, id) -> lcx#locals#unsafe_get id
          | Def (id, (Fn | AssocFn)) ->
              let subst = Fn.subst ty in
              let instance = { def = Fn id; subst = Subst subst } in
@@ -165,7 +165,7 @@ let rec lower_block (lcx : lcx) block =
     | Path path ->
         let res = tcx#res_map#unsafe_get path.path_id in
         (match res with
-         | Local id ->
+         | Local (_, id) ->
              let ptr = lcx#locals#unsafe_get id in
              lcx#bx#move ptr path.span
          | Def (id, (Fn | AssocFn)) ->
@@ -185,7 +185,7 @@ let rec lower_block (lcx : lcx) block =
     | Deref expr ->
         let ptr = lower expr in
         lcx#bx#move ptr e.expr_span
-    | Ref expr -> lcx#bx#bitcast (lower_lvalue expr) ty e.expr_span
+    | Ref (_, expr) -> lcx#bx#bitcast (lower_lvalue expr) ty e.expr_span
     | If { cond; then_block; else_block; _ } ->
         let open Ir in
         let cond = lower cond in

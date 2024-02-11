@@ -3,6 +3,8 @@ open Ir.Inst
 open Middle.Ctx
 open Middle.Ty
 
+let mangle_mut = function Mut -> "M" | _ -> ""
+
 let rec mangle_ty (tcx : tcx) ty =
   match !ty with
   | Param { name; _ } -> name
@@ -40,8 +42,8 @@ let rec mangle_ty (tcx : tcx) ty =
   | Bool -> "g"
   | Str -> "s"
   | Unit -> "u"
-  | Ptr ty -> "p" ^ mangle_ty tcx ty
-  | Ref ty -> "r" ^ mangle_ty tcx ty
+  | Ptr (m, ty) -> "p" ^ mangle_mut m ^ mangle_ty tcx ty
+  | Ref (m, ty) -> "r" ^ mangle_mut m ^ mangle_ty tcx ty
   | _ ->
       tcx#render_ty ty |> print_endline;
       assert false

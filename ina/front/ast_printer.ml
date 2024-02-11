@@ -57,6 +57,7 @@ let display_int_ty = function
 
 let display_float_ty = function F32 -> "f32" | F64 -> "f64"
 let render_path path = path.segments#join "::" (fun seg -> seg.ident)
+let mut = function Mut -> "mut " | Imm -> ""
 
 let rec render_ty (ty : ty) =
   match ty.kind with
@@ -64,8 +65,8 @@ let rec render_ty (ty : ty) =
   | Float ty -> display_float_ty ty
   | Bool -> "bool"
   | Str -> "str"
-  | Ptr ty -> sprintf "*%s" (render_ty ty)
-  | Ref ty -> sprintf "&%s" (render_ty ty)
+  | Ptr (m, ty) -> sprintf "*%s%s" (mut m) (render_ty ty)
+  | Ref (m, ty) -> sprintf "&%s%s" (mut m) (render_ty ty)
   | Unit -> "()"
   | FnPtr (ty_list, ret_ty, _) ->
       sprintf
@@ -113,7 +114,8 @@ and render_stmt stmt prefix =
       { binding_pat; binding_ty; binding_expr; binding_id; binding_span } ->
       id "Binding" binding_id binding_span;
       out += " ";
-      (match binding_pat with PatIdent ident -> out += (cyan @@ q ident));
+      (match binding_pat with
+       | PatIdent (m, ident) -> out += (cyan @@ mut m ^ q ident));
       (match binding_ty with
        | Some ty ->
            out += " ";
@@ -211,8 +213,9 @@ and render_expr expr prefix =
   | Deref expr ->
       out += green "Deref\n";
       render_child ?prefix:(Some prefix) true expr render_expr
-  | Ref expr ->
+  | Ref (m, expr) ->
       out += green "Ref\n";
+      out += (mut m ^ "\n");
       render_child ?prefix:(Some prefix) true expr render_expr
   | StructExpr { struct_name; fields; struct_expr_id; struct_expr_span } ->
       let has_fields = not fields#empty in

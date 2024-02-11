@@ -3,7 +3,7 @@
 fn main() -> i32 {
     let a = 2;
     if 20 != 50 {
-        let a = 50;
+        let mut a = 50;
         a = 1;
     }
     a

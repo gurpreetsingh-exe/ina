@@ -456,7 +456,7 @@ class resolver tcx modd =
             args#iter (fun ty -> resolve_ty ty);
             resolve_ty ty
         | Path path -> visit_path path mdl (Some Type)
-        | Ref ty | Ptr ty -> resolve_ty ty
+        | Ref (_, ty) | Ptr (_, ty) -> resolve_ty ty
         | Int _ | Float _ | Bool | Str | Unit | CVarArgs -> ()
         | ImplicitSelf ->
             (match current_impl with
@@ -504,7 +504,7 @@ class resolver tcx modd =
             (match else_block with
              | Some expr -> visit_expr expr mdl
              | None -> ())
-        | Ref expr | Deref expr -> visit_expr expr mdl
+        | Ref (_, expr) | Deref expr -> visit_expr expr mdl
         | Block block -> visit_block block
         | Lit _ -> ()
         | StructExpr { struct_name; fields; _ } ->
@@ -529,9 +529,11 @@ class resolver tcx modd =
                  | Some ty -> resolve_ty ty
                  | None -> ());
                 binding_pat |> ( function
-                | PatIdent name ->
+                | PatIdent (m, name) ->
                     visit_expr binding_expr mdl;
-                    let res = Res (Local binding_id) in
+                    let res =
+                      Res (Local (tcx#ast_mut_to_mut m, binding_id))
+                    in
                     self#shadow mdl name Value res )
             | Assert (expr, _) -> visit_expr expr mdl
             | Assign (expr1, expr2) ->

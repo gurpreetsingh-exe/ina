@@ -110,8 +110,8 @@ module SubstFolder = struct
         if index < subst#len
         then subst#get index |> function Ty ty -> ty
         else ty
-    | Ptr ty -> tcx#ptr (fold_ty tcx ty subst)
-    | Ref ty -> tcx#ref (fold_ty tcx ty subst)
+    | Ptr (m, ty) -> tcx#ptr m (fold_ty tcx ty subst)
+    | Ref (m, ty) -> tcx#ref m (fold_ty tcx ty subst)
     | FnPtr fnsig ->
         let { args; ret; is_variadic; abi } = fold_fnsig tcx fnsig subst in
         tcx#fn_ptr args ret is_variadic abi
@@ -147,7 +147,7 @@ type 'a nodemap = (int, 'a) hashmap
 and res =
   | Def of (def_id * def_kind)
   | Ty of ty ref
-  | Local of int
+  | Local of (mutability * int)
   | Err
 
 let encode_res enc res =
@@ -172,7 +172,7 @@ let print_res : res -> string = function
   | Def (id, kind) ->
       sprintf "(%s~%s)" (print_def_kind kind) (print_def_id id)
   | Ty ty -> render_ty ty
-  | Local id -> "local#" ^ string_of_int id
+  | Local (m, id) -> "local#" ^ mut m ^ string_of_int id
   | Err -> "err"
 ;;
 
@@ -515,9 +515,25 @@ class tcx sess =
       dbg "tcx.insert_span(id = %d, span = %s)\n" id (Span.display_span span);
       assert (spans#insert id span = None)
 
-    method ptr ty = self#intern (Ptr ty)
-    method ref ty = self#intern (Ref ty)
-    method autoderef ty = match !ty with Ptr ty | Ref ty -> ty | _ -> ty
+    method ptr mut ty = self#intern (Ptr (mut, ty))
+    method ref mut ty = self#intern (Ref (mut, ty))
+
+    method is_mut_ptr ty =
+      match !ty with
+      | Ptr (Mut, _) | Ref (Mut, _) -> true
+      | Ptr _ | Ref _ -> false
+      | _ -> assert false
+
+    method describe_pointer ty =
+      match !ty with
+      | Ptr (Mut, _) -> "a `*mut` pointer"
+      | Ref (Mut, _) -> "a `&mut` reference"
+      | Ptr _ -> "a `*` pointer"
+      | Ref _ -> "a `&` reference"
+      | _ -> assert false
+
+    method autoderef ty =
+      match !ty with Ptr (_, ty) | Ref (_, ty) -> ty | _ -> ty
 
     method fn_ptr args ret is_variadic abi =
       self#intern (FnPtr { args; ret; is_variadic; abi })
@@ -566,14 +582,14 @@ class tcx sess =
       match !ty with
       | Adt (_, Subst subst) | Fn (_, Subst subst) -> not subst#empty
       | Param _ -> true
-      | Ptr ty | Ref ty -> self#is_generic ty
+      | Ptr (_, ty) | Ref (_, ty) -> self#is_generic ty
       | _ -> false
 
     method get_ty_params ty =
       (* TODO: check if there are multiple parameters *)
       match !ty with
       | Param param -> [param]
-      | Ref ty | Ptr ty -> self#get_ty_params ty
+      | Ref (_, ty) | Ptr (_, ty) -> self#get_ty_params ty
       | Fn (_, Subst subst) | Adt (_, Subst subst) ->
           fold_left
             (fun params (Ty ty : generic_arg) ->
@@ -585,8 +601,8 @@ class tcx sess =
     method unfold_ty_param typaram ty =
       assert (self#get_ty_params typaram <> []);
       match !typaram, !ty with
-      | Ptr ty, Ptr ty' -> self#unfold_ty_param ty ty'
-      | Ref ty, Ref ty' -> self#unfold_ty_param ty ty'
+      | Ptr (_, ty), Ptr (_, ty') -> self#unfold_ty_param ty ty'
+      | Ref (_, ty), Ref (_, ty') -> self#unfold_ty_param ty ty'
       | Adt (did, _), Adt (did', _) when did <> did' -> Error self#types.err
       | Adt (_, Subst subst), Adt (_, Subst subst') ->
           map2 subst subst' (fun (Ty ty) (Ty ty') -> ty, ty')
@@ -659,12 +675,16 @@ class tcx sess =
     method ast_float_ty_to_ty : Ast.float_ty -> ty ref =
       function F32 -> _types.f32 | F64 -> _types.f64
 
+    method ast_mut_to_mut = function Ast.Mut -> Mut | Imm -> Imm
+
     method ast_ty_to_ty (ty : Ast.ty) : ty ref =
       match ty.kind with
       | Int i -> self#ast_int_ty_to_ty i
       | Float f -> self#ast_float_ty_to_ty f
-      | Ptr ty -> self#intern (Ptr (self#ast_ty_to_ty ty))
-      | Ref ty -> self#intern (Ref (self#ast_ty_to_ty ty))
+      | Ptr (m, ty) ->
+          self#ptr (self#ast_mut_to_mut m) (self#ast_ty_to_ty ty)
+      | Ref (m, ty) ->
+          self#ref (self#ast_mut_to_mut m) (self#ast_ty_to_ty ty)
       | Str -> _types.str
       | Bool -> _types.bool
       | Unit -> _types.unit
@@ -705,16 +725,16 @@ class tcx sess =
 
     method inner_ty ty : ty ref option =
       match !ty with
-      | Ptr ty | Ref ty | FnPtr { ret = ty; _ } -> Some ty
+      | Ptr (_, ty) | Ref (_, ty) | FnPtr { ret = ty; _ } -> Some ty
       | _ -> None
 
     method render_ty_segments ty =
       let segments = new vec in
       (match !ty with
-       | Ptr ty ->
+       | Ptr (_, ty) ->
            segments#push "p";
            segments#append (self#render_ty_segments ty)
-       | Ref ty ->
+       | Ref (_, ty) ->
            segments#push "r";
            segments#append (self#render_ty_segments ty)
        | Adt (def_id, _) ->
@@ -746,8 +766,8 @@ class tcx sess =
       | Bool -> "bool"
       | Str -> "str"
       | FnPtr fnsig -> Fn.render self fnsig
-      | Ptr ty -> "*" ^ self#render_ty ty
-      | Ref ty -> "&" ^ self#render_ty ty
+      | Ptr (m, ty) -> "*" ^ mut m ^ self#render_ty ty
+      | Ref (m, ty) -> "&" ^ mut m ^ self#render_ty ty
       | Err -> "err"
       | Fn (def_id, Subst subst) ->
           let { args; ret; is_variadic; abi } = self#get_fn def_id in

@@ -118,8 +118,8 @@ let rec fold_ty infcx ty =
   match !ty with
   | Infer i ->
       (match fold_infer_ty infcx i with Some ty -> ty | None -> ty)
-  | Ptr ty -> infcx.tcx#ptr (fold_ty infcx ty)
-  | Ref ty -> infcx.tcx#ref (fold_ty infcx ty)
+  | Ptr (m, ty) -> infcx.tcx#ptr m (fold_ty infcx ty)
+  | Ref (m, ty) -> infcx.tcx#ref m (fold_ty infcx ty)
   | _ -> ty
 ;;
 

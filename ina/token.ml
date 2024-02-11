@@ -33,6 +33,7 @@ type token_kind =
   | Assert
   | As
   | Impl
+  | Mut
   | Ident
   | Lit of literal
   | Comment of comment_style option
@@ -78,6 +79,7 @@ let display_token_kind = function
   | Assert -> "assert"
   | As -> "as"
   | Impl -> "impl"
+  | Mut -> "mut"
   | Ident -> "identifier"
   | Lit lit -> display_literal lit
   | Comment (Some kind) -> "comment " ^ display_comment_style kind

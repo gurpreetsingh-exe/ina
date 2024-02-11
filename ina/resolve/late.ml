@@ -29,7 +29,7 @@ class type_lowering resolver modd =
           self#visit_expr cond;
           self#visit_block then_block;
           (match else_block with Some e -> self#visit_expr e | None -> ())
-      | Cast (expr, _) | Field (expr, _) | Ref expr | Deref expr ->
+      | Cast (expr, _) | Field (expr, _) | Ref (_, expr) | Deref expr ->
           self#visit_expr expr
       | StructExpr { fields; _ } ->
           fields#iter (fun (_, expr) -> self#visit_expr expr)

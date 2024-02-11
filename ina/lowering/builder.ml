@@ -23,7 +23,7 @@ class builder tcx blocks block =
 
     method alloca ty span =
       let kind = Alloca ty in
-      let ty = tcx#ptr ty in
+      let ty = tcx#ptr Mut ty in
       let inst = { kind; ty; id = blocks.locals#len; span } in
       blocks.locals#push inst;
       VReg inst
@@ -55,7 +55,7 @@ class builder tcx blocks block =
         variant.fields
       |> function
       | Some (index, ty') ->
-          self#add_inst_with_ty (tcx#ptr ty') (Gep (ty, ptr, index))
+          self#add_inst_with_ty (tcx#ptr Mut ty') (Gep (ty, ptr, index))
       | None -> assert false
 
     method call ty value args =

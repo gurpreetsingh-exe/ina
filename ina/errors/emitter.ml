@@ -73,15 +73,10 @@ class emitter sm ui_testing =
   object (self)
     val sm : source_map option = sm
     val ui_testing : bool = ui_testing
+    initializer Color.disable := ui_testing
 
     (* public methods *)
-    method emit_diagnostic (diag : Diagnostic.t) =
-      (* let max_line_num_len = *)
-      (*   if ui_testing *)
-      (*   then 2 *)
-      (*   else string_of_int @@ max_span diag.labels |> String.length *)
-      (* in *)
-      self#emit_messages diag
+    method emit_diagnostic = self#emit_messages
 
     (* private methods *)
     method private emit_messages diagnostic =
@@ -144,10 +139,12 @@ class emitter sm ui_testing =
               [||]
               labels
           in
-          let line, _ = sm#lookup_line_pos max_span in
-          let padding =
-            String.make (1 + (String.length @@ string_of_int line)) ' '
+          let line_num_len line =
+            line + 1 |> string_of_int |> String.length
           in
+          let line, _ = sm#lookup_line_pos max_span in
+          let max_line_num_len = line_num_len line in
+          let padding = String.make (1 + max_line_num_len) ' ' in
           let labels =
             List.fast_sort
               (fun l1 l2 -> l1.span.lo - l2.span.lo)
@@ -262,7 +259,7 @@ class emitter sm ui_testing =
                           Blank (i + 1, false)
                         ; NestingEnd
                             (i, { label' with span = Span.make x (x + col) })
-                            ; Blank (i + 1, true)
+                        ; Blank (i + 1, true)
                         ; Message (i - 1, true, label')
                         ; Blank (i - 1, false)
                         ]
@@ -278,12 +275,9 @@ class emitter sm ui_testing =
                   | NestingEnd (_, label) ->
                       let line = label.span.lo in
                       let linestart, _ = sm#lookup_line_pos line in
+                      let line_num_len = line_num_len linestart in
                       let padding =
-                        String.make
-                          (String.length padding
-                           - (String.length @@ string_of_int linestart)
-                           - 1)
-                          ' '
+                        String.make (max_line_num_len - line_num_len) ' '
                       in
                       sprintf
                         " %s%d %s"

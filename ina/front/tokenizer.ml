@@ -7,19 +7,24 @@ type tokenizer = {
   ; filename: string
 }
 
-let keywords = Hashtbl.create 0;;
-
-Hashtbl.add keywords "fn" Fn;
-Hashtbl.add keywords "type" Type;
-Hashtbl.add keywords "extern" Extern;
-Hashtbl.add keywords "mod" Mod;
-Hashtbl.add keywords "let" Let;
-Hashtbl.add keywords "import" Import;
-Hashtbl.add keywords "if" If;
-Hashtbl.add keywords "else" Else;
-Hashtbl.add keywords "assert" Assert;
-Hashtbl.add keywords "as" As;
-Hashtbl.add keywords "impl" Impl
+let keywords =
+  [|
+     "fn", Fn
+   ; "type", Type
+   ; "extern", Extern
+   ; "mod", Mod
+   ; "let", Let
+   ; "import", Import
+   ; "if", If
+   ; "else", Else
+   ; "assert", Assert
+   ; "as", As
+   ; "impl", Impl
+   ; "mut", Mut
+  |]
+  |> Array.to_seq
+  |> Hashtbl.of_seq
+;;
 
 let mk_tok
     (tokenizer : tokenizer)

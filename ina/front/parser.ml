@@ -126,6 +126,8 @@ class parser pcx file tokenizer =
       tokenizer.c <- c;
       t
 
+    method peek = self#npeek 1 |> List.hd
+
     method unexpected_try_recover kind =
       let msg =
         sprintf
@@ -288,6 +290,13 @@ class parser pcx file tokenizer =
       self#emit_err (self#err token.span msg);
       exit 1
 
+    method parse_mutability =
+      match token.kind with
+      | Mut ->
+          self#bump;
+          Ast.Mut
+      | _ -> Imm
+
     method parse_ty =
       let s = token.span.lo in
       match token.kind with
@@ -317,12 +326,14 @@ class parser pcx file tokenizer =
                Ok (mk_ty ty (self#mk_span s) self#id))
       | Star ->
           self#bump;
+          let m = self#parse_mutability in
           let* ty = self#parse_ty in
-          Ok (mk_ty (Ptr ty) (self#mk_span s) self#id)
+          Ok (mk_ty (Ptr (m, ty)) (self#mk_span s) self#id)
       | Ampersand ->
           self#bump;
+          let m = self#parse_mutability in
           let* ty = self#parse_ty in
-          Ok (mk_ty (Ref ty) (self#mk_span s) self#id)
+          Ok (mk_ty (Ref (m, ty)) (self#mk_span s) self#id)
       | Dot3 ->
           self#bump;
           Ok (mk_ty CVarArgs (self#mk_span s) self#id)
@@ -347,7 +358,8 @@ class parser pcx file tokenizer =
             let* self_ = maybe_parse_self () in
             (match self_ with
              | { ty; arg = "self"; _ } when is_self ty ->
-                 let ty : ty_kind = Ref ty in
+                 (* TODO *)
+                 let ty : ty_kind = Ref (Imm, ty) in
                  Ok
                    {
                      ty = mk_ty ty (self#mk_span s) self#id
@@ -426,7 +438,11 @@ class parser pcx file tokenizer =
       match kind with
       | Ident ->
           let* ident = self#parse_ident in
-          Ok (PatIdent ident)
+          Ok (PatIdent (Imm, ident))
+      | Mut ->
+          self#bump;
+          let* ident = self#parse_ident in
+          Ok (PatIdent (Mut, ident))
       | t ->
           self#unexpected_token t ~line:__LINE__;
           exit 1
@@ -687,8 +703,9 @@ class parser pcx file tokenizer =
             Ok (Deref expr)
         | Ampersand ->
             self#bump;
+            let mut = self#parse_mutability in
             let* expr = self#parse_prefix in
-            Ok (Ref expr)
+            Ok (Ref (mut, expr))
         | _ ->
             let* expr = self#parse_primary in
             Ok expr.expr_kind

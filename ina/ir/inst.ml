@@ -219,16 +219,16 @@ let render_inst tcx inst : string =
       sprintf
         "copy %s, %s"
         (match !(get_ty tcx ptr) with
-         | Ptr ty -> tcx#render_ty ty
-         | Ref ty -> tcx#render_ty ty
+         | Ptr (_, ty) -> tcx#render_ty ty
+         | Ref (_, ty) -> tcx#render_ty ty
          | _ -> assert false)
         (render_value tcx ptr)
   | Move ptr ->
       sprintf
         "move %s, %s"
         (match !(get_ty tcx ptr) with
-         | Ptr ty -> tcx#render_ty ty
-         | Ref ty -> tcx#render_ty ty
+         | Ptr (_, ty) -> tcx#render_ty ty
+         | Ref (_, ty) -> tcx#render_ty ty
          | _ -> assert false)
         (render_value tcx ptr)
   | Gep (ty, value, index) ->

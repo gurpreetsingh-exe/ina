@@ -1,6 +1,7 @@
 open Format
 
 let ( $ ) f g h = f (g h)
+let disable = ref false
 
 module Colors = struct
   type t =
@@ -92,12 +93,17 @@ let next () =
 ;;
 
 let format segments =
-  let rec loop = function
-    | [] -> []
-    | (c, s) :: rest -> sprintf "%s%sm%s" prefix (color c) s :: loop rest
-  in
-  let fmt = loop segments in
-  sprintf "%s%s" (String.concat "" fmt) reset
+  if !disable
+  then
+    let _, fmt = List.split segments in
+    String.concat "" fmt
+  else
+    let rec loop = function
+      | [] -> []
+      | (c, s) :: rest -> sprintf "%s%sm%s" prefix (color c) s :: loop rest
+    in
+    let fmt = loop segments in
+    sprintf "%s%s" (String.concat "" fmt) reset
 ;;
 
 let grey = F'rgb (150, 150, 150)

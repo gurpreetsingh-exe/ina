@@ -26,14 +26,18 @@ type ty_kind =
   | Float of float_ty
   | Bool
   | Str
-  | Ptr of ty
-  | Ref of ty
+  | Ptr of (mutability * ty)
+  | Ref of (mutability * ty)
   | FnPtr of ty vec * ty * bool
   | Path of path
   | ImplicitSelf
   | Unit
   | CVarArgs
   | Err
+
+and mutability =
+  | Mut
+  | Imm
 
 and path_segment = {
     ident: ident
@@ -178,7 +182,7 @@ and binding = {
   ; binding_span: Span.t
 }
 
-and pat = PatIdent of ident
+and pat = PatIdent of (mutability * ident)
 
 and expr = {
     mutable expr_kind: expr_kind
@@ -210,7 +214,7 @@ and expr_kind =
   | If of iff
   | Block of block
   | Deref of expr
-  | Ref of expr
+  | Ref of (mutability * expr)
   | StructExpr of struct_expr
   | Field of expr * ident
   | Cast of expr * ty
