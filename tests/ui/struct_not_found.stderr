@@ -1,6 +1,8 @@
-error: struct `Foo` is not found in this scope
-   --> struct_not_found.ina:4:13
-    |
- LL |     let a = Foo { a: 32 };
-    |             ^^^^^^^^^^^^^ not found in this scope
-
+error: cannot find `Foo` in this scope
+   ╭─[tests/ui/struct_not_found.ina:4:13]
+   │
+ 4 │     let a = Foo { a: 32 };
+   │             ─┬─
+   │              ╰── not found in this scope
+   ∙
+───╯

@@ -232,7 +232,7 @@ let render_inst tcx inst : string =
          | _ -> assert false)
         (render_value tcx ptr)
   | Gep (ty, value, index) ->
-      let (Variant variant) = tcx#non_enum_variant ty in
+      let (Variant variant) = tcx#non_enum_variant ty |> Option.get in
       let (Field { ty; _ }) = variant.fields#get index in
       sprintf
         "gep %s, %s, %d"

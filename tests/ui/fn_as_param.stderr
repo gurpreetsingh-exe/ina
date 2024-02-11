@@ -1,6 +1,8 @@
 error: mismatch types
-   --> fn_as_param.ina:10:7
-    |
- LL |     f(g);
-    |       ^ expected `fn() -> ()`, found `fn(i32) -> ()`
-
+    ╭─[tests/ui/fn_as_param.ina:10:7]
+    │
+ 10 │     f(g);
+    │       ┬
+    │       ╰─ expected `fn() -> ()`, found `fn(i32) -> ()`
+    ∙
+────╯

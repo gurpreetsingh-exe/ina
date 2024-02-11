@@ -72,7 +72,7 @@ let mismatch_float_ty expected ty span =
 let mismatch_args expected found span =
   let msg =
     sprintf
-      "expected %d arg%s, found %d"
+      "expected %d argument%s, found %d"
       expected
       (if expected = 1 then "" else "s")
       found
@@ -83,7 +83,7 @@ let mismatch_args expected found span =
 let mismatch_generic_args expected found span =
   let msg =
     sprintf
-      "expected %d generic arg%s, found %d"
+      "expected %d generic argument%s, found %d"
       expected
       (if expected = 1 then "" else "s")
       found
@@ -95,7 +95,7 @@ let mismatch_generic_args expected found span =
 let missing_generic_args expected span =
   let msg =
     sprintf
-      "expected %d generic arg%s"
+      "expected %d generic argument%s"
       expected
       (if expected = 1 then "" else "s")
   in
@@ -112,7 +112,9 @@ let uninitialized_fields name span =
 
 let unknown_field strukt name span =
   let msg = sprintf "`%s` has no field `%s`" strukt name in
-  mk_err msg span
+  Diagnostic.create
+    msg
+    ~labels:[Label.primary (sprintf "has no field `%s`" name) span]
 ;;
 
 let ty_err_emit (tcx : tcx) err span =
@@ -152,7 +154,9 @@ let ty_err_emit (tcx : tcx) err span =
           (tcx#render_ty right)
       in
       if left <> tcx#types.err && right <> tcx#types.err
-      then tcx#emit (mk_err msg span)
+      then
+        Diagnostic.create "mismatch types" ~labels:[Label.primary msg span]
+        |> tcx#emit
   | MethodNotFound (ty, name) ->
       let msg =
         sprintf "type `%s` has no method `%s`" (tcx#render_ty ty) name
@@ -635,7 +639,7 @@ let tychk_fn cx fn =
     | StructExpr expr ->
         let name = expr.struct_name.segments#join "::" (fun s -> s.ident) in
         let ty = check_path expr.struct_name in
-        let (Variant variant) = tcx#non_enum_variant ty in
+        let (Variant variant) = tcx#non_enum_variant ty |> Option.get in
         let remaining_fields = new hashmap in
         variant.fields#iter (fun (Field { ty; name }) ->
             remaining_fields#insert' name ty);
@@ -681,22 +685,37 @@ let tychk_fn cx fn =
         (match !ty with
          | Err -> ty
          | _ ->
-             let (Variant variant) = tcx#non_enum_variant ty in
-             find
-               (fun (Field { name; ty }) ->
-                 if name = ident then Some ty else None)
-               variant.fields
-             |> ( function
-             | Some ty -> ty
-             | None ->
-                 let name =
-                   (tcx#def_key variant.def_id).data |> function
-                   | TypeNs name -> name
-                   | _ -> assert false
-                 in
-                 let err = UnknownField (name, ident) in
-                 ty_err_emit tcx err expr.expr_span;
-                 tcx#types.err ))
+             (match tcx#non_enum_variant ty with
+              | Some (Variant variant) ->
+                  find
+                    (fun (Field { name; ty }) ->
+                      if name = ident then Some ty else None)
+                    variant.fields
+                  |> ( function
+                  | Some ty -> ty
+                  | None ->
+                      let name =
+                        (tcx#def_key variant.def_id).data |> function
+                        | TypeNs name -> name
+                        | _ -> assert false
+                      in
+                      let err = UnknownField (name, ident) in
+                      ty_err_emit tcx err expr.expr_span;
+                      tcx#types.err )
+              | None ->
+                  Diagnostic.create
+                    "invalid field access on primitive type"
+                    ~labels:
+                      [
+                        Label.primary
+                          (sprintf
+                             "`%s` has no field `%s`"
+                             (tcx#render_ty ty)
+                             ident)
+                          expr.expr_span
+                      ]
+                  |> tcx#emit;
+                  tcx#types.err))
     | Cast (expr, ty) ->
         let cty = tcx#ast_ty_to_ty ty in
         let ty = check_expr expr NoExpectation in

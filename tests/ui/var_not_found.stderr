@@ -1,6 +1,8 @@
-error: local variable `a` is not found in this scope
-   --> var_not_found.ina:4:5
-    |
- LL |     a;
-    |     ^ not found in this scope
-
+error: cannot find `a` in this scope
+   ╭─[tests/ui/var_not_found.ina:4:5]
+   │
+ 4 │     a;
+   │     ┬
+   │     ╰─ not found in this scope
+   ∙
+───╯

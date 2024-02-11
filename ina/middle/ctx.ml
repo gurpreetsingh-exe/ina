@@ -641,8 +641,8 @@ class tcx sess =
           let adt = SubstFolder.fold_adt self (self#get_adt def_id) subst in
           let variants = adt.variants in
           assert (variants#len = 1);
-          variants#get 0
-      | _ -> assert false
+          Some (variants#get 0)
+      | _ -> None
 
     method int_ty_to_ty =
       function

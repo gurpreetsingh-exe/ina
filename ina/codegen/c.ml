@@ -117,7 +117,7 @@ and define cx name ty =
   match !ty with
   | Adt _ ->
       cx.defined_types#insert' name ();
-      let (Variant variant) = cx.tcx#non_enum_variant ty in
+      let (Variant variant) = cx.tcx#non_enum_variant ty |> Option.get in
       let fields =
         variant.fields#join "\n" (fun (Field { ty; name }) ->
             let name' = backend_ty cx ty in
@@ -168,7 +168,7 @@ let gen cx =
           (String.length v)
     | Struct v ->
         let ty' = backend_ty cx ty in
-        let (Variant variant) = cx.tcx#non_enum_variant ty in
+        let (Variant variant) = cx.tcx#non_enum_variant ty |> Option.get in
         sprintf
           "(%s) { %s }"
           ty'
@@ -278,7 +278,7 @@ let gen cx =
                  (get_value value)
                  (args#join ", " get_value))
     | Gep (ty, ptr, index) ->
-        let (Variant variant) = cx.tcx#non_enum_variant ty in
+        let (Variant variant) = cx.tcx#non_enum_variant ty |> Option.get in
         let (Field { name; _ }) = variant.fields#get index in
         out ^ sprintf "&%s->%s;\n" (get_value ptr) name
     | BitCast (value, ty)

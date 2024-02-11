@@ -1,12 +1,24 @@
-error: `unknown_field::Foo` has no field `c`
-   --> unknown_field.ina:10:29
-    |
- LL |     let a = Foo { a: &a, c: 20 };
-    |                             ^^
-
-error: `unknown_field::Foo` has no field `c`
-   --> unknown_field.ina:11:13
-    |
- LL |     let b = a.c;
-    |             ^
-
+error: `Foo` has no field `c`
+    ╭─[tests/ui/unknown_field.ina:10:29]
+    │
+ 10 │     let a = Foo { a: &a, c: 20 };
+    │                             ╶╮
+    │                              ╰── has no field `c`
+    ∙
+────╯
+error: uninitialized fields
+    ╭─[tests/ui/unknown_field.ina:10:13]
+    │
+ 10 │     let a = Foo { a: &a, c: 20 };
+    │             ──────────┬─────────
+    │                       ╰─────────── `Foo` has uninitialized fields
+    ∙
+────╯
+error: `Foo` has no field `c`
+    ╭─[tests/ui/unknown_field.ina:11:13]
+    │
+ 11 │     let b = a.c;
+    │             ┬
+    │             ╰─ has no field `c`
+    ∙
+────╯

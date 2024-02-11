@@ -445,8 +445,10 @@ class resolver tcx modd =
           "cannot find `%s` in this scope"
           (path.segments#join "::" (fun s -> s.ident))
       in
-      let err = mk_err msg path.span in
-      tcx#emit err
+      Diagnostic.create
+        msg
+        ~labels:[Label.primary "not found in this scope" path.span]
+      |> tcx#emit
 
     method resolve_paths (mdl : Module.t) (modd : modd) : unit =
       dbg "resolve_paths(module = %s)\n" (print_mkind mdl.mkind);

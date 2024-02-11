@@ -1,6 +1,8 @@
-error: primitive type `i64` has no fields
-   --> prim_ty_field_access.ina:5:13
-    |
- LL |     let b = a.a;
-    |             ^
-
+error: invalid field access on primitive type
+   ╭─[tests/ui/prim_ty_field_access.ina:5:13]
+   │
+ 5 │     let b = a.a;
+   │             ┬
+   │             ╰─ `integer` has no field `a`
+   ∙
+───╯

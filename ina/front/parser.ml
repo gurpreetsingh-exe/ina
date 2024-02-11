@@ -873,7 +873,22 @@ class parser pcx file tokenizer =
     method parse_type =
       let s = token.span.lo in
       self#bump;
+      let s' = token.span.lo in
       let* name = self#parse_ident in
+      if Hashtbl.mem builtin_types name
+      then
+        Diagnostic.create
+          "redefinition of builtin type"
+          ~labels:
+            [
+              Label.primary
+                (sprintf
+                   "cannot define type with name `%s`, as it is a builtin \
+                    type"
+                   name)
+                (self#mk_span s')
+            ]
+        |> self#emit_err;
       let* generics = self#parse_generics in
       let* _ = self#expect Eq in
       let parse_field () =

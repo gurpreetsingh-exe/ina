@@ -1,6 +1,8 @@
-error: function `f` is not found in this scope
-   --> function_not_found.ina:4:5
-    |
- LL |     f();
-    |     ^^^ not found in this scope
-
+error: cannot find `f` in this scope
+   ╭─[tests/ui/function_not_found.ina:4:5]
+   │
+ 4 │     f();
+   │     ┬
+   │     ╰─ not found in this scope
+   ∙
+───╯

@@ -1,6 +1,8 @@
-error: invalid function call
-   --> mismatch_fn_ptr_param.ina:12:5
-    |
- LL |     f(g)
-    |     ^^^^ `f` expected 2 args, found 1
-
+error: mismatch arguments
+    ╭─[tests/ui/mismatch_fn_ptr_param.ina:12:5]
+    │
+ 12 │     f(g)
+    │     ──┬─
+    │       ╰─── expected 2 arguments, found 1
+    ∙
+────╯

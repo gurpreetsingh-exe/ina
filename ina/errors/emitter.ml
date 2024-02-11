@@ -479,6 +479,6 @@ class emitter sm ui_testing =
                         in
                         format [margin, l; margin, chars.rbot]))
           |> String.concat "\n"
-          |> print_endline
+          |> eprintf "%s\n%!"
       | None -> ()
   end
