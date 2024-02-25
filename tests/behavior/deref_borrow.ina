@@ -1,0 +1,9 @@
+// EXIT_CODE: 0
+
+fn main() {
+    let a = 20;
+    let b = &a;
+    let c = &*b;
+    assert *c == 20;
+}
+

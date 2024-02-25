@@ -1,0 +1,12 @@
+error: mutable borrow of immutable variable
+   ╭─[tests/ui/mut_borrow_of_imm_var.ina:5:13]
+   │
+ 4 │     let a = 20;
+   │     ─────┬─────
+   │          ╰────── `a` defined here
+   ∙
+ 5 │     let b = &mut a;
+   │             ───┬──
+   │                ╰──── cannot borrow `a` as mutable, as it is not declared as mutable
+   ∙
+───╯

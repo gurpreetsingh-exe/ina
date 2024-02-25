@@ -1,0 +1,8 @@
+error: cannot assign to `*b`, which is behind a `&` reference
+   ╭─[tests/ui/assign_to_imm_ref.ina:6:5]
+   │
+ 6 │     *b = 50;
+   │     ╶╮
+   │      ╰── cannot assign to this
+   ∙
+───╯

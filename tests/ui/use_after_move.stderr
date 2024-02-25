@@ -1,0 +1,12 @@
+error: use of moved value `a`
+   ╭─[tests/ui/use_after_move.ina:8:13]
+   │
+ 7 │     let b = a;
+   │             ┬
+   │             ╰─ value moved here
+   ∙
+ 8 │     let c = a;
+   │             ┬
+   │             ╰─ value used here after move
+   ∙
+───╯

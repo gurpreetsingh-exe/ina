@@ -1,0 +1,8 @@
+error: redefinition of builtin type
+   ╭─[tests/ui/redefinition_of_builtin_type.ina:3:6]
+   │
+ 3 │ type i32 = {}
+   │      ─┬─
+   │       ╰── cannot define type with name `i32`, as it is a builtin type
+   ∙
+───╯

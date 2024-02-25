@@ -1,0 +1,8 @@
+error: cannot assign to `*b`, which is behind a `*` pointer
+   ╭─[tests/ui/assign_to_const_ptr.ina:6:5]
+   │
+ 6 │     *b = 50;
+   │     ╶╮
+   │      ╰── cannot assign to this
+   ∙
+───╯

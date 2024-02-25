@@ -13,5 +13,5 @@ fn main() -> bool {
     let a = 34;
     let foo = Foo { a: &a, b: 35 };
     let bar = Bar { a: foo };
-    *(bar.a.a) + foo.b == 69
+    *(bar.a.a) + bar.a.b == 69
 }

@@ -13,7 +13,7 @@ impl T {
         T { inner: 420 }
     }
 
-    fn value(self) -> i32 {
+    fn value(&self) -> i32 {
         self.inner
     }
 

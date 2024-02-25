@@ -731,23 +731,39 @@ let tychk_fn cx fn =
         let name = seg.ident in
         let ty = check_expr expr' NoExpectation in
         let ty = tcx#autoderef ty in
-        let method' = tcx#lookup_method ty name in
-        let method' =
-          Option.fold
-            ~none:method'
-            ~some:(fun subst -> SubstFolder.fold_ty tcx method' subst)
-            (tcx#get_subst ty)
-        in
-        let method' = check_generic_args method' seg.args seg.span tcx#fn in
-        (match !method' with
-         | Fn (did, subst) ->
-             let fnsig = tcx#get_fn did in
-             tcx#subst fnsig subst |> check_method ty name expr args
-         | FnPtr fnsig -> check_method ty name expr args fnsig
-         | Err -> ty
-         | _ ->
-             ty_err_emit tcx (InvalidCall ty) expr.expr_span;
-             tcx#types.err)
+        (match tcx#lookup_method ty name with
+         | { contents = Err } as m ->
+             Diagnostic.create
+               (sprintf "method `%s` not found" name)
+               ~labels:
+                 [
+                   Label.primary
+                     (sprintf
+                        "`%s` has no method `%s`"
+                        (tcx#render_ty ty)
+                        name)
+                     expr.expr_span
+                 ]
+             |> tcx#emit;
+             m
+         | method' ->
+             let method' =
+               Option.fold
+                 ~none:method'
+                 ~some:(fun subst -> SubstFolder.fold_ty tcx method' subst)
+                 (tcx#get_subst ty)
+             in
+             let method' =
+               check_generic_args method' seg.args seg.span tcx#fn
+             in
+             (match !method' with
+              | Fn (did, subst) ->
+                  let fnsig = tcx#get_fn did in
+                  tcx#subst fnsig subst |> check_method ty name expr args
+              | FnPtr fnsig -> check_method ty name expr args fnsig
+              | _ ->
+                  ty_err_emit tcx (InvalidCall ty) expr.expr_span;
+                  tcx#types.err))
   in
   let ty = tcx#get_def (local_def_id fn.func_id) in
   let ret = Fn.ret tcx ty in

@@ -1,0 +1,10 @@
+// COMPILE_FAIL
+
+type Test = {}
+
+fn main() {
+    let a = Test {};
+    let b = &a;
+    let c = *b;
+}
+

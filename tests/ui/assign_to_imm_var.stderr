@@ -1,0 +1,12 @@
+error: assignment to immutable variable
+   ╭─[tests/ui/assign_to_imm_var.ina:5:5]
+   │
+ 4 │     let a = 20;
+   │     ─────┬─────
+   │          ╰────── `a` defined here
+   ∙
+ 5 │     a = 50;
+   │     ┬
+   │     ╰─ cannot assign to immutable variable `a`
+   ∙
+───╯

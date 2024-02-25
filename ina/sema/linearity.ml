@@ -19,15 +19,22 @@ let mut_borrow_of_imm_var name defspan =
     ~labels:[Label.secondary msg defspan]
 ;;
 
+let use_of_moved_value name prev_span =
+  Diagnostic.create
+    (sprintf "use of moved value `%s`" name)
+    ~labels:[Label.secondary "value moved here" prev_span]
+;;
+
 let analyze (tcx : tcx) fn =
   let locals = Hashtbl.create 0 in
+  let moved = Hashtbl.create 0 in
   let rec visit_block block =
-    block.block_stmts#iter visit_stmt;
-    match block.last_expr with
-    | Some expr -> ignore (visit_expr expr)
-    | None -> ()
+    block.block_stmts#iter (fun stmt ->
+        match visit_stmt stmt with Ok _ -> () | Error (_, e) -> tcx#emit e);
+    match block.last_expr with Some expr -> visit_expr expr | None -> Ok ()
   and visit_block_with_exp block =
-    block.block_stmts#iter visit_stmt;
+    block.block_stmts#iter (fun stmt ->
+        match visit_stmt stmt with Ok _ -> () | Error (_, e) -> tcx#emit e);
     match block.last_expr with Some expr -> visit_expr expr | None -> Ok ()
   and visit_expr ?(e = `None) expr =
     let ty expr = tcx#get_def (Middle.Def_id.local_def_id expr.expr_id) in
@@ -38,8 +45,32 @@ let analyze (tcx : tcx) fn =
     match expr.expr_kind with
     | Lit _ -> Ok ()
     | Path path ->
+        let check_path ?(move = true) path ty =
+          match tcx#res_map#unsafe_get path.path_id with
+          | Local (_, id) when Hashtbl.mem moved id ->
+              let name = path.segments#join "" (fun s -> s.ident) in
+              let prev_use = Hashtbl.find moved id in
+              let err =
+                use_of_moved_value name prev_use
+                |> Diagnostic.label
+                     (Label.primary "value used here after move" path.span)
+              in
+              Error (name, err)
+          | Local (_, id) ->
+              Ok
+                (if (not (tcx#is_copy ty)) && move
+                 then Hashtbl.add moved id path.span)
+          | _ -> Ok ()
+        in
         (match e with
-         | `None -> Ok ()
+         | `Deref -> Ok ()
+         | `Field -> check_path path (ty expr) ~move:false
+         | `Method segment ->
+             let ty = ty expr in
+             let ty = tcx#lookup_method ty segment.ident in
+             let self = (Fn.args tcx ty)#get 0 in
+             check_path path self
+         | `None -> check_path path (ty expr)
          | `Assign ->
              (match tcx#res_map#unsafe_get path.path_id with
               | Local (mut, id) when mut = Imm ->
@@ -100,7 +131,7 @@ let analyze (tcx : tcx) fn =
                expr_name expr'.expr_kind
                |> Option.map (fun name ->
                       sprintf
-                        "cannot assign to `%s`, which is behind %s"
+                        "cannot assign to `*%s`, which is behind %s"
                         name
                         (tcx#describe_pointer ty))
                |> Option.value
@@ -111,15 +142,50 @@ let analyze (tcx : tcx) fn =
                          (tcx#describe_pointer ty))
              in
              Diagnostic.create
-               "invalid assignment"
-               ~labels:[Label.primary msg expr.expr_span]
+               msg
+               ~labels:[Label.primary "cannot assign to this" expr.expr_span]
+             |> tcx#emit
+         | (`None | `Method _)
+           when tcx#is_ref ty
+                && not (tcx#is_copy (tcx#inner_ty ty |> Option.get)) ->
+             let msg =
+               expr_name expr'.expr_kind
+               |> Option.map (fun name ->
+                      sprintf
+                        "cannot move out of `*%s`, which is behind %s"
+                        name
+                        (tcx#describe_pointer ty))
+               |> Option.value
+                    ~default:
+                      (sprintf
+                         "cannot move out of this expression, which is \
+                          behind %s"
+                         (tcx#describe_pointer ty))
+             in
+             let ty = tcx#inner_ty ty |> Option.get in
+             let pmsg =
+               expr_name expr'.expr_kind
+               |> Option.map (fun name ->
+                      sprintf
+                        "move occurs because `*%s` has type `%s`"
+                        name
+                        (tcx#render_ty ty))
+               |> Option.value
+                    ~default:
+                      (sprintf
+                         "move occurs because this has type `%s`"
+                         (tcx#render_ty ty))
+             in
+             Diagnostic.create
+               msg
+               ~labels:[Label.primary pmsg expr.expr_span]
              |> tcx#emit
          | _ -> ());
-        visit_expr expr'
-    | Field (expr, _) -> visit_expr expr
+        visit_expr expr' ~e:`Deref
+    | Field (expr, _) -> visit_expr expr ~e:`Field
     | Cast (expr, _) -> visit_expr expr
-    | MethodCall (expr, _, args) ->
-        let* _ = visit_expr expr in
+    | MethodCall (expr, segment, args) ->
+        let* _ = visit_expr expr ~e:(`Method segment) in
         args#iter (fun expr -> ignore (visit_expr expr));
         Ok ()
   and visit_stmt = function
@@ -133,14 +199,17 @@ let analyze (tcx : tcx) fn =
              e
              |> Diagnostic.label (Label.primary msg left.expr_span)
              |> tcx#emit);
-        ignore (visit_expr right)
-    | Stmt expr | Expr expr -> ignore @@ visit_expr expr
+        visit_expr right
+    | Stmt expr | Expr expr -> visit_expr expr
     | Binding { binding_id; binding_span; binding_expr; _ } ->
-        ignore @@ visit_expr binding_expr;
-        Hashtbl.add locals binding_id binding_span
-    | Assert (expr, _) -> ignore @@ visit_expr expr
+        let* _ = visit_expr binding_expr in
+        Ok (Hashtbl.add locals binding_id binding_span)
+    | Assert (expr, _) -> visit_expr expr
   in
-  match fn.body with Some block -> visit_block block | None -> ()
+  match fn.body with
+  | Some block ->
+      (match visit_block block with Ok _ -> () | Error (_, e) -> tcx#emit e)
+  | None -> ()
 ;;
 
 let rec analyze_module tcx (modd : modd) =

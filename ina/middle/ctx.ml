@@ -226,7 +226,6 @@ class tcx sess =
     val sess : Sess.t = sess
     val mutable main : def_id option = None
     val mutable _types = dummy_types
-    val mutable err_count = 0
     val adt_def : (def_id, adt) hashmap = new hashmap
     val fn_def : (def_id, fnsig) hashmap = new hashmap
     val assoc_fn : (def_id, (string, def_id) hashmap) hashmap = new hashmap
@@ -505,11 +504,8 @@ class tcx sess =
           (render_ty2 new_ty);
         ty := !new_ty)
 
-    method emit err =
-      err_count <- err_count + 1;
-      Sess.emit_err sess.parse_sess err
-
-    method has_errors = err_count > 0
+    method emit err = Sess.emit_err sess.parse_sess err
+    method has_errors = sess.parse_sess.span_diagnostic#err_count > 0
 
     method insert_span id span =
       dbg "tcx.insert_span(id = %d, span = %s)\n" id (Span.display_span span);
@@ -523,6 +519,11 @@ class tcx sess =
       | Ptr (Mut, _) | Ref (Mut, _) -> true
       | Ptr _ | Ref _ -> false
       | _ -> assert false
+
+    method is_ref ty =
+      match !ty with Ref _ -> true |  _ -> false
+
+    method is_copy ty = match !ty with Adt _ -> false | _ -> true
 
     method describe_pointer ty =
       match !ty with

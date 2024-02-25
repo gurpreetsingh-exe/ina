@@ -1,0 +1,8 @@
+error: cannot move out of `*b`, which is behind a `&` reference
+   ╭─[tests/ui/move_from_imm_ref.ina:8:13]
+   │
+ 8 │     let c = *b;
+   │             ╶╮
+   │              ╰── move occurs because `*b` has type `Test`
+   ∙
+───╯
