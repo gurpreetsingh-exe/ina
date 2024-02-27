@@ -21,7 +21,7 @@ impl[T] Type[T] {
 fn main() -> i32 {
     let t = Type::new(69);
     assert t.get() == 69;
-    let t = Type::id(1);
+    let t = Type![i32]::id(1);
     assert t.inner == 1;
     0
 }

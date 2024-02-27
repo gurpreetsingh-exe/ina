@@ -419,7 +419,7 @@ class tcx sess =
       | None -> ()
 
     method get_def id =
-      match def_id_to_ty#get id with Some ty -> ty | None -> assert false
+      match def_id_to_ty#get id with Some ty -> ty | None -> _types.err
 
     method iter_infer_vars f =
       def_id_to_ty#iter (fun _ v ->
@@ -520,9 +520,7 @@ class tcx sess =
       | Ptr _ | Ref _ -> false
       | _ -> assert false
 
-    method is_ref ty =
-      match !ty with Ref _ -> true |  _ -> false
-
+    method is_ref ty = match !ty with Ref _ -> true | _ -> false
     method is_copy ty = match !ty with Adt _ -> false | _ -> true
 
     method describe_pointer ty =
@@ -531,6 +529,13 @@ class tcx sess =
       | Ref (Mut, _) -> "a `&mut` reference"
       | Ptr _ -> "a `*` pointer"
       | Ref _ -> "a `&` reference"
+      | _ -> assert false
+
+    method describe_def_id did =
+      let key = self#def_key did in
+      match key.data with
+      | ValueNs name -> sprintf "function `%s`" name
+      | TypeNs name -> sprintf "type `%s`" name
       | _ -> assert false
 
     method autoderef ty =

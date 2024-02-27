@@ -1,0 +1,20 @@
+// COMPILE_FAIL
+
+type Type[T] = {}
+
+impl[T] Type[T] {
+    fn id[U](a: U) -> Type[U] {
+        Type![U] {}
+    }
+}
+
+fn test[T]() {}
+
+fn main() {
+    let a = Type {};
+    test();
+    // TODO: the error refers to the parameter `T` which belongs
+    // to type `Type[T]` not the function `id`, so implement the
+    // correct error at some point
+    let a = Type::id(20);
+}

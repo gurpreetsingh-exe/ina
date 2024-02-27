@@ -1,0 +1,24 @@
+error: type annotation required
+    ╭─[tests/ui/type_annotation_required.ina:14:13]
+    │
+ 14 │     let a = Type {};
+    │             ───┬───
+    │                ╰──── cannot infer type of type parameter `T` in type `Type`
+    ∙
+────╯
+error: type annotation required
+    ╭─[tests/ui/type_annotation_required.ina:15:5]
+    │
+ 15 │     test();
+    │     ───┬──
+    │        ╰──── cannot infer type of type parameter `T` in function `test`
+    ∙
+────╯
+error: type annotation required
+    ╭─[tests/ui/type_annotation_required.ina:19:13]
+    │
+ 19 │     let a = Type::id(20);
+    │             ──────┬─────
+    │                   ╰─────── cannot infer type of type parameter `T` in function `id`
+    ∙
+────╯

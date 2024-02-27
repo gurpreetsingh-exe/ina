@@ -18,9 +18,10 @@ let ( let* ) v f = Result.bind v f
 type cx = {
     infcx: infer_ctx
   ; locals: (node_id, ty ref) hashmap
+  ; mutable generics: typaram array
 }
 
-let create infcx = { infcx; locals = new hashmap }
+let create infcx = { infcx; locals = new hashmap; generics = [||] }
 
 type 'a expected_found = {
     expected: 'a
@@ -117,6 +118,25 @@ let unknown_field strukt name span =
     ~labels:[Label.primary (sprintf "has no field `%s`" name) span]
 ;;
 
+let type_annotation_required name params span =
+  let typenames =
+    List.map (fun param -> sprintf "`%s`" param.name) params
+    |> String.concat ", "
+  in
+  Diagnostic.create
+    "type annotation required"
+    ~labels:
+      [
+        Label.primary
+          (sprintf
+             "cannot infer type of type parameter%s %s in %s"
+             (if List.length params > 1 then "s" else "")
+             typenames
+             name)
+          span
+      ]
+;;
+
 let ty_err_emit (tcx : tcx) err span =
   match err with
   | MismatchTy (expected, ty) ->
@@ -195,6 +215,12 @@ let ty_err_emit (tcx : tcx) err span =
 
 let tychk_fn cx fn =
   let tcx = cx.infcx.tcx in
+  (* let typeparams = new hashmap in *)
+  let did = local_def_id fn.func_id in
+  cx.generics <-
+    (Generics.to_subst (tcx#generics_of did) tcx)#inner
+    |> Array.map (function Middle.Ty.Ty ty ->
+           !ty |> ( function Param p -> p | _ -> assert false ));
   let define id ty =
     tcx#create_def (local_def_id id) ty;
     ignore (cx.locals#insert id ty)
@@ -543,10 +569,24 @@ let tychk_fn cx fn =
              let fnsig = tcx#get_fn def_id in
              check_arguments expr args fnsig.args;
              let maybe_infer_typaram i arg =
-               infer_type_argument_from_expr arg (fnsig.args#get i) subst
+               if i < fnsig.args#len
+               then
+                 infer_type_argument_from_expr arg (fnsig.args#get i) subst
              in
              args#iteri maybe_infer_typaram;
              let fn = tcx#fn def_id (Subst subst) in
+             let params =
+               tcx#get_ty_params fn
+               |> List.filter (fun param ->
+                      not @@ Array.mem param cx.generics)
+             in
+             if params <> []
+             then
+               type_annotation_required
+                 (tcx#describe_def_id def_id)
+                 params
+                 expr.expr_span
+               |> tcx#emit;
              write_ty expr.expr_id fn;
              SubstFolder.fold_ty tcx fnsig.ret subst
          | Fn (def_id, _) -> tcx#get_fn def_id |> check_call expr args
@@ -657,7 +697,20 @@ let tychk_fn cx fn =
                     ty_err_emit tcx err expr.expr_span
               in
               expr.fields#iter maybe_infer_field;
-              tcx#adt def_id (Subst subst')
+              let adt = tcx#adt def_id (Subst subst') in
+              let params =
+                tcx#get_ty_params adt
+                |> List.filter (fun param ->
+                       not @@ Array.mem param cx.generics)
+              in
+              if params <> []
+              then
+                type_annotation_required
+                  (tcx#describe_def_id def_id)
+                  params
+                  expr.struct_expr_span
+                |> tcx#emit;
+              adt
           | _ ->
               let check_field (ident, expr) =
                 match remaining_fields#remove ident with
@@ -765,7 +818,7 @@ let tychk_fn cx fn =
                   ty_err_emit tcx (InvalidCall ty) expr.expr_span;
                   tcx#types.err))
   in
-  let ty = tcx#get_def (local_def_id fn.func_id) in
+  let ty = tcx#get_def did in
   let ret = Fn.ret tcx ty in
   (* TODO: display better error span *)
   let span =
