@@ -384,25 +384,6 @@ let tychk_fn cx fn =
     let ty = resolve_vars cx.infcx ty in
     write_ty expr.expr_id ty;
     ty
-  and check_intrinsic did args span =
-    let key = tcx#def_key did in
-    let name =
-      match key.data with ValueNs name -> name | _ -> assert false
-    in
-    match name with
-    | "sizeof" when Option.is_none args ->
-        let msg = "add annotation with ![T] where T is the actual type" in
-        Diagnostic.create "type annotation required"
-        |> label (Label.primary msg span)
-        |> tcx#emit;
-        tcx#types.err
-    | _ when Option.is_some args ->
-        let subst =
-          map (Option.get args) (fun arg : generic_arg ->
-              Ty (tcx#ast_ty_to_ty arg))
-        in
-        tcx#fn did (Subst subst)
-    | _ -> tcx#fn did (Subst (new vec))
   and check_generic_args ty args span f =
     match !ty, args with
     | (Adt (did, _) | Fn (did, _)), None
@@ -458,15 +439,12 @@ let tychk_fn cx fn =
         (match last.args with
          | Some args -> check_generic_args ty (Some args) path.span tcx#adt
          | None -> ty)
-    | Def (id, Fn) ->
+    | Def (id, (Fn | Intrinsic)) ->
         let ty = tcx#get_def id in
         let last = Option.get path.segments#last in
         (match last.args with
          | Some args -> check_generic_args ty (Some args) path.span tcx#fn
          | None -> ty)
-    | Def (id, Intrinsic) ->
-        let last = Option.get path.segments#last in
-        check_intrinsic id last.args path.span
     | Def (id, AssocFn) ->
         let ty = tcx#get_def id in
         let last = Option.get path.segments#last in
