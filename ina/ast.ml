@@ -122,6 +122,19 @@ and impl = {
   ; id: node_id
 }
 
+and using_kind =
+  | Simple of ident option
+  | Val of ident * Span.t
+  | Nested of using vec
+  | Glob
+
+and using = {
+    prefix: path
+  ; kind: using_kind
+  ; span: Span.t
+  ; id: node_id
+}
+
 and item =
   | Fn of func * attr_vec
   | Type of typ
@@ -134,6 +147,7 @@ and item =
       ; span: Span.t
     }
   | ExternMod of string
+  | Using of using
 
 and arg = {
     ty: ty

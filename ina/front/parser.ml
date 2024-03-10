@@ -44,6 +44,7 @@ type parse_sess = {
 type path_namespace =
   | Value
   | Type
+  | Mod
 
 let prec = function
   | Dot -> 80
@@ -308,7 +309,7 @@ class parser pcx file tokenizer =
                 if token.kind = Dot3 then var_arg := true;
                 self#parse_ty)
           in
-          if !var_arg then args#pop;
+          if !var_arg then ignore args#pop;
           let unit_ty : ty = mk_ty Unit (make 0 0) self#id in
           let* ret_ty = self#parse_ret_ty in
           let ret_ty = Option.value ~default:unit_ty ret_ty in
@@ -409,7 +410,7 @@ class parser pcx file tokenizer =
       let* args =
         parse_spanned_with_sep self LParen RParen Comma parse_arg'
       in
-      if !var_arg then args#pop;
+      if !var_arg then ignore args#pop;
       Ok (args, !var_arg)
 
     method parse_ret_ty =
@@ -651,8 +652,9 @@ class parser pcx file tokenizer =
               exit 1
         in
         segments#push segment;
-        match token.kind with
-        | Colon2 ->
+        match token.kind, self#npeek 1 with
+        | Colon2, (LBrace | At | Star) :: _ when namespace = Mod -> Ok ()
+        | Colon2, _ ->
             self#bump;
             parse_path_impl ()
         | _ -> Ok ()
@@ -958,6 +960,48 @@ class parser pcx file tokenizer =
           Ok (Foreign (items, self#id))
       | _ -> Error (self#err token.span "unexpected_token")
 
+    method parse_using =
+      let rec parse_using_tree_list () =
+        let* nested =
+          parse_spanned_with_sep self LBrace RBrace Comma parse_using_tree
+        in
+        Ok (Nested nested)
+      and parse_using_tree_glob_or_nested () =
+        match token.kind with
+        | Star ->
+            self#bump;
+            Ok Glob
+        | At ->
+            let s = token.span.lo in
+            self#bump;
+            let* name = self#parse_ident in
+            Ok (Val (name, self#mk_span s))
+        | _ -> parse_using_tree_list ()
+      and parse_rename () =
+        match token.kind with
+        | As ->
+            self#bump;
+            let* name = self#parse_ident in
+            Ok (Some name)
+        | _ -> Ok None
+      and parse_using_tree () =
+        let s = token.span.lo in
+        let* prefix = self#parse_path Mod in
+        let* kind =
+          match token.kind with
+          | Colon2 ->
+              self#bump;
+              parse_using_tree_glob_or_nested ()
+          | _ ->
+              let* rename = parse_rename () in
+              Ok (Simple rename)
+        in
+        Ok { prefix; kind; span = self#mk_span s; id = self#id }
+      in
+      let* using = parse_using_tree () in
+      let* _ = self#expect Semi in
+      Ok using
+
     method parse_item =
       let* attrs = self#parse_outer_attrs in
       match token.kind with
@@ -1002,6 +1046,10 @@ class parser pcx file tokenizer =
             Mod { name; resolved_mod = modd; inline; span = self#mk_span s }
           in
           Ok modd
+      | Using ->
+          self#bump;
+          let* using = self#parse_using in
+          Ok (Ast.Using using)
       | t ->
           self#unexpected_token t ~line:__LINE__;
           exit 1

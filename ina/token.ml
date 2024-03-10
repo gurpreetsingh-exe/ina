@@ -27,7 +27,7 @@ type token_kind =
   | Extern
   | Mod
   | Let
-  | Import
+  | Using
   | If
   | Else
   | Assert
@@ -65,6 +65,7 @@ type token_kind =
   | Dot
   | DotDot
   | Dot3
+  | At
   | Eof
 
 let display_token_kind = function
@@ -73,7 +74,7 @@ let display_token_kind = function
   | Extern -> "extern"
   | Mod -> "mod"
   | Let -> "let"
-  | Import -> "import"
+  | Using -> "using"
   | If -> "if"
   | Else -> "else"
   | Assert -> "assert"
@@ -112,6 +113,7 @@ let display_token_kind = function
   | Dot -> "."
   | DotDot -> ".."
   | Dot3 -> "..."
+  | At -> "@"
   | Eof -> "eof"
 ;;
 

@@ -268,7 +268,7 @@ and render_block block prefix =
 and render_generics (generics : generics) prefix =
   id "Generics" 0 generics.span;
   out += "\n";
-  let rendre_generic_param param _ =
+  let rendre_generic_param (param : generic_param) _ =
     let { kind = Ident name; span; id } = param in
     out
     += sprintf
@@ -315,13 +315,22 @@ and render_struct (strukt : strukt) prefix =
 
 and render_type ty = match ty with Struct strukt -> render_struct strukt
 
-and render_impl impl prefix =
+and render_impl (impl : impl) prefix =
   id "Extension" impl.id impl.span;
   out += " ";
   out += (green ?bold:(Some false) @@ q @@ render_ty impl.ty);
   out += "\n";
   let render_item item = match item with AssocFn fn -> render_fn fn in
   render_children ?prefix:(Some prefix) impl.items render_item
+
+and render_using using prefix =
+  render_path_ using.prefix;
+  match using.kind with
+  | Simple (Some name) -> out += name
+  | Simple _ -> ()
+  | Nested usings -> usings#iter (fun using -> render_using using prefix)
+  | Val (name, _) -> out += name
+  | Glob -> ()
 
 and render_item item prefix =
   match item with
@@ -340,6 +349,10 @@ and render_item item prefix =
        | Some modd ->
            render_child ?prefix:(Some prefix) true modd render_module
        | None -> ())
+  | Using using ->
+      out += green "Using ";
+      out += "\n";
+      render_using using prefix
   | Foreign (fns, _) ->
       out += green "ExternBlock\n";
       render_children ?prefix:(Some prefix) fns render_fn

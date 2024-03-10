@@ -23,8 +23,9 @@ class ['a] vec =
       inner <- tl
 
     method pop =
-      let hd, _ = self#split (self#len - 1) in
-      inner <- hd
+      let hd, tl = self#split (self#len - 1) in
+      inner <- hd;
+      tl.(0)
 
     method private split i =
       if i = 0

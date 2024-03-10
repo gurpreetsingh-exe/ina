@@ -218,7 +218,7 @@ let rec analyze_module tcx (modd : modd) =
     | Fn (func, _) -> analyze tcx func
     | Foreign (funcs, _) -> funcs#iter (fun f -> analyze tcx f)
     | Impl { items; _ } -> items#iter (function AssocFn f -> analyze tcx f)
-    | Type _ | ExternMod _ -> ()
+    | Type _ | ExternMod _ | Using _ -> ()
     | Mod m ->
         (match m.resolved_mod with
          | Some modd -> analyze_module tcx modd

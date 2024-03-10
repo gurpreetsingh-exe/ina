@@ -14,7 +14,7 @@ let keywords =
    ; "extern", Extern
    ; "mod", Mod
    ; "let", Let
-   ; "import", Import
+   ; "using", Using
    ; "if", If
    ; "else", Else
    ; "assert", Assert
@@ -63,6 +63,7 @@ let get_token_type c tokenizer : token_kind =
   | '}' -> RBrace
   | '<' -> LAngle
   | '>' -> RAngle
+  | '@' -> At
   | ':' ->
       (match peek tokenizer with
        | Some ':' ->

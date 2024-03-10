@@ -172,7 +172,7 @@ class type_lowering resolver modd =
           (match resolved_mod with
            | Some m -> (new type_lowering resolver m)#lower
            | None -> ())
-      | ExternMod _ -> ()
+      | ExternMod _ | Using _ -> ()
 
     method visit_mod =
       let def_id = local_def_id modd.mod_id in

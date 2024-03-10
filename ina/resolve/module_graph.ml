@@ -2,6 +2,7 @@ open Ast
 open Resolver
 open Middle.Def_id
 open Structures.Hashmap
+open Structures.Vec
 open Errors.Diagnostic
 open Module
 open Front
@@ -89,6 +90,7 @@ class visitor resolver (modd : Ast.modd) parent dir_ownership =
         mkind = Def (Mod, id, modd.mod_name)
       ; parent
       ; resolutions = new hashmap
+      ; imports = new vec
       }
     in
     let _ = resolver#modules#insert id m in
@@ -148,7 +150,12 @@ class visitor resolver (modd : Ast.modd) parent dir_ownership =
 
     method visit_block block =
       let mdl =
-        { mkind = Block; parent = Some mdl; resolutions = new hashmap }
+        {
+          mkind = Block
+        ; parent = Some mdl
+        ; resolutions = new hashmap
+        ; imports = new vec
+        }
       in
       (match curr_fn with
        | Some fn ->
@@ -194,7 +201,7 @@ class visitor resolver (modd : Ast.modd) parent dir_ownership =
           self#visit_block body
       | None -> assert false
 
-    method visit_impl impl =
+    method visit_impl (impl : impl) =
       let did = local_def_id impl.id in
       let did = resolver#tcx#define parent_id did (Impl did) in
       self#with_parent did (fun () ->
@@ -216,6 +223,21 @@ class visitor resolver (modd : Ast.modd) parent dir_ownership =
           let did = resolver#tcx#define parent_id did ExternMod in
           self#with_parent did (fun () -> fns#iter self#visit_fn)
       | Impl impl -> self#visit_impl impl
+      | Using using ->
+          let segments = new vec in
+          segments#copy using.prefix.segments;
+          let path = { using.prefix with segments } in
+          let ikind =
+            match using.kind with
+            | Val (name, _) -> Named { source = name; ns = Some Value }
+            | Simple _ ->
+                let source = path.segments#pop.ident in
+                Named { source; ns = None }
+            | Glob -> Glob
+            | Nested _ -> assert false
+          in
+          let import = { ikind; path } in
+          mdl.imports#push import
       | Mod m ->
           let f m o =
             let visitor = new visitor resolver m (Some mdl) o in
@@ -275,6 +297,7 @@ class visitor resolver (modd : Ast.modd) parent dir_ownership =
                          Def (Mod, extmod_id, sprintf "__%s_wrapper" !name')
                      ; parent = None
                      ; resolutions = new hashmap
+                     ; imports = new vec
                      }
                    in
                    let mdl' = Module.decode resolver dec None in

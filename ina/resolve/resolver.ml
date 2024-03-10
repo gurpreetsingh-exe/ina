@@ -20,10 +20,23 @@ module Module = struct
     | Block
     | Def of (def_kind * def_id * string)
 
+  and import_kind =
+    | Named of {
+          source: ident
+        ; ns: namespace option
+      }
+    | Glob
+
+  and import = {
+      ikind: import_kind
+    ; path: path
+  }
+
   and t = {
       mkind: module_kind
     ; parent: t option
     ; resolutions: resolutions
+    ; imports: import vec
   }
 
   and name_resolution =
@@ -80,7 +93,9 @@ module Module = struct
           assert false
     in
     let nmdl = dec#read_usize in
-    let mdl = { mkind; parent; resolutions = new hashmap } in
+    let mdl =
+      { mkind; parent; resolutions = new hashmap; imports = new vec }
+    in
     (match mkind with
      | Def (Mod, id, _) -> resolver#modules#insert' id mdl
      | _ -> assert false);
@@ -213,7 +228,7 @@ let with_generics_params resolver generics f =
       type_scope#define name Type res);
   resolver#scopes#push type_scope;
   f ();
-  resolver#scopes#pop
+  ignore resolver#scopes#pop
 ;;
 
 class resolver tcx modd =
@@ -233,7 +248,12 @@ class resolver tcx modd =
     val block_map : (binding_key, name_resolution) hashmap = new hashmap
 
     val mutable mod_root : Module.t =
-      { mkind = Block; parent = None; resolutions = new hashmap }
+      {
+        mkind = Block
+      ; parent = None
+      ; resolutions = new hashmap
+      ; imports = new vec
+      }
 
     method mod_root = mod_root
     method init mdl = mod_root <- mdl
@@ -294,6 +314,34 @@ class resolver tcx modd =
            | Some m -> self#get_root_mod m
            | _ -> assert false)
 
+    method resolve_ident_in_imports mdl (segment : path_segment) : res =
+      let len = mdl.imports#len in
+      let segments = new vec in
+      segments#push segment;
+      let rec f i =
+        let import = mdl.imports#get i in
+        let res = tcx#res_map#unsafe_get import.path.path_id in
+        let did = binding_to_def_id (Res res) in
+        let mdl = modules#unsafe_get did in
+        match import.ikind with
+        | Named { source; ns } when source = segment.ident ->
+            (match ns with
+             | Some ns -> self#resolve_path_in_modul mdl segments ns
+             | None ->
+                 let tyres = self#resolve_path_in_modul mdl segments Type in
+                 if tyres = Err
+                 then self#resolve_path_in_modul mdl segments Value
+                 else tyres)
+        | Glob ->
+            let res = self#resolve_path_in_modul mdl segments Type in
+            if res = Err
+            then self#resolve_path_in_modul mdl segments Value
+            else res
+        | _ when i >= len - 1 -> Err
+        | _ -> f (i + 1)
+      in
+      if len = 0 then Err else f 0
+
     method resolve_ident_in_lexical_scope mdl (segment : path_segment) ns =
       let ident = segment.ident in
       let key = { ident; ns; disambiguator = 0 } in
@@ -301,7 +349,7 @@ class resolver tcx modd =
         "resolve_ident_in_lexical_scope(module = %s, ident = %s, ns = %s) = "
         (print_mkind mdl.mkind)
         ident
-        (match ns with Type -> "type" | Value -> "value");
+        (render_ns ns);
       let res =
         match mdl.resolutions#get key with
         | Some r ->
@@ -331,17 +379,17 @@ class resolver tcx modd =
                            (print_mkind modul'.mkind);
                       self#resolve_ident_in_lexical_scope modul' segment ns
                   | _ -> Err)
-             | _ -> Err)
+             | _ -> self#resolve_ident_in_imports mdl segment)
       in
       tcx#res_map#insert' segment.id res;
       res
 
-    method resolve_path_in_modul mdl (segs : path_segment vec) ns =
+    method resolve_path_in_modul mdl (segs : path_segment vec) ns : res =
       dbg
         "resolve_path_in_module(module = %s, path = %s, ns = %s)\n"
         (print_mkind mdl.mkind)
         (segs#join "::" (fun seg -> seg.ident))
-        (match ns with Type -> "type" | Value -> "value");
+        (render_ns ns);
       let segs_len = segs#len in
       let mod_in_path_report = ref false in
       let rec f i mdl : res =
@@ -369,7 +417,10 @@ class resolver tcx modd =
                      @@ Utils.Printer.green
                           ?bold:(Some false)
                           (print_mkind mdl.mkind);
-                     f (i + 1) mdl)
+                     let i = i + 1 in
+                     if i = segs_len
+                     then Def (Module.binding_to_def_id r, Mod)
+                     else f i mdl)
             | None ->
                 dbg "%s\n" (Utils.Printer.red "err");
                 Err
@@ -387,7 +438,7 @@ class resolver tcx modd =
         "resolve_path(module = %s, path = %s, ns = %s)\n"
         (print_mkind mdl.mkind)
         (segs#join "::" (fun seg -> seg.ident))
-        (match ns with Type -> "type" | Value -> "value");
+        (render_ns ns);
       let res : res =
         match ns, segs_len, (segs#get 0).ident with
         | Value, 1, "mod" -> Err
@@ -406,6 +457,11 @@ class resolver tcx modd =
               | None -> f (i - 1)
             in
             let res = f (scopes#len - 1) in
+            let res =
+              if res = Err
+              then self#resolve_ident_in_imports mdl seg
+              else res
+            in
             tcx#res_map#insert' seg.id res;
             res
         | _, _, "mod" ->
@@ -448,6 +504,14 @@ class resolver tcx modd =
       Diagnostic.create
         msg
         ~labels:[Label.primary "not found in this scope" path.span]
+      |> tcx#emit
+
+    method not_found_in_module path name span =
+      let path = path.segments#join "::" (fun s -> s.ident) in
+      let msg = sprintf "cannot find `%s` in `%s`" name path in
+      Diagnostic.create
+        msg
+        ~labels:[Label.primary (sprintf "not found in `%s`" path) span]
       |> tcx#emit
 
     method resolve_paths (mdl : Module.t) (modd : modd) : unit =
@@ -585,6 +649,33 @@ class resolver tcx modd =
         | Type (Struct strukt) -> visit_struct strukt
         | Foreign (fns, _) -> fns#iter (fun f -> visit_fn f)
         | Impl impl -> visit_impl impl
+        | Using using ->
+            let path = using.prefix in
+            (match using.kind with
+             | Val (name, span) ->
+                 visit_path path mdl (Some Type);
+                 let res = tcx#res_map#unsafe_get path.path_id in
+                 let did = binding_to_def_id (Res res) in
+                 let mdl = modules#unsafe_get did in
+                 let key = { ident = name; disambiguator = 0; ns = Value } in
+                 if not @@ mdl.resolutions#has key
+                 then self#not_found_in_module path name span
+             | _ ->
+                 let segments = new vec in
+                 segments#copy path.segments;
+                 let path = { path with segments } in
+                 let source = path.segments#pop.ident in
+                 visit_path path mdl (Some Type);
+                 let res = tcx#res_map#unsafe_get path.path_id in
+                 let did = binding_to_def_id (Res res) in
+                 let mdl = modules#unsafe_get did in
+                 let key0 =
+                   { ident = source; disambiguator = 0; ns = Value }
+                 in
+                 let key1 = { key0 with ns = Type } in
+                 if not
+                    @@ (mdl.resolutions#has key0 || mdl.resolutions#has key1)
+                 then self#not_found using.prefix)
         | ExternMod _ -> ()
       in
       modd.items#iter visit_item

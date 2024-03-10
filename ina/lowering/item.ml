@@ -57,7 +57,7 @@ let rec lower (lcx : Context.lcx) mdl =
     | Fn (fn, _) -> lower_fn fn
     | Mod { resolved_mod = Some mdl; _ } -> lower lcx mdl
     | Impl { items; _ } -> items#iter (function AssocFn fn -> lower_fn fn)
-    | Type _ | ExternMod _ -> ()
+    | Type _ | ExternMod _ | Using _ -> ()
     | Foreign (fns, _) -> fns#iter lower_fn
     | _ -> assert false
   in

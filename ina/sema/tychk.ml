@@ -825,7 +825,7 @@ let rec tychk cx (modd : modd) =
     | Fn (func, _) -> tychk_fn cx func
     | Foreign (funcs, _) -> funcs#iter (fun f -> tychk_fn cx f)
     | Impl { items; _ } -> items#iter (function AssocFn f -> tychk_fn cx f)
-    | Type _ | ExternMod _ -> ()
+    | Type _ | ExternMod _ | Using _ -> ()
     | Mod m ->
         (match m.resolved_mod with Some modd -> tychk cx modd | None -> ())
   in
