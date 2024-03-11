@@ -1,0 +1,8 @@
+// EXIT_CODE: 0
+
+mod foo;
+using foo::foo;
+
+fn main() {
+    assert foo::test(34) == 69;
+}

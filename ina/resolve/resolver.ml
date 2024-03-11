@@ -314,31 +314,33 @@ class resolver tcx modd =
            | Some m -> self#get_root_mod m
            | _ -> assert false)
 
-    method resolve_ident_in_imports mdl (segment : path_segment) : res =
+    method resolve_path_in_imports mdl (segments : path_segment vec) : res =
       let len = mdl.imports#len in
-      let segments = new vec in
-      segments#push segment;
       let rec f i =
         let import = mdl.imports#get i in
-        let res = tcx#res_map#unsafe_get import.path.path_id in
-        let did = binding_to_def_id (Res res) in
-        let mdl = modules#unsafe_get did in
-        match import.ikind with
-        | Named { source; ns } when source = segment.ident ->
-            (match ns with
-             | Some ns -> self#resolve_path_in_modul mdl segments ns
-             | None ->
-                 let tyres = self#resolve_path_in_modul mdl segments Type in
-                 if tyres = Err
+        match tcx#res_map#get import.path.path_id with
+        | Some res ->
+            let did = binding_to_def_id (Res res) in
+            let mdl = modules#unsafe_get did in
+            (match import.ikind with
+             | Named { source; ns } when source = (segments#get 0).ident ->
+                 (match ns with
+                  | Some ns -> self#resolve_path_in_modul mdl segments ns
+                  | None ->
+                      let tyres =
+                        self#resolve_path_in_modul mdl segments Type
+                      in
+                      if tyres = Err
+                      then self#resolve_path_in_modul mdl segments Value
+                      else tyres)
+             | Glob ->
+                 let res = self#resolve_path_in_modul mdl segments Type in
+                 if res = Err
                  then self#resolve_path_in_modul mdl segments Value
-                 else tyres)
-        | Glob ->
-            let res = self#resolve_path_in_modul mdl segments Type in
-            if res = Err
-            then self#resolve_path_in_modul mdl segments Value
-            else res
-        | _ when i >= len - 1 -> Err
-        | _ -> f (i + 1)
+                 else res
+             | _ when i >= len - 1 -> Err
+             | _ -> f (i + 1))
+        | None -> Err
       in
       if len = 0 then Err else f 0
 
@@ -379,7 +381,10 @@ class resolver tcx modd =
                            (print_mkind modul'.mkind);
                       self#resolve_ident_in_lexical_scope modul' segment ns
                   | _ -> Err)
-             | _ -> self#resolve_ident_in_imports mdl segment)
+             | _ ->
+                 let segments = new vec in
+                 segments#push segment;
+                 self#resolve_path_in_imports mdl segments)
       in
       tcx#res_map#insert' segment.id res;
       res
@@ -459,7 +464,7 @@ class resolver tcx modd =
             let res = f (scopes#len - 1) in
             let res =
               if res = Err
-              then self#resolve_ident_in_imports mdl seg
+              then self#resolve_path_in_imports mdl segs
               else res
             in
             tcx#res_map#insert' seg.id res;
@@ -468,8 +473,9 @@ class resolver tcx modd =
             segs#pop_front;
             self#resolve_path_in_modul mod_root segs ns
         | _ ->
-            let mdl = self#get_root_mod mdl in
-            self#resolve_path_in_modul mdl segs ns
+            let mdl' = self#get_root_mod mdl in
+            let res = self#resolve_path_in_modul mdl' segs ns in
+            if res = Err then self#resolve_path_in_imports mdl segs else res
       in
       (* dbg "%s\n" (print_res res); *)
       res
@@ -660,6 +666,7 @@ class resolver tcx modd =
                  let key = { ident = name; disambiguator = 0; ns = Value } in
                  if not @@ mdl.resolutions#has key
                  then self#not_found_in_module path name span
+             | Glob -> visit_path path mdl (Some Type)
              | _ ->
                  let segments = new vec in
                  segments#copy path.segments;
