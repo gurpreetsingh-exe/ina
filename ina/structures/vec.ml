@@ -54,6 +54,11 @@ class ['a] vec =
     method iteri f = Array.iteri f inner
     method iter_if cond f = Array.iter (fun bb -> if cond bb then f bb) inner
 
+    method filter pred =
+      let res = new vec in
+      self#iter (fun v -> if pred v then res#push v);
+      res
+
     method join sep f =
       Array.to_list inner |> List.map f |> String.concat sep
 

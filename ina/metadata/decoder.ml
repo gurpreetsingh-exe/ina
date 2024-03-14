@@ -46,3 +46,10 @@ let decode_hashmap dec map kf vf =
     map#insert' k v
   done
 ;;
+
+let decode_option dec f =
+  match dec#read_usize with
+  | 0 -> Some (f dec)
+  | 1 -> None
+  | _ -> assert false
+;;

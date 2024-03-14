@@ -64,6 +64,63 @@ module Module = struct
     | _ -> assert false
   ;;
 
+  let encode_path enc path =
+    Metadata.Encoder.encode_vec enc path.segments (fun e seg ->
+        e#emit_str seg.ident)
+  ;;
+
+  let decode_path dec =
+    let segments = new vec in
+    Metadata.Decoder.decode_vec dec segments (fun d ->
+        Ast.
+          {
+            ident = d#read_str
+          ; args = None
+          ; span = Source.Span.make 0 0
+          ; id = -1
+          });
+    { segments; span = Source.Span.make 0 0; path_id = -1 }
+  ;;
+
+  let encode_import enc import =
+    (match import.ikind with
+     | Named { source; ns } ->
+         enc#emit_with 0L (fun e ->
+             e#emit_str source;
+             match ns with
+             | Some ns ->
+                 e#emit_with 0L (fun e ->
+                     let n = match ns with Type -> 0 | Value -> 1 in
+                     e#emit_usize n)
+             | None -> e#emit_usize 1)
+     | Glob -> enc#emit_usize 1);
+    encode_path enc import.path
+  ;;
+
+  let decode_import dec =
+    let ikind =
+      match dec#read_usize with
+      | 0 ->
+          let source = dec#read_str in
+          let ns =
+            match dec#read_usize with
+            | 0 ->
+                Some
+                  (match dec#read_usize with
+                   | 0 -> Type
+                   | 1 -> Value
+                   | _ -> assert false)
+            | 1 -> None
+            | _ -> assert false
+          in
+          Named { source; ns }
+      | 1 -> Glob
+      | _ -> assert false
+    in
+    let path = decode_path dec in
+    { ikind; path }
+  ;;
+
   let rec encode enc mdl =
     (match mdl.mkind with
      | Def (_, id, name) ->
@@ -78,7 +135,8 @@ module Module = struct
         enc#emit_u8 (match key.ns with Type -> 0 | Value -> 1);
         match binding with
         | Res res -> enc#emit_with 0L (fun e -> encode_res e res)
-        | Module m -> enc#emit_with 1L (fun e -> encode e m))
+        | Module m -> enc#emit_with 1L (fun e -> encode e m));
+    Metadata.Encoder.encode_vec enc mdl.imports encode_import
   ;;
 
   let rec decode resolver dec parent =
@@ -113,6 +171,7 @@ module Module = struct
       in
       resolver#define mdl ident ns binding
     done;
+    Metadata.Decoder.decode_vec dec mdl.imports decode_import;
     mdl
   ;;
 
@@ -315,6 +374,10 @@ class resolver tcx modd =
            | _ -> assert false)
 
     method resolve_path_in_imports mdl (segments : path_segment vec) : res =
+      dbg
+        "resolve_path_in_imports(module = %s, path = %s) = "
+        (print_mkind mdl.mkind)
+        (segments#join "::" (fun seg -> seg.ident));
       let len = mdl.imports#len in
       let rec f i =
         let import = mdl.imports#get i in
@@ -427,8 +490,15 @@ class resolver tcx modd =
                      then Def (Module.binding_to_def_id r, Mod)
                      else f i mdl)
             | None ->
-                dbg "%s\n" (Utils.Printer.red "err");
-                Err
+                let segments = new vec in
+                segments#push seg;
+                let res = self#resolve_path_in_imports mdl segments in
+                if res = Err
+                then dbg "%s\n" (Utils.Printer.red "err")
+                else
+                  dbg "%s\n"
+                  @@ Utils.Printer.green ?bold:(Some false) (print_res res);
+                res
         in
         tcx#res_map#insert' seg.id res;
         res

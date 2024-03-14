@@ -1,3 +1,4 @@
+open Middle
 open Middle.Ty
 open Structures.Vec
 open Printf
@@ -6,6 +7,20 @@ type blocks = {
     locals: Inst.t vec
   ; bbs: Inst.basic_block vec
 }
+
+let encode_blocks enc { locals; bbs } =
+  Metadata.Encoder.(
+    encode_vec enc locals Inst.encode;
+    encode_vec enc bbs Basicblock.encode)
+;;
+
+let decode_blocks dec =
+  Metadata.Decoder.(
+    let locals, bbs = new vec, new vec in
+    decode_vec dec locals Inst.decode;
+    decode_vec dec bbs Basicblock.decode;
+    { locals; bbs })
+;;
 
 let render_blocks tcx { locals; bbs } =
   sprintf
@@ -38,6 +53,24 @@ let gen_id blocks =
     incr bb_id
   in
   blocks.bbs#iter f
+;;
+
+let encode enc fn =
+  Ty.encode enc fn.ty;
+  Inst.encode_instance enc fn.instance;
+  Metadata.Encoder.(encode_vec enc fn.args Inst.encode_value);
+  encode_blocks enc fn.basic_blocks;
+  enc#emit_bool fn.decl
+;;
+
+let decode tcx dec =
+  let ty = Ty.decode tcx dec in
+  let instance = Inst.decode_instance tcx dec in
+  let args = new vec in
+  Metadata.Decoder.decode_vec dec args Inst.decode_value;
+  let basic_blocks = decode_blocks dec in
+  let decl = dec#read_bool in
+  { ty; instance; args; basic_blocks; decl }
 ;;
 
 let render tcx { ty; instance; args; basic_blocks; _ } =

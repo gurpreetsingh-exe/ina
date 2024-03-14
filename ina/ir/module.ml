@@ -6,6 +6,20 @@ let render tcx modulee =
   modulee.items#iter (fun f -> print_endline (Func.render tcx f))
 ;;
 
+let encode enc mdl =
+  let generic_fns =
+    mdl.items#filter (fun { instance = { subst = Subst subst; _ }; _ } ->
+        subst#len <> 0)
+  in
+  Metadata.Encoder.encode_vec enc generic_fns Func.encode
+;;
+
+let decode tcx dec =
+  let items = new vec in
+  Metadata.Decoder.decode_vec dec items (Func.decode tcx);
+  { items }
+;;
+
 let dot_graph_func tcx name bbs out_dir =
   let strip_tab i =
     let len = String.length i in

@@ -35,6 +35,9 @@ let append_succs bb succs =
   succs#iter (fun bb0 -> bb0.pred#push bb)
 ;;
 
+let encode enc bb = assert false
+let decode dec = assert false
+
 let render tcx bb : string =
   let preds =
     if bb.pred#empty

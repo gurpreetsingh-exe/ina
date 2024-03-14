@@ -94,9 +94,7 @@ class type_lowering resolver modd =
                 resolver#tcx#create_def def_id ty;
                 Generics.{ name; def_id; index })
       in
-      let generics' =
-        Generics.{ parent; parent_count; params; param_def_id_to_index }
-      in
+      let generics' = Generics.{ parent; parent_count; params } in
       generics', Subst (Generics.to_subst generics' resolver#tcx)
 
     method visit_fn (fn : func) =

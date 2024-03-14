@@ -94,6 +94,8 @@ let () =
            sess.timings.lowering <- time;
            mdl.items#iter (fun fn ->
                Transform.run_passes tcx fn.basic_blocks);
+           if sess.options.output_type = ExtMod
+           then Ir.Module.encode tcx#sess.enc mdl;
            if sess.options.print_ir
            then (
              Ir.Module.render tcx mdl;

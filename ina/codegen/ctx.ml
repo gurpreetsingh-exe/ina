@@ -1,6 +1,8 @@
+open Ir
 open Middle.Ctx
 open Utils.Path
 open Structures.Hashmap
+open Structures.Vec
 open Monomorphize
 
 module type CodegenBackend = sig
@@ -20,7 +22,13 @@ module MakeCodegenBackend (T : CodegenBackend) = struct
   let emit cx output = T.emit cx output
 end
 
-let codegen (tcx : tcx) mdl =
+let codegen (tcx : tcx) (mdl : Module.t) =
+  let pending_decoders = tcx#decoders in
+  let items = new vec in
+  pending_decoders#iter (fun dec ->
+      let mdl = Ir.Module.decode tcx dec in
+      items#append mdl.items);
+  mdl.items#append items;
   let items = Collect.collect tcx mdl in
   let mdl = Ir.Module.{ items } in
   match tcx#sess.options.backend with

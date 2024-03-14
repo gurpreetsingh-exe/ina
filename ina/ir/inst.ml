@@ -1,3 +1,4 @@
+open Middle
 open Middle.Ty
 open Middle.Def_id
 open Printf
@@ -14,6 +15,24 @@ and instance = {
 }
 
 and item = Fn of instance
+
+let encode_instance enc { def; subst } =
+  (match def with
+   | Fn did -> enc#emit_with 0L (fun e -> Def_id.encode e did)
+   | Intrinsic did -> enc#emit_with 1L (fun e -> Def_id.encode e did));
+  Ty.encode_subst enc subst
+;;
+
+let decode_instance tcx dec =
+  let def =
+    match dec#read_usize with
+    | 0 -> Fn (Def_id.decode dec)
+    | 1 -> Intrinsic (Def_id.decode dec)
+    | _ -> assert false
+  in
+  let subst = Ty.decode_subst tcx dec in
+  { def; subst }
+;;
 
 let instance_def_id instance =
   instance.def |> function Fn id | Intrinsic id -> id
@@ -261,3 +280,8 @@ let render_inst tcx inst : string =
   | Trap _ -> "trap"
   | Nop -> "nop"
 ;;
+
+let encode enc = function _ -> assert false
+let encode_value enc = function _ -> assert false
+let decode dec = assert false
+let decode_value dec = assert false

@@ -40,6 +40,12 @@ let encode_hashmap enc map kf vf =
       vf enc v)
 ;;
 
+let encode_option enc opt f =
+  match opt with
+  | Some v -> enc#emit_with 0L (fun e -> f e v)
+  | None -> enc#emit_usize 1
+;;
+
 module type Encodable = sig
   type t
 

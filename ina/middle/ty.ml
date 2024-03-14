@@ -156,18 +156,9 @@ module Generics = struct
       parent: def_id option
     ; parent_count: int
     ; params: generic_param_def vec
-    ; param_def_id_to_index: (def_id, int) hashmap
   }
 
-  let empty =
-    {
-      parent = None
-    ; params = new vec
-    ; parent_count = 0
-    ; param_def_id_to_index = new hashmap
-    }
-  ;;
-
+  let empty = { parent = None; params = new vec; parent_count = 0 }
   let count self = self.parent_count + self.params#len
 
   let rec to_subst self tcx =
@@ -197,15 +188,25 @@ module Generics = struct
         Ty (tcx#ty_param (index - self.parent_count) name))
   ;;
 
-  let rec param_def_id_to_index' self tcx did =
-    self.param_def_id_to_index#get did |> function
-    | Some idx -> Some idx
-    | None ->
-        self.parent |> ( function
-        | Some parent ->
-            let parent = tcx#generics_of parent in
-            param_def_id_to_index' parent tcx did
-        | None -> None )
+  let encode enc generics =
+    encode_option enc generics.parent Def_id.encode;
+    enc#emit_usize generics.parent_count;
+    encode_vec enc generics.params (fun e param ->
+        e#emit_str param.name;
+        Def_id.encode e param.def_id;
+        e#emit_usize param.index)
+  ;;
+
+  let decode dec =
+    let parent = decode_option dec Def_id.decode in
+    let parent_count = dec#read_usize in
+    let params = new vec in
+    decode_vec dec params (fun d ->
+        let name = d#read_str in
+        let def_id = Def_id.decode d in
+        let index = d#read_usize in
+        { name; def_id; index });
+    { parent; parent_count; params }
   ;;
 
   let display_param param =
@@ -288,11 +289,21 @@ let rec encode enc ty =
   | Bool | Str | Unit -> enc#emit_with disc (fun _ -> ())
   | Ptr (m, ty) | Ref (m, ty) -> enc#emit_with disc (fun e -> encode e ty)
   | Adt (id, _) -> enc#emit_with disc (fun e -> Def_id.encode e id)
-  | Fn (id, _) -> enc#emit_with disc (fun e -> Def_id.encode e id)
+  | Fn (id, subst) ->
+      enc#emit_with disc (fun e ->
+          Def_id.encode e id;
+          encode_subst e subst)
   | FnPtr fn -> enc#emit_with disc (fun e -> Fn.encode e fn)
+  | Param { name; index } ->
+      enc#emit_with disc (fun e ->
+          e#emit_str name;
+          e#emit_usize index)
   | _ ->
       print_endline @@ render_ty ty;
       assert false
+
+and encode_subst enc (Subst subst) =
+  encode_vec enc subst (fun e (Ty ty) -> encode e ty)
 ;;
 
 Fn.__encode_fn :=
@@ -323,11 +334,23 @@ let rec decode tcx dec =
        let abi = dec#read_usize |> abi_of_enum |> Option.get in
        FnPtr { args; ret; is_variadic; abi }
    | 10 -> Unit
-   | 12 -> Fn (Def_id.decode dec, Subst (new vec))
+   | 11 ->
+       let name = dec#read_str
+       and index = dec#read_usize in
+       Param { name; index }
+   | 12 ->
+       let did = Def_id.decode dec in
+       let subst = decode_subst tcx dec in
+       Fn (did, subst)
    | i ->
        printf "%d\n" i;
        assert false)
   |> tcx#intern
+
+and decode_subst tcx dec =
+  let subst = new vec in
+  decode_vec dec subst (fun d -> Ty (decode tcx d));
+  Subst subst
 ;;
 
 let decode_fn tcx dec =

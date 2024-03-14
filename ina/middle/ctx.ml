@@ -234,6 +234,7 @@ class tcx sess =
     val impls : (def_id, ty ref) hashmap = new hashmap
     val generics : (def_id, Generics.t) hashmap = new hashmap
     val substs : (def_id, generic_arg vec) hashmap = new hashmap
+    val decoders: decoder vec = new vec
     val mutable impl_id = 0
 
     val prim_ty_assoc_fn : (ty ref, (string, def_id) hashmap) hashmap =
@@ -270,6 +271,7 @@ class tcx sess =
     method res_map = res_map
     method spans = spans
     method set_main id = main <- Some id
+    method decoders = decoders
     method main = main
 
     method is_extern did =
@@ -300,7 +302,8 @@ class tcx sess =
       encode_hashmap enc prim_ty_assoc_fn Ty.encode (fun e methods ->
           encode_hashmap e methods (fun e s -> e#emit_str s) Def_id.encode);
       encode_hashmap enc definitions Def_id.encode DefKey.encode;
-      encode_hashmap enc impls Def_id.encode Ty.encode
+      encode_hashmap enc impls Def_id.encode Ty.encode;
+      encode_hashmap enc generics Def_id.encode Generics.encode
 
     method decode_metadata (dec : decoder) =
       decode_vec dec extern_mods (fun dec -> dec#read_str);
@@ -320,7 +323,8 @@ class tcx sess =
           decode_hashmap dec methods (fun dec -> dec#read_str) Def_id.decode;
           methods);
       decode_hashmap dec definitions Def_id.decode DefKey.decode;
-      decode_hashmap dec impls Def_id.decode (self |> Ty.decode)
+      decode_hashmap dec impls Def_id.decode (self |> Ty.decode);
+      decode_hashmap dec generics Def_id.decode Generics.decode
 
     method unit name =
       match extmods#get name with

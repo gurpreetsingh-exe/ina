@@ -308,7 +308,8 @@ class visitor resolver (modd : Ast.modd) parent dir_ownership =
                     | _ -> assert false);
                    resolver#define dummy !name' Type (Module mdl');
                    dummy);
-               resolver#tcx#decode_metadata dec)
+               resolver#tcx#decode_metadata dec;
+               resolver#tcx#decoders#push dec)
 
     method with_parent def f =
       let tmp = parent_id in
