@@ -344,6 +344,11 @@ class resolver tcx modd =
       let res = self#resolutions mdl in
       match res#get key with Some nameres -> nameres | None -> assert false
 
+    method res_to_module =
+      function
+      | Middle.Ctx.Def (did, Mod) -> Some (modules#unsafe_get did)
+      | _ -> None
+
     method try_define mdl key binding =
       (* self#set_binding_parent_module binding mdl; *)
       match mdl.resolutions#insert key binding with
@@ -464,7 +469,7 @@ class resolver tcx modd =
         let ns = if i = segs_len - 1 then ns else Type in
         let seg = segs#get i in
         dbg
-          "  #%d: resolve_segment(module = %s, segment = %s) = "
+          "  #%d: resolve_segment(module = %s, segment = %s) = %!"
           i
           (print_mkind mdl.mkind)
           seg.ident;
@@ -493,6 +498,15 @@ class resolver tcx modd =
                 let segments = new vec in
                 segments#push seg;
                 let res = self#resolve_path_in_imports mdl segments in
+                let i = i + 1 in
+                let res =
+                  if i = segs_len
+                  then res
+                  else
+                    match self#res_to_module res with
+                    | Some mdl -> f i mdl
+                    | None -> Err
+                in
                 if res = Err
                 then dbg "%s\n" (Utils.Printer.red "err")
                 else
@@ -541,7 +555,11 @@ class resolver tcx modd =
             res
         | _, _, "mod" ->
             segs#pop_front;
-            self#resolve_path_in_modul mod_root segs ns
+            if segs#empty
+            then
+              let did = binding_to_def_id (Module mod_root) in
+              Def (did, Mod)
+            else self#resolve_path_in_modul mod_root segs ns
         | _ ->
             let mdl' = self#get_root_mod mdl in
             let res = self#resolve_path_in_modul mdl' segs ns in
