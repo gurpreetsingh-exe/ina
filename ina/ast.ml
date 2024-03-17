@@ -111,7 +111,25 @@ and strukt = {
   ; id: node_id
 }
 
-and typ = Struct of strukt
+and variant = {
+    name: string
+  ; fields: ty vec
+  ; span: Span.t
+  ; id: node_id
+}
+
+and adt = {
+    name: string
+  ; variants: variant vec
+  ; generics: generics
+  ; span: Span.t
+  ; id: node_id
+}
+
+and typ =
+  | Struct of strukt
+  | Adt of adt
+
 and assoc_item = AssocFn of func
 
 and impl = {

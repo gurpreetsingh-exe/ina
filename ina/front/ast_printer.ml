@@ -313,7 +313,10 @@ and render_struct (strukt : strukt) prefix =
   in
   render_children ?prefix:(Some prefix) strukt.fields render_field
 
-and render_type ty = match ty with Struct strukt -> render_struct strukt
+and render_type ty =
+  match ty with
+  | Struct strukt -> render_struct strukt
+  | _ -> failwith "todo"
 
 and render_impl (impl : impl) prefix =
   id "Extension" impl.id impl.span;

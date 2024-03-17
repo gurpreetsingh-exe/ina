@@ -15,6 +15,9 @@ type def_kind =
   | AssocFn
   | Intrinsic
   | Impl
+  (* TODO: can't move this up because of encoding bs *)
+  | Adt
+  | Cons
 [@@deriving enum]
 
 let def_id inner mod_id = { inner; mod_id }
@@ -36,6 +39,8 @@ let print_def_id def_id = sprintf "def_id#%d:%d" def_id.inner def_id.mod_id
 let print_def_kind = function
   | Mod -> "module"
   | Struct -> "struct"
+  | Adt -> "adt"
+  | Cons -> "constructor"
   | TyParam -> "type parameter"
   | Fn -> "function"
   | AssocFn -> "associated function"

@@ -207,17 +207,44 @@ class visitor resolver (modd : Ast.modd) parent dir_ownership =
       self#with_parent did (fun () ->
           impl.items#iter (function AssocFn fn -> self#visit_assoc_fn fn))
 
-    method visit_struct { name; id; span; _ } =
+    method visit_struct ({ name; id; span; _ } : strukt) =
       resolver#tcx#insert_span id span;
       let did = local_def_id id in
       ignore (resolver#tcx#define parent_id did (TypeNs name));
       let res = Res (Def (did, Struct)) in
       resolver#define mdl name Type res
 
+    method visit_adt (adt : adt) =
+      resolver#tcx#insert_span adt.id adt.span;
+      let did = local_def_id adt.id in
+      ignore (resolver#tcx#define parent_id did (TypeNs adt.name));
+      let m =
+        {
+          mkind = Def (Adt, did, adt.name)
+        ; parent = Some mdl
+        ; resolutions = new hashmap
+        ; imports = new vec
+        }
+      in
+      assert (resolver#modules#insert did m = None);
+      let res = Module m in
+      resolver#define mdl adt.name Type res;
+      self#with_module m (fun () ->
+          self#with_parent did (fun () ->
+              adt.variants#iter (fun variant -> self#visit_variant variant)))
+
+    method visit_variant { name; id; span; _ } =
+      resolver#tcx#insert_span id span;
+      let did = local_def_id id in
+      ignore (resolver#tcx#define parent_id did (ValueNs name));
+      let res = Res (Def (did, Cons)) in
+      resolver#define mdl name Value res
+
     method visit_item item =
       match item with
       | Ast.Fn (fn, _) -> self#visit_fn fn
       | Type (Struct s) -> self#visit_struct s
+      | Type (Adt adt) -> self#visit_adt adt
       | Foreign (fns, id) ->
           let did = local_def_id id in
           let did = resolver#tcx#define parent_id did ExternMod in

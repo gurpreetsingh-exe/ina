@@ -164,6 +164,7 @@ class type_lowering resolver modd =
       match item with
       | Ast.Fn (fn, _) -> self#visit_fn fn
       | Type (Struct s) -> self#visit_struct s
+      | Type (Adt adt) -> self#visit_adt adt
       | Foreign (fns, _) -> fns#iter (fun f -> self#visit_fn f)
       | Impl impl -> self#visit_impl impl
       | Mod { resolved_mod; _ } ->
@@ -171,6 +172,28 @@ class type_lowering resolver modd =
            | Some m -> (new type_lowering resolver m)#lower
            | None -> ())
       | ExternMod _ | Using _ -> ()
+
+    method visit_adt adt =
+      let generics, subst = self#visit_generics adt.generics in
+      let id = adt.id in
+      let def_id = local_def_id id in
+      resolver#tcx#define_generics def_id generics;
+      let variants =
+        map adt.variants (fun variant ->
+            let def_id = local_def_id variant.id in
+            let fields =
+              mapi variant.fields (fun i ty ->
+                  Field
+                    {
+                      ty = resolver#tcx#ast_ty_to_ty ty
+                    ; name = string_of_int i
+                    })
+            in
+            resolver#tcx#variant def_id fields)
+      in
+      let ty = resolver#tcx#adt_with_variants def_id variants subst in
+      assert (resolver#tcx#node_id_to_def_id#insert id def_id = None);
+      resolver#tcx#create_def def_id ty
 
     method visit_mod =
       let def_id = local_def_id modd.mod_id in

@@ -228,13 +228,14 @@ class tcx sess =
     val mutable _types = dummy_types
     val adt_def : (def_id, adt) hashmap = new hashmap
     val fn_def : (def_id, fnsig) hashmap = new hashmap
+    val variant_def : (def_id, variant) hashmap = new hashmap
     val assoc_fn : (def_id, (string, def_id) hashmap) hashmap = new hashmap
     val extern_mods : string vec = new vec
     val definitions : (def_id, DefKey.t) hashmap = new hashmap
     val impls : (def_id, ty ref) hashmap = new hashmap
     val generics : (def_id, Generics.t) hashmap = new hashmap
     val substs : (def_id, generic_arg vec) hashmap = new hashmap
-    val decoders: decoder vec = new vec
+    val decoders : decoder vec = new vec
     val mutable impl_id = 0
 
     val prim_ty_assoc_fn : (ty ref, (string, def_id) hashmap) hashmap =
@@ -452,7 +453,7 @@ class tcx sess =
 
     method lookup_method_def_id ty name =
       match !ty with
-      | Adt (did, _) ->
+      | Ty.Adt (did, _) ->
           assoc_fn#get did
           |> Option.map (fun map -> map#get name)
           |> Option.join
@@ -489,7 +490,7 @@ class tcx sess =
 
     method generics_of_ty ty =
       match !ty with
-      | Adt (did, _) | Fn (did, _) -> Some (self#generics_of did)
+      | Ty.Adt (did, _) | Fn (did, _) -> Some (self#generics_of did)
       | _ -> None
 
     method ast_ty_to_res (ty : Ast.ty) =
@@ -525,7 +526,7 @@ class tcx sess =
       | _ -> assert false
 
     method is_ref ty = match !ty with Ref _ -> true | _ -> false
-    method is_copy ty = match !ty with Adt _ -> false | _ -> true
+    method is_copy ty = match !ty with Ty.Adt _ -> false | _ -> true
 
     method describe_pointer ty =
       match !ty with
@@ -550,6 +551,13 @@ class tcx sess =
 
     method adt def_id subst = self#intern (Adt (def_id, subst))
     method get_adt def_id = adt_def#unsafe_get def_id
+
+    method variant def_id fields =
+      let v = Variant { def_id; fields } in
+      assert (variant_def#insert def_id v = None);
+      v
+
+    method get_variant def_id = variant_def#unsafe_get def_id
     method fn def_id subst = self#intern (Fn (def_id, subst))
     method get_fn def_id = fn_def#unsafe_get def_id
 
@@ -558,7 +566,7 @@ class tcx sess =
 
     method get_subst ty =
       match !ty with
-      | Adt (_, Subst subst) | Fn (_, Subst subst) -> Some subst
+      | Ty.Adt (_, Subst subst) | Fn (_, Subst subst) -> Some subst
       | _ -> None
 
     method ty_with_subst ty =
@@ -590,7 +598,7 @@ class tcx sess =
 
     method is_generic ty =
       match !ty with
-      | Adt (_, Subst subst) | Fn (_, Subst subst) -> not subst#empty
+      | Ty.Adt (_, Subst subst) | Fn (_, Subst subst) -> not subst#empty
       | Param _ -> true
       | Ptr (_, ty) | Ref (_, ty) -> self#is_generic ty
       | _ -> false
@@ -645,9 +653,23 @@ class tcx sess =
       | Bool -> 1
       | _ -> assert false
 
+    method is_non_enum ty =
+      match !ty with
+      | Ty.Adt (def_id, _) ->
+          let adt = self#get_adt def_id in
+          adt.variants#len = 1
+      | _ -> false
+
+    method variants ty =
+      match !ty with
+      | Ty.Adt (def_id, Subst subst) ->
+          let adt = SubstFolder.fold_adt self (self#get_adt def_id) subst in
+          Some adt.variants
+      | _ -> None
+
     method non_enum_variant ty =
       match !ty with
-      | Adt (def_id, Subst subst) ->
+      | Ty.Adt (def_id, Subst subst) ->
           let adt = SubstFolder.fold_adt self (self#get_adt def_id) subst in
           let variants = adt.variants in
           assert (variants#len = 1);
@@ -719,7 +741,7 @@ class tcx sess =
           in
           let res = res_map#unsafe_get path.path_id in
           res |> ( function
-          | Def (def_id, Struct) -> self#adt def_id (Subst subst)
+          | Def (def_id, (Struct | Adt)) -> self#adt def_id (Subst subst)
           | Def (def_id, TyParam) -> self#ty_param_from_def_id def_id
           | _ -> assert false )
       | ImplicitSelf ->

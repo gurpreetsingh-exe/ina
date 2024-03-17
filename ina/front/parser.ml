@@ -899,12 +899,51 @@ class parser pcx file tokenizer =
         let* ty = self#parse_ty in
         Ok (ty, ident)
       in
-      let* fields =
-        parse_spanned_with_sep self LBrace RBrace Comma parse_field
+      let parse_variant () =
+        let s = token.span.lo in
+        let* name = self#parse_ident in
+        let* fields =
+          if token.kind = LParen
+          then
+            parse_spanned_with_sep self LParen RParen Comma (fun () ->
+                self#parse_ty)
+          else Ok (new vec)
+        in
+        Ok { name; fields; span = self#mk_span s; id = self#id }
       in
-      Ok
-        (Struct
-           { name; fields; generics; span = self#mk_span s; id = self#id })
+      match token.kind with
+      | LBrace ->
+          let* fields =
+            parse_spanned_with_sep self LBrace RBrace Comma parse_field
+          in
+          Ok
+            (Struct
+               {
+                 name
+               ; fields
+               ; generics
+               ; span = self#mk_span s
+               ; id = self#id
+               })
+      | Ident | Pipe ->
+          let variants = new vec in
+          let rec go () =
+            self#eat_if_present Pipe;
+            let* variant = parse_variant () in
+            variants#push variant;
+            if token.kind = Pipe then go () else Ok ()
+          in
+          let* _ = go () in
+          Ok
+            (Adt
+               {
+                 name
+               ; variants
+               ; generics
+               ; span = self#mk_span s
+               ; id = self#id
+               })
+      | _ -> assert false
 
     method parse_impl =
       let s = token.span.lo in

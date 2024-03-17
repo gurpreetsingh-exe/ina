@@ -56,6 +56,11 @@ module Module = struct
     | _ -> assert false
   ;;
 
+  let binding_to_def_kind : name_resolution -> def_kind = function
+    | Res (Def (_, kind)) | Module { mkind = Def (kind, _, _); _ } -> kind
+    | _ -> assert false
+  ;;
+
   let binding_to_def_path name : name_resolution -> def_data = function
     | Res (Def (_, (Fn | Intrinsic))) -> ValueNs name
     | Res (Def (_, (Mod | Struct))) | Module { mkind = Def (Mod, _, _); _ }
@@ -346,7 +351,7 @@ class resolver tcx modd =
 
     method res_to_module =
       function
-      | Middle.Ctx.Def (did, Mod) -> Some (modules#unsafe_get did)
+      | Middle.Ctx.Def (did, (Mod | Adt)) -> Some (modules#unsafe_get did)
       | _ -> None
 
     method try_define mdl key binding =
@@ -496,7 +501,10 @@ class resolver tcx modd =
                           (print_mkind mdl.mkind);
                      let i = i + 1 in
                      if i = segs_len
-                     then Def (Module.binding_to_def_id r, Mod)
+                     then
+                       Def
+                         ( Module.binding_to_def_id r
+                         , Module.binding_to_def_kind r )
                      else f i mdl)
             | None ->
                 let segments = new vec in
@@ -724,6 +732,13 @@ class resolver tcx modd =
         with_generics_params self strukt.generics (fun () ->
             strukt.fields#iter (fun (ty, _) -> resolve_ty ty))
       in
+      let visit_variant (variant : variant) =
+        variant.fields#iter resolve_ty
+      in
+      let visit_adt (adt : adt) =
+        with_generics_params self adt.generics (fun () ->
+            adt.variants#iter visit_variant)
+      in
       let visit_impl { ty; generics; items; _ } =
         with_generics_params self generics (fun () ->
             resolve_ty ty;
@@ -745,6 +760,7 @@ class resolver tcx modd =
              | None -> ())
         | Fn (func, _) -> visit_fn func
         | Type (Struct strukt) -> visit_struct strukt
+        | Type (Adt adt) -> visit_adt adt
         | Foreign (fns, _) -> fns#iter (fun f -> visit_fn f)
         | Impl impl -> visit_impl impl
         | Using using ->
