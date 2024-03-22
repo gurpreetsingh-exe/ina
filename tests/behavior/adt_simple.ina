@@ -1,0 +1,13 @@
+// EXIT_CODE: 0
+
+using Option::*;
+
+type Option[T] =
+    | Some(T)
+    | None
+
+fn main() -> i32 {
+    let mut opt: Option[i32] = None;
+    opt = Some(5);
+    0
+}

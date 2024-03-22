@@ -115,7 +115,7 @@ and fn cx ty =
 
 and define cx name ty =
   match !ty with
-  | Adt _ ->
+  | Adt _ when cx.tcx#is_non_enum ty ->
       cx.defined_types#insert' name ();
       let (Variant variant) = cx.tcx#non_enum_variant ty |> Option.get in
       let fields =
@@ -128,6 +128,38 @@ and define cx name ty =
       in
       prelude ^ sprintf "// %s\n" (cx.tcx#render_ty ty);
       prelude ^ sprintf "typedef struct %s {\n%s\n} %s;\n\n" name fields name
+  | Adt _ ->
+      (* cx.tcx#render_ty ty |> print_endline; *)
+      cx.defined_types#insert' name ();
+      let variants = cx.tcx#variants ty |> Option.get in
+      let i = ref 0 in
+      let variants =
+        variants#join "\n" (function Variant { fields; _ } ->
+            let f =
+              fields#join "\n" (function Field { ty; name } ->
+                  let name' = backend_ty cx ty in
+                  (match cx.defined_types#get name' with
+                   | Some () -> ()
+                   | None -> define cx name' ty);
+                  sprintf "  %s _%s;" (backend_ty cx ty) name)
+            in
+            let name = String.cat name @@ string_of_int !i in
+            if not fields#empty
+            then
+              prelude
+              ^ sprintf "typedef struct %s {\n%s\n} %s;\n" name f name;
+            let field = sprintf "    %s _%d;" name !i in
+            incr i;
+            if not fields#empty then field else "")
+      in
+      let union = sprintf "  union {\n%s\n  } data;" variants in
+      prelude ^ sprintf "// %s\n" (cx.tcx#render_ty ty);
+      prelude
+      ^ sprintf
+          "typedef struct %s {\n  uint8_t discriminant;\n%s\n} %s;\n\n"
+          name
+          union
+          name
   | Fn _ | FnPtr _ | Str -> ()
   | _ -> ()
 ;;
@@ -200,6 +232,20 @@ let gen cx =
              name)
     | Const { kind; ty } -> get_const ty kind
     | Label bb -> sprintf "bb%d" bb.bid
+    | Aggregate (Adt (did, vidx, (Subst subst as s)), args) ->
+        let ty = cx.tcx#adt did s in
+        let ty' = backend_ty cx ty in
+        let data =
+          if not args#empty
+          then
+            let args = map args (fun v -> get_value v) in
+            let args = mapi args (fun i arg -> sprintf "._%d = %s" i arg) in
+            let args = args#join ", " Fun.id in
+            let vname = String.cat ty' @@ string_of_int vidx in
+            sprintf "(%s) { %s }" vname args
+          else "{}"
+        in
+        sprintf "(%s) { .discriminant = %d, .data = %s }" ty' vidx data
   in
   let rec gen_bb bb =
     let open Ir.Inst in

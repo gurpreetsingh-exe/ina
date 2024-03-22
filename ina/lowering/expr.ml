@@ -172,6 +172,19 @@ let rec lower_block (lcx : lcx) block =
              let subst = Fn.subst ty in
              let instance = { def = Fn id; subst = Subst subst } in
              Global (Fn instance)
+         | Def (id, Cons) ->
+             let subst = tcx#get_subst ty |> Option.get in
+             let key = tcx#def_key id in
+             let parenid = Option.get key.parent in
+             let adt = tcx#adt parenid (Subst subst) in
+             let variants = tcx#variants adt |> Option.get in
+             let vidx = ref @@ -1 in
+             for i = 0 to variants#len - 1 do
+               let (Variant variant) = variants#get i in
+               if variant.def_id = id then vidx := i
+             done;
+             assert (!vidx >= 0);
+             Aggregate (Adt (parenid, !vidx, Subst subst), new vec)
          | Def (id, Intrinsic) ->
              let subst = Fn.subst ty in
              let instance = { def = Intrinsic id; subst = Subst subst } in
@@ -181,7 +194,9 @@ let rec lower_block (lcx : lcx) block =
         let ty = expr_ty expr in
         let fn = lower expr in
         let args = map args (fun arg -> lower arg) in
-        lcx#bx#call ty fn args e.expr_span
+        (match fn with
+         | Aggregate (adt, _) -> Aggregate (adt, args)
+         | _ -> lcx#bx#call ty fn args e.expr_span)
     | Deref expr ->
         let ptr = lower expr in
         lcx#bx#move ptr e.expr_span

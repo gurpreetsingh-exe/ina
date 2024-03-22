@@ -48,12 +48,17 @@ type infer_ty =
   | TyVar of tyvid
 
 let display_intvid (vid : intvid) = sprintf "\x1b[1;31m?%di\x1b[0m" vid.index
-let display_floatvid vid = sprintf "\x1b[1;31m?%df\x1b[0m" vid.index
+
+let display_floatvid (vid : floatvid) =
+  sprintf "\x1b[1;31m?%df\x1b[0m" vid.index
+;;
+
+let display_tyvid (vid : tyvid) = sprintf "\x1b[1;31m?%d\x1b[0m" vid.index
 
 let display_infer_ty = function
   | IntVar i -> display_intvid i
   | FloatVar f -> display_floatvid f
-  | TyVar i -> sprintf "\x1b[1;31m?%d\x1b[0m" i.index
+  | TyVar i -> display_tyvid i
 ;;
 
 let render_infer_ty ty dbg =

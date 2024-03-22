@@ -37,6 +37,7 @@ let collect tcx mdl =
       | VReg inst -> VReg (fold_inst2 inst) (* this might be sus *)
       | Label bb -> Label bb
       | Param (ty, name, i) -> Param (fold_ty ty, name, i)
+      | Aggregate (adt, values) -> Aggregate (adt, map values fold_value)
       | Global (Fn instance) -> Global (Fn (fold_instance instance))
     and fold_pair (value, ty) = fold_value value, fold_ty ty
     and fold_inst2 inst = { inst with ty = fold_ty inst.ty }

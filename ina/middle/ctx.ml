@@ -229,6 +229,7 @@ class tcx sess =
     val adt_def : (def_id, adt) hashmap = new hashmap
     val fn_def : (def_id, fnsig) hashmap = new hashmap
     val variant_def : (def_id, variant) hashmap = new hashmap
+    val constructor_def : (def_id, ty ref) hashmap = new hashmap
     val assoc_fn : (def_id, (string, def_id) hashmap) hashmap = new hashmap
     val extern_mods : string vec = new vec
     val definitions : (def_id, DefKey.t) hashmap = new hashmap
@@ -561,6 +562,13 @@ class tcx sess =
     method fn def_id subst = self#intern (Fn (def_id, subst))
     method get_fn def_id = fn_def#unsafe_get def_id
 
+    method write_adt_cons def_id ty =
+      match !ty with
+      | Ty.Fn _ | FnPtr _ -> assert (constructor_def#insert def_id ty = None)
+      | _ -> assert false
+
+    method get_adt_cons def_id = constructor_def#unsafe_get def_id
+
     method subst fnsig (Subst subst) =
       SubstFolder.fold_fnsig self fnsig subst
 
@@ -741,7 +749,22 @@ class tcx sess =
           in
           let res = res_map#unsafe_get path.path_id in
           res |> ( function
-          | Def (def_id, (Struct | Adt)) -> self#adt def_id (Subst subst)
+          | Def (def_id, (Struct | Adt)) ->
+              let generics = self#generics_of def_id in
+              let substorig = Generics.to_subst generics self in
+              if substorig#len <> subst#len
+              then
+                Errors.Diagnostic.(
+                  create
+                    "missing generics for type"
+                    ~labels:
+                      [
+                        Label.primary
+                          (sprintf "expected %d parameter" substorig#len)
+                          ty.span
+                      ])
+                |> self#emit;
+              self#adt def_id (Subst subst)
           | Def (def_id, TyParam) -> self#ty_param_from_def_id def_id
           | _ -> assert false )
       | ImplicitSelf ->

@@ -64,13 +64,40 @@ module FloatVid :
   ;;
 end
 
+module TyVid :
+  UnifyKey
+    with type k = tyvid
+     and type v = ty ref option
+     and type e = ty ref * ty ref = struct
+  type k = tyvid
+  type v = ty ref option
+  type e = ty ref * ty ref
+
+  let index (vid : k) = vid.index
+  let from_index index : k = { index }
+  let tag () = "TyVid"
+  let order_roots _k1 _v1 _k2 _v2 = None
+  let display_key key = display_tyvid key
+  let display_value = function Some ty -> render_ty ty | None -> "None"
+
+  let unify_values (v1 : v) (v2 : v) =
+    match v1, v2 with
+    | None, None -> Ok None
+    | Some v, None | None, Some v -> Ok (Some v)
+    | Some v1, Some v2 when v1 = v2 -> Ok (Some v1)
+    | Some v1, Some v2 -> Error (v1, v2)
+  ;;
+end
+
 module IntUt = Unification_table (IntVid)
 module FloatUt = Unification_table (FloatVid)
+module TyUt = Unification_table (TyVid)
 
 type infer_ctx = {
     tcx: tcx
   ; int_ut: IntUt.t
   ; float_ut: FloatUt.t
+  ; ty_ut: TyUt.t
   ; constraints: ty_constraint vec
 }
 
@@ -79,6 +106,7 @@ let infer_ctx_create tcx =
     tcx
   ; int_ut = IntUt.create ()
   ; float_ut = FloatUt.create ()
+  ; ty_ut = TyUt.create ()
   ; constraints = new vec
   }
 ;;
@@ -89,6 +117,10 @@ let infcx_new_int_var infcx =
 
 let infcx_new_float_var infcx =
   infcx.tcx#intern (Infer (FloatVar (FloatUt.new_key infcx.float_ut None)))
+;;
+
+let infcx_new_ty_var infcx =
+  infcx.tcx#intern (Infer (TyVar (TyUt.new_key infcx.ty_ut None)))
 ;;
 
 let fold_infer_ty infcx v =

@@ -106,6 +106,8 @@ and terminator =
   | Ret of value
   | RetUnit
 
+and aggregate = Adt of (def_id * int * subst)
+
 and value =
   | Const of {
         kind: const_kind
@@ -114,6 +116,7 @@ and value =
   | VReg of t
   | Label of basic_block
   | Param of ty ref * string * int
+  | Aggregate of (aggregate * value vec)
   | Global of item
 
 and const_kind =
@@ -184,6 +187,12 @@ and render_value tcx = function
   | Label bb -> sprintf "label %%bb%d" bb.bid
   | Param (ty, name, _) -> sprintf "%s %%%s" (tcx#render_ty ty) name
   | Global (Fn instance) -> render_instance tcx instance
+  | Aggregate (Adt (did, vidx, subst), values) ->
+      let variants = tcx#variants (tcx#adt did subst) |> Option.get in
+      let (Variant variant) = variants#get vidx in
+      let path, _ = tcx#into_segments variant.def_id in
+      let name = String.concat "::" path in
+      sprintf "%s { %s }" name (values#join ", " (render_value tcx))
 ;;
 
 let get_ty tcx = function
