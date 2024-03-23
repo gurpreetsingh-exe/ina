@@ -394,28 +394,34 @@ class resolver tcx modd =
         then Err
         else
           let import = mdl.imports#get i in
-          match tcx#res_map#get import.path.path_id with
-          | Some res ->
-              let did = binding_to_def_id (Res res) in
-              let mdl = modules#unsafe_get did in
-              (match import.ikind with
-               | Named { source; ns } when source = (segments#get 0).ident ->
-                   (match ns with
-                    | Some ns -> self#resolve_path_in_modul mdl segments ns
-                    | None ->
-                        let tyres =
-                          self#resolve_path_in_modul mdl segments Type
-                        in
-                        if tyres = Err
-                        then self#resolve_path_in_modul mdl segments Value
-                        else tyres)
-               | Glob ->
-                   let res = self#resolve_path_in_modul mdl segments Type in
-                   if res = Err
-                   then self#resolve_path_in_modul mdl segments Value
-                   else res
-               | _ -> f (i + 1))
-          | None -> Err
+          let res =
+            match tcx#res_map#get import.path.path_id with
+            | Some res ->
+                let did = binding_to_def_id (Res res) in
+                let mdl = modules#unsafe_get did in
+                (match import.ikind with
+                 | Named { source; ns } when source = (segments#get 0).ident
+                   ->
+                     (match ns with
+                      | Some ns -> self#resolve_path_in_modul mdl segments ns
+                      | None ->
+                          let tyres =
+                            self#resolve_path_in_modul mdl segments Type
+                          in
+                          if tyres = Err
+                          then self#resolve_path_in_modul mdl segments Value
+                          else tyres)
+                 | Glob ->
+                     let res =
+                       self#resolve_path_in_modul mdl segments Type
+                     in
+                     if res = Err
+                     then self#resolve_path_in_modul mdl segments Value
+                     else res
+                 | _ -> Err)
+            | None -> Err
+          in
+          if res = Err then f (i + 1) else res
       in
       if len = 0 then Err else f 0
 

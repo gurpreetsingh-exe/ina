@@ -40,11 +40,15 @@ class type_lowering resolver modd =
           let tcx = resolver#tcx in
           let res = tcx#res_map#unsafe_get path.path_id in
           (match res with
-           | Def (_, Struct) ->
+           | Def (id, ((Struct | Adt) as kind)) ->
                let open Middle.Ctx in
                let name = (Option.get path.segments#last).ident in
                (match tcx#lookup_assoc_fn res name with
                 | Some did ->
+                    (if path.segments#len >= 2
+                     then
+                       let slast = path.segments#get (-2) in
+                       ignore (tcx#res_map#insert slast.id (Def (id, kind))));
                     ignore
                       (tcx#res_map#insert path.path_id (Def (did, AssocFn)))
                 | None ->
