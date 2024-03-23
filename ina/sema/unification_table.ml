@@ -60,8 +60,8 @@ module Unification_table (K : UnifyKey) = struct
     let key = K.from_index len in
     let v = VarValue.create key value in
     ut.values <- Array.append ut.values [|v|];
-    dbg "%s: created new key: %s\n" (K.tag ()) (K.display_key key);
-    dbg "  %s\n" (VarValue.display v);
+    dbg "%s: created new key: %s\n%!" (K.tag ()) (K.display_key key);
+    dbg "  %s\n%!" (VarValue.display v);
     key
   ;;
 
@@ -84,7 +84,7 @@ module Unification_table (K : UnifyKey) = struct
     let v = value ut key in
     f v;
     dbg
-      "updated variable %s to %s\n"
+      "updated variable %s to %s\n%!"
       (K.display_key key)
       (VarValue.display (value ut key))
   ;;
@@ -97,7 +97,7 @@ module Unification_table (K : UnifyKey) = struct
 
   let unify_roots ut key0 key1 new_value =
     dbg
-      "unify_roots(key0 = %s, key1 = %s, value = %s)\n"
+      "unify_roots(key0 = %s, key1 = %s, value = %s)\n%!"
       (K.display_key key0)
       (K.display_key key1)
       (K.display_value new_value);
@@ -125,7 +125,7 @@ module Unification_table (K : UnifyKey) = struct
 
   let unify_var_var ut t0 t1 =
     dbg
-      "unify_var_var(key0 = %s, key1 = %s)\n"
+      "unify_var_var(key0 = %s, key1 = %s)\n%!"
       (K.display_key t0)
       (K.display_key t1);
     let root_t0 = find ut t0 in
@@ -141,7 +141,7 @@ module Unification_table (K : UnifyKey) = struct
 
   let unify_var_value ut t0 v =
     dbg
-      "unify_var_value(key = %s, value = %s)\n"
+      "unify_var_value(key = %s, value = %s)\n%!"
       (K.display_key t0)
       (K.display_value v);
     let root_t0 = find ut t0 in

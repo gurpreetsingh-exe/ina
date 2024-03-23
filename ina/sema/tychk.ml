@@ -138,6 +138,7 @@ let type_annotation_required name params span =
 ;;
 
 let ty_err_emit (tcx : tcx) err span =
+  (* trace (); *)
   match err with
   | MismatchTy (expected, ty) ->
       let msg =
@@ -241,6 +242,10 @@ let tychk_fn cx fn =
     let expected, found = v in
     FloatMismatch { expected; found }
   in
+  let ty_unification_error (v : TyVid.e) =
+    let expected, found = v in
+    MismatchTy (expected, found)
+  in
   let unify_int_var vid value =
     let* _ =
       Result.map_error
@@ -256,6 +261,14 @@ let tychk_fn cx fn =
         (FloatUt.unify_var_value cx.infcx.float_ut vid (Some value))
     in
     Ok (tcx#float_ty_to_ty value)
+  in
+  let unify_ty_var vid value =
+    let* _ =
+      Result.map_error
+        ty_unification_error
+        (TyUt.unify_var_value cx.infcx.ty_ut vid (Some value))
+    in
+    Ok value
   in
   let rec equate (t0 : ty ref) (t1 : ty ref) : ty ref tyck_result =
     if t0 = t1
@@ -280,6 +293,21 @@ let tychk_fn cx fn =
               (FloatUt.unify_var_var cx.infcx.float_ut i0 i1)
           in
           Ok t0
+      | Infer (TyVar t0'), Infer (TyVar t1') ->
+          let* _ =
+            Result.map_error
+              ty_unification_error
+              (TyUt.unify_var_var cx.infcx.ty_ut t0' t1')
+          in
+          Ok t0
+      | Infer (TyVar t), _ ->
+          (match TyUt.probe_value cx.infcx.ty_ut t with
+           | Some ty -> equate t1 ty
+           | None -> unify_ty_var t t1)
+      | _, Infer (TyVar t) ->
+          (match TyUt.probe_value cx.infcx.ty_ut t with
+           | Some ty -> equate t0 ty
+           | None -> unify_ty_var t t0)
       | Infer _, _ | _, Infer _ -> Error (MismatchTy (t0, t1))
       | Ref (Mut, t0), Ref (Mut, t1) ->
           let* ty = equate t0 t1 in
@@ -292,50 +320,54 @@ let tychk_fn cx fn =
           if fnhash t0' = fnhash t1'
           then Ok t0
           else Error (MismatchTy (t0, t1))
+      | Fn (did0, Subst s0), Fn (did1, Subst s1) ->
+          unify_adt_or_fn did0 did1 s0 s1 t0 t1 tcx#fn
       | Adt (did0, Subst s0), Adt (did1, Subst s1) ->
-          if did0 = did1 && s0#len = s1#len
-          then (
-            let res = map2 s0 s1 (fun (Ty t0) (Ty t1) -> equate t0 t1) in
-            let err = find (function Error e -> Some e | _ -> None) res in
-            match err with
-            | Some err -> Error err
-            | None ->
-                let subst : generic_arg vec = new vec in
-                for i = 0 to s0#len - 1 do
-                  let (Ty t0) = s0#get i in
-                  let (Ty t1) = s1#get i in
-                  match equate t0 t1 with
-                  | Ok ty -> subst#push (Ty ty)
-                  | Error _ -> assert false
-                done;
-                Ok (tcx#adt did0 (Subst subst)))
-          else Error (MismatchTy (t0, t1))
+          unify_adt_or_fn did0 did1 s0 s1 t0 t1 tcx#adt
       | _ -> Error (MismatchTy (t0, t1))
+  and unify_adt_or_fn did0 did1 s0 s1 t0 t1 f =
+    if did0 = did1 && s0#len = s1#len
+    then (
+      let res = map2 s0 s1 (fun (Ty t0) (Ty t1) -> equate t0 t1) in
+      let err = find (function Error e -> Some e | _ -> None) res in
+      match err with
+      | Some err -> Error err
+      | None ->
+          let subst : generic_arg vec = new vec in
+          for i = 0 to s0#len - 1 do
+            let (Ty t0) = s0#get i in
+            let (Ty t1) = s1#get i in
+            match equate t0 t1 with
+            | Ok ty -> subst#push (Ty ty)
+            | Error _ -> assert false
+          done;
+          Ok (f did0 (Subst subst)))
+    else Error (MismatchTy (t0, t1))
   in
   let fold_int_ty intvid old_ty =
     let opt_ty = IntUt.probe_value cx.infcx.int_ut intvid in
-    tcx#invalidate
-      !old_ty
-      (match opt_ty with
-       | Some ty -> tcx#int_ty_to_ty ty
-       | None -> tcx#types.i32)
+    let ty =
+      match opt_ty with
+      | Some ty -> tcx#int_ty_to_ty ty
+      | None -> tcx#types.i32
+    in
+    tcx#invalidate !old_ty ty;
+    ty
   in
   let fold_float_ty floatvid old_ty =
     let opt_ty = FloatUt.probe_value cx.infcx.float_ut floatvid in
-    tcx#invalidate
-      !old_ty
-      (match opt_ty with
-       | Some ty -> tcx#float_ty_to_ty ty
-       | None -> tcx#types.f32)
+    let ty =
+      match opt_ty with
+      | Some ty -> tcx#float_ty_to_ty ty
+      | None -> tcx#types.f32
+    in
+    tcx#invalidate !old_ty ty;
+    ty
   in
   let rec fold_ty ty =
     match !ty with
-    | Infer (IntVar i) ->
-        fold_int_ty i ty;
-        tcx#types.i32
-    | Infer (FloatVar f) ->
-        fold_float_ty f ty;
-        tcx#types.f32
+    | Infer (IntVar i) -> fold_int_ty i ty
+    | Infer (FloatVar f) -> fold_float_ty f ty
     | Ptr (m, ty) -> tcx#ptr m (fold_ty ty)
     | Ref (m, ty) -> tcx#ref m (fold_ty ty)
     | _ -> ty
@@ -455,9 +487,16 @@ let tychk_fn cx fn =
       map args (fun (Ty ty) : generic_arg ->
           if tcx#is_generic ty then Ty (infcx_new_ty_var cx.infcx) else Ty ty)
     in
-    match !ty with
-    | Adt (did, _) | Fn (did, _) -> f did (Subst args)
-    | _ -> assert false
+    match !ty with Adt (did, _) -> f did (Subst args) | _ -> assert false
+  and mk_type_constructor ty id args =
+    if args#empty
+    then ty
+    else
+      match tcx#get_subst ty with
+      | Some subst ->
+          let subst = Subst subst in
+          tcx#fn_with_sig ~subst id args ty false Default
+      | None -> tcx#fn_ptr args ty false Default
   and check_path path =
     tcx#res_map#unsafe_get path.path_id |> function
     | Def (id, (Adt | Struct)) ->
@@ -481,20 +520,10 @@ let tychk_fn cx fn =
                match last.args with
                | Some args ->
                    check_generic_args adtty (Some args) path.span tcx#adt
-               | None -> adtty
+               | None -> infer_generic_args adtty tcx#adt
              in
-             if fargs#empty
-             then adtty
-             else
-               let ty =
-                 match tcx#get_subst adtty with
-                 | Some subst ->
-                     let subst = Subst subst in
-                     tcx#fn_with_sig ~subst id fargs adtty false Default
-                 | None -> tcx#fn_ptr fargs adtty false Default
-               in
-               ty
-         | _ -> adtty)
+             mk_type_constructor adtty id fargs
+         | _ -> mk_type_constructor adtty id fargs)
     | Def (id, (Fn | Intrinsic)) ->
         let ty = tcx#get_def id in
         let last = Option.get path.segments#last in
@@ -601,6 +630,9 @@ let tychk_fn cx fn =
          | FnPtr fnsig -> check_call expr args fnsig
          | Fn (def_id, Subst subst) when Fn.is_generic ty ->
              let fnsig = tcx#get_fn def_id in
+             let subst0 = new vec in
+             subst0#copy subst;
+             let subst = subst0 in
              check_arguments expr args fnsig.args;
              let maybe_infer_typaram i arg =
                if i < fnsig.args#len
@@ -630,61 +662,30 @@ let tychk_fn cx fn =
          | _ ->
              ty_err_emit tcx (InvalidCall ty) expr.expr_span;
              tcx#types.err)
-    | Path path ->
-        let ty = check_path path in
-        (match !ty with
-         | Adt (def_id, Subst subst)
-           when tcx#is_generic ty && not (tcx#is_non_enum ty) ->
-             let subst' = new vec in
-             subst'#copy subst;
-             (match expected with
-              | ExpectTy expected ->
-                  let ty = SubstFolder.fold_ty tcx ty subst' in
-                  (match tcx#unfold_ty_param ty expected with
-                   | Ok pairs ->
-                       List.iter
-                         (fun ({ index; _ }, ty) ->
-                           subst'#set index (Ty ty : generic_arg))
-                         pairs
-                   | Error _ ->
-                       ty_err_emit
-                         tcx
-                         (MismatchTy (expected, ty))
-                         expr.expr_span)
-              | _ -> ());
-             let adt = tcx#adt def_id (Subst subst') in
-             let params =
-               tcx#get_ty_params adt
-               |> List.filter (fun param ->
-                      not @@ Array.mem param cx.generics)
-             in
-             if params <> []
-             then
-               type_annotation_required
-                 (tcx#describe_def_id def_id)
-                 params
-                 path.span
-               |> tcx#emit;
-             adt
-         | _ -> ty)
+    | Path path -> check_path path
     | Lit lit ->
+        let go new_var = function
+          | Some { contents = Infer (TyVar vid) } ->
+              let ty = new_var cx.infcx in
+              (match unify_ty_var vid ty with
+               | Ok _ -> ()
+               | Error e -> ty_err_emit tcx e expr.expr_span);
+              ty
+          | Some ty ->
+              let found = new_var cx.infcx in
+              ty_err_emit tcx (MismatchTy (ty, found)) expr.expr_span;
+              ty
+          | None -> new_var cx.infcx
+        in
         (match lit with
          | LitInt _ ->
              (match resolve_expected expected with
               | Some ({ contents = Int _ } as ty) -> ty
-              | Some ty ->
-                  let found = infcx_new_int_var cx.infcx in
-                  ty_err_emit tcx (MismatchTy (ty, found)) expr.expr_span;
-                  ty
-              | None -> infcx_new_int_var cx.infcx)
+              | opt -> go infcx_new_int_var opt)
          | LitFloat _ ->
              (match resolve_expected expected with
               | Some ({ contents = Float _ } as ty) -> ty
-              | Some ty ->
-                  let found = infcx_new_float_var cx.infcx in
-                  ty_err_emit tcx (MismatchTy (ty, found)) expr.expr_span;
-                  ty
-              | None -> infcx_new_float_var cx.infcx)
+              | opt -> go infcx_new_float_var opt)
          | LitStr _ -> tcx#types.str
          | LitBool _ -> tcx#types.bool)
     | Block block -> check_block_with_expected block expected
@@ -906,9 +907,13 @@ let tychk_fn cx fn =
         | Error e -> ty_err_emit tcx e span)
    | None -> ());
   tcx#iter_infer_vars (function
-      | v, IntVar i -> fold_int_ty i v
-      | v, FloatVar f -> fold_float_ty f v
-      | _ -> assert false)
+      | v, IntVar i -> ignore @@ fold_int_ty i v
+      | v, FloatVar f -> ignore @@ fold_float_ty f v
+      | v, TyVar t ->
+          let opt_ty = TyUt.probe_value cx.infcx.ty_ut t in
+          tcx#invalidate
+            !v
+            (match opt_ty with Some ty -> fold_ty ty | None -> assert false))
 ;;
 
 let rec tychk cx (modd : modd) =

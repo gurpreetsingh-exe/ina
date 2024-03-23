@@ -1,0 +1,14 @@
+// EXIT_CODE: 0
+
+fn id[T](v: T) -> T {
+    v
+}
+
+fn main() {
+    let a = id(20);
+    let b = id(50.);
+    let c = id(true);
+    assert a == 20;
+    assert b == 50.;
+    assert c == true;
+}

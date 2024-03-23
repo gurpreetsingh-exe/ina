@@ -428,8 +428,15 @@ class tcx sess =
       match def_id_to_ty#get id with Some ty -> ty | None -> _types.err
 
     method iter_infer_vars f =
-      def_id_to_ty#iter (fun _ v ->
-          match !v with Infer tyvar -> f (v, tyvar) | _ -> ())
+      let rec go ty =
+        match !ty with
+        | Infer tyvar -> f (ty, tyvar)
+        | Adt (_, Subst subst) | Fn (_, Subst subst) ->
+            subst#iter (fun (Ty ty) -> go ty)
+        | Ref (_, ty) | Ptr (_, ty) -> go ty
+        | _ -> ()
+      in
+      def_id_to_ty#iter (fun _ v -> go v)
 
     method define_assoc_fn res name fn =
       match res with
