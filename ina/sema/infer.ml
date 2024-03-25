@@ -132,7 +132,7 @@ let fold_infer_ty infcx v =
              dbg
                "fold_infer_ty(%s) = %s\n"
                (display_intvid tyvid)
-               (render_ty2 ty);
+               (infcx.tcx#render_ty ty);
              ty)
   | FloatVar tyvid ->
       FloatUt.probe_value infcx.float_ut tyvid
@@ -141,9 +141,16 @@ let fold_infer_ty infcx v =
              dbg
                "fold_infer_ty(%s) = %s\n"
                (display_floatvid tyvid)
-               (render_ty2 ty);
+               (infcx.tcx#render_ty ty);
              ty)
-  | TyVar _ -> None
+  | TyVar tyvid ->
+      TyUt.probe_value infcx.ty_ut tyvid
+      |> Option.map (fun ty ->
+             dbg
+               "fold_infer_ty(%s) = %s\n"
+               (display_tyvid tyvid)
+               (infcx.tcx#render_ty ty);
+             ty)
 ;;
 
 let rec fold_ty infcx ty =
@@ -152,6 +159,18 @@ let rec fold_ty infcx ty =
       (match fold_infer_ty infcx i with Some ty -> ty | None -> ty)
   | Ptr (m, ty) -> infcx.tcx#ptr m (fold_ty infcx ty)
   | Ref (m, ty) -> infcx.tcx#ref m (fold_ty infcx ty)
+  | Adt (did, Subst subst) ->
+      let subst =
+        map subst (fun (Ty ty : generic_arg) : generic_arg ->
+            Ty (fold_ty infcx ty))
+      in
+      infcx.tcx#adt did (Subst subst)
+  | Fn (did, Subst subst) ->
+      let subst =
+        map subst (fun (Ty ty : generic_arg) : generic_arg ->
+            Ty (fold_ty infcx ty))
+      in
+      infcx.tcx#fn did (Subst subst)
   | _ -> ty
 ;;
 

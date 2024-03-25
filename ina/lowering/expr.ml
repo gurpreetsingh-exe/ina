@@ -116,6 +116,11 @@ let rec lower_block (lcx : lcx) block =
              let subst = Fn.subst ty in
              let instance = { def = Fn id; subst = Subst subst } in
              Global (Fn instance)
+         | Def (id, Cons) ->
+             let ptr = lcx#bx#alloca ty e.expr_span in
+             let v = lower_variant ty id in
+             lcx#bx#store v ptr e.expr_span;
+             ptr
          | Def (id, Intrinsic) ->
              let subst = Fn.subst ty in
              let instance = { def = Intrinsic id; subst = Subst subst } in
@@ -127,6 +132,19 @@ let rec lower_block (lcx : lcx) block =
     | _ ->
         print_endline @@ tcx#sess.parse_sess.sm#span_to_string e.expr_span.lo;
         assert false
+  and lower_variant ty id =
+    let subst = tcx#get_subst ty |> Option.get in
+    let key = tcx#def_key id in
+    let parenid = Option.get key.parent in
+    let adt = tcx#adt parenid (Subst subst) in
+    let variants = tcx#variants adt |> Option.get in
+    let vidx = ref @@ -1 in
+    for i = 0 to variants#len - 1 do
+      let (Variant variant) = variants#get i in
+      if variant.def_id = id then vidx := i
+    done;
+    assert (!vidx >= 0);
+    Aggregate (Adt (parenid, !vidx, Subst subst), new vec)
   and lower e =
     let ty = expr_ty e in
     match e.expr_kind with
@@ -172,19 +190,7 @@ let rec lower_block (lcx : lcx) block =
              let subst = Fn.subst ty in
              let instance = { def = Fn id; subst = Subst subst } in
              Global (Fn instance)
-         | Def (id, Cons) ->
-             let subst = tcx#get_subst ty |> Option.get in
-             let key = tcx#def_key id in
-             let parenid = Option.get key.parent in
-             let adt = tcx#adt parenid (Subst subst) in
-             let variants = tcx#variants adt |> Option.get in
-             let vidx = ref @@ -1 in
-             for i = 0 to variants#len - 1 do
-               let (Variant variant) = variants#get i in
-               if variant.def_id = id then vidx := i
-             done;
-             assert (!vidx >= 0);
-             Aggregate (Adt (parenid, !vidx, Subst subst), new vec)
+         | Def (id, Cons) -> lower_variant ty id
          | Def (id, Intrinsic) ->
              let subst = Fn.subst ty in
              let instance = { def = Intrinsic id; subst = Subst subst } in

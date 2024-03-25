@@ -1,6 +1,6 @@
 (library
  (name utils)
- (libraries errors str)
+ (libraries errors str ast front)
  ; (preprocess
  ;  (pps
  ;   ppx_deriving.show
@@ -8,4 +8,4 @@
  ;   --
  ;   -cookie
  ;   "ppx_optcomp.env=env ~profile:(Defined \"%{profile}\") ~os:(Defined \"%{os_type}\")"))
- (modules printer timer path panic object))
+ (modules printer timer path panic object debugtree))

@@ -204,6 +204,8 @@ let get_ty tcx = function
         tcx
         (match def with Fn id | Intrinsic id -> tcx#get_def id)
         subst
+  | Aggregate (Adt (did, _, Subst subst), _) ->
+      Middle.Ctx.SubstFolder.fold_ty tcx (tcx#get_def did) subst
   | _ -> assert false
 ;;
 

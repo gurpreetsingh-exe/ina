@@ -251,8 +251,7 @@ class visitor resolver (modd : Ast.modd) parent dir_ownership =
           self#with_parent did (fun () -> fns#iter self#visit_fn)
       | Impl impl -> self#visit_impl impl
       | Using using ->
-          let segments = new vec in
-          segments#copy using.prefix.segments;
+          let segments = using.prefix.segments#copy in
           let path = { using.prefix with segments } in
           let ikind =
             match using.kind with

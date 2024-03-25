@@ -16,7 +16,11 @@ class ['a] vec =
     method clear = inner <- [||]
     method all f = Array.for_all f inner
     method any f = Array.exists f inner
-    method copy (v : 'a vec) = inner <- Array.copy v#inner
+
+    method copy =
+      let v = new vec in
+      v#replace inner;
+      v
 
     method pop_front =
       let _, tl = self#split 1 in

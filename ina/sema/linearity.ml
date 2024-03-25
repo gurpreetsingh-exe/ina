@@ -87,6 +87,7 @@ let analyze (tcx : tcx) fn =
                   (match mut, m with
                    | Imm, Mut -> Error (name, mut_borrow_of_imm_var name span)
                    | _ -> Ok ())
+              | Def (_, Cons) -> Ok ()
               | _ -> assert false))
     | Call (_, args) ->
         args#iter (fun expr -> ignore (visit_expr expr));

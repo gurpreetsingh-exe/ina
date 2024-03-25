@@ -782,8 +782,7 @@ class resolver tcx modd =
                  then self#not_found_in_module path name span
              | Glob -> visit_path path mdl (Some Type)
              | _ ->
-                 let segments = new vec in
-                 segments#copy path.segments;
+                 let segments = path.segments#copy in
                  let path = { path with segments } in
                  let source = path.segments#pop.ident in
                  visit_path path mdl (Some Type);

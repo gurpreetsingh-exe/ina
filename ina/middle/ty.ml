@@ -66,7 +66,7 @@ let render_infer_ty ty dbg =
   then display_infer_ty ty
   else
     match ty with
-    | IntVar _ -> "int"
+    | IntVar _ -> "integer"
     | FloatVar _ -> "float"
     | TyVar _ -> "T"
 ;;

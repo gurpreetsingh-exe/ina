@@ -47,7 +47,7 @@ let rec lower (lcx : Context.lcx) mdl =
               (match inst.kind, inst.ty with
                | Nop, _ | _, { contents = Unit } -> lcx#bx#ret_unit
                | _ -> lcx#bx#ret ret)
-          | Const _ | Global _ -> lcx#bx#ret ret
+          | Const _ | Global _ | Aggregate _ -> lcx#bx#ret ret
           | _ -> lcx#bx#ret_unit)
      | None -> ());
     Func.gen_id ifn.basic_blocks;

@@ -8,6 +8,7 @@ open Structures.Hashmap
 open Diagnostic
 open Printf
 open Utils.Panic
+open Source
 open Infer
 
 (* TODO: it's becoming a common pattern to `equate` after using `check_expr`,
@@ -15,13 +16,27 @@ open Infer
 
 let ( let* ) v f = Result.bind v f
 
+type tyvar_origin = {
+    did: def_id
+  ; param: ty ref
+  ; span: Span.t
+}
+
 type cx = {
     infcx: infer_ctx
   ; locals: (node_id, ty ref) hashmap
   ; mutable generics: typaram array
+  ; tyvar_origin: (ty ref, tyvar_origin) Hashtbl.t
 }
 
-let create infcx = { infcx; locals = new hashmap; generics = [||] }
+let create infcx =
+  {
+    infcx
+  ; locals = new hashmap
+  ; generics = [||]
+  ; tyvar_origin = Hashtbl.create 0
+  }
+;;
 
 type 'a expected_found = {
     expected: 'a
@@ -138,7 +153,6 @@ let type_annotation_required name params span =
 ;;
 
 let ty_err_emit (tcx : tcx) err span =
-  (* trace (); *)
   match err with
   | MismatchTy (expected, ty) ->
       let msg =
@@ -315,6 +329,12 @@ let tychk_fn cx fn =
       | Ref (Imm, t0), Ref (_, t1) ->
           let* ty = equate t0 t1 in
           Ok (tcx#ref Imm ty)
+      | Ptr (Mut, t0), Ptr (Mut, t1) ->
+          let* ty = equate t0 t1 in
+          Ok (tcx#ptr Mut ty)
+      | Ptr (Imm, t0), Ptr (_, t1) ->
+          let* ty = equate t0 t1 in
+          Ok (tcx#ptr Imm ty)
       | FnPtr t0', Fn (def_id, _) ->
           let t1' = tcx#get_fn def_id in
           if fnhash t0' = fnhash t1'
@@ -329,19 +349,18 @@ let tychk_fn cx fn =
     if did0 = did1 && s0#len = s1#len
     then (
       let res = map2 s0 s1 (fun (Ty t0) (Ty t1) -> equate t0 t1) in
-      let err = find (function Error e -> Some e | _ -> None) res in
+      let err = find (function Error e -> Some e | Ok _ -> None) res in
       match err with
       | Some err -> Error err
       | None ->
           let subst : generic_arg vec = new vec in
-          for i = 0 to s0#len - 1 do
-            let (Ty t0) = s0#get i in
-            let (Ty t1) = s1#get i in
-            match equate t0 t1 with
+          for i = 0 to res#len - 1 do
+            match res#get i with
             | Ok ty -> subst#push (Ty ty)
             | Error _ -> assert false
           done;
-          Ok (f did0 (Subst subst)))
+          let ty = f did0 (Subst subst) in
+          Ok ty)
     else Error (MismatchTy (t0, t1))
   in
   let fold_int_ty intvid old_ty =
@@ -370,6 +389,20 @@ let tychk_fn cx fn =
     | Infer (FloatVar f) -> fold_float_ty f ty
     | Ptr (m, ty) -> tcx#ptr m (fold_ty ty)
     | Ref (m, ty) -> tcx#ref m (fold_ty ty)
+    | Adt (did, Subst subst) ->
+        let subst =
+          map subst (fun (Ty ty : generic_arg) : generic_arg ->
+              Ty (fold_ty ty))
+        in
+        tcx#adt did (Subst subst)
+    | Fn (did, Subst subst) ->
+        let subst =
+          map subst (fun (Ty ty : generic_arg) : generic_arg ->
+              Ty (fold_ty ty))
+        in
+        tcx#fn did (Subst subst)
+    | FnPtr { args; ret; is_variadic; abi } ->
+        tcx#fn_ptr (map args fold_ty) (fold_ty ret) is_variadic abi
     | _ -> ty
   in
   let last_stmt_span block =
@@ -421,9 +454,8 @@ let tychk_fn cx fn =
               | Some expected ->
                   let expected = tcx#ast_ty_to_ty expected in
                   let ty = check_expr binding_expr (ExpectTy expected) in
-                  define binding_id expected;
                   (match equate expected ty with
-                   | Ok _ -> ()
+                   | Ok ty -> define binding_id ty
                    | Error e -> ty_err_emit tcx e binding_expr.expr_span)
               | None ->
                   let ty = check_expr binding_expr NoExpectation in
@@ -463,39 +495,28 @@ let tychk_fn cx fn =
         assert false
     | Err, _ -> ty
     | _ -> assert false
-  and infer_type_argument_from_expr expr typaram subst =
-    let expected = SubstFolder.fold_ty tcx typaram subst in
-    match tcx#get_ty_params expected with
-    | [] ->
-        let ty = check_expr expr (ExpectTy expected) in
-        (match equate expected ty with
-         | Ok _ -> ()
-         | Error e -> ty_err_emit tcx e expr.expr_span)
-    | _ ->
-        let ty = check_expr expr NoExpectation in
-        (match tcx#unfold_ty_param expected ty with
-         | Ok pairs ->
-             List.iter
-               (fun ({ index; _ }, ty) ->
-                 subst#set index (Ty ty : generic_arg))
-               pairs
-         | Error _ ->
-             ty_err_emit tcx (MismatchTy (expected, ty)) expr.expr_span)
-  and infer_generic_args ty f =
+  and infer_generic_args ty f span =
     let args = tcx#get_subst ty |> Option.get in
+    let did =
+      match !ty with Adt (did, _) | Fn (did, _) -> did | _ -> assert false
+    in
     let args =
       map args (fun (Ty ty) : generic_arg ->
-          if tcx#is_generic ty then Ty (infcx_new_ty_var cx.infcx) else Ty ty)
+          let t = infcx_new_ty_var cx.infcx in
+          let origin = { did; param = ty; span } in
+          Hashtbl.replace cx.tyvar_origin t origin;
+          if tcx#is_generic ty then Ty t else Ty ty)
     in
-    match !ty with Adt (did, _) -> f did (Subst args) | _ -> assert false
-  and mk_type_constructor ty id args =
+    f did (Subst args)
+  and mk_type_constructor ty id args span =
     if args#empty
-    then ty
+    then infer_generic_args ty tcx#adt span
     else
       match tcx#get_subst ty with
       | Some subst ->
           let subst = Subst subst in
-          tcx#fn_with_sig ~subst id args ty false Default
+          let ty = tcx#fn_with_sig ~subst id args ty false Default in
+          infer_generic_args ty tcx#fn span
       | None -> tcx#fn_ptr args ty false Default
   and check_path path =
     tcx#res_map#unsafe_get path.path_id |> function
@@ -504,14 +525,13 @@ let tychk_fn cx fn =
         let last = Option.get path.segments#last in
         (match last.args with
          | Some args -> check_generic_args ty (Some args) path.span tcx#adt
-         | None -> ty)
+         | None -> infer_generic_args ty tcx#adt path.span)
     | Def (id, Cons) ->
         let (Variant variant) = tcx#get_variant id in
         let fargs = map variant.fields (function Field { ty; _ } -> ty) in
         let key = tcx#def_key id in
         let parenid = Option.get key.parent in
         let adtty = tcx#get_def parenid in
-        (* TODOOOOOOOO: write the constructor in tcx.constructor_def *)
         (match path.segments#len with
          | 0 -> assert false
          | 1 ->
@@ -520,23 +540,25 @@ let tychk_fn cx fn =
                match last.args with
                | Some args ->
                    check_generic_args adtty (Some args) path.span tcx#adt
-               | None -> infer_generic_args adtty tcx#adt
+               | None -> adtty
              in
-             mk_type_constructor adtty id fargs
-         | _ -> mk_type_constructor adtty id fargs)
+             mk_type_constructor adtty id fargs path.span
+         | _ ->
+             (* TODO: check for generics in second last segment *)
+             mk_type_constructor adtty id fargs path.span)
     | Def (id, (Fn | Intrinsic)) ->
         let ty = tcx#get_def id in
         let last = Option.get path.segments#last in
         (match last.args with
          | Some args -> check_generic_args ty (Some args) path.span tcx#fn
-         | None -> ty)
+         | None -> infer_generic_args ty tcx#fn path.span)
     | Def (id, AssocFn) ->
         let ty = tcx#get_def id in
         let last = Option.get path.segments#last in
         let second_last = path.segments#get (-2) in
         let adtty =
           tcx#res_map#unsafe_get second_last.id |> function
-          | Def (id, Struct) ->
+          | Def (id, (Struct | Adt)) ->
               let ty = tcx#get_def id in
               let ty =
                 match second_last.args with
@@ -552,9 +574,12 @@ let tychk_fn cx fn =
           | Some args -> check_generic_args ty (Some args) path.span tcx#fn
           | None -> ty
         in
-        (match tcx#get_subst adtty with
-         | Some subst -> SubstFolder.fold_ty tcx ty subst
-         | None -> ty)
+        let ty =
+          match tcx#get_subst adtty with
+          | Some subst -> SubstFolder.fold_ty tcx ty subst
+          | None -> ty
+        in
+        infer_generic_args ty tcx#fn path.span
     | Local (_, id) -> cx.locals#unsafe_get id
     | Err | Def (_, TyParam) -> tcx#types.err
     | _ ->
@@ -583,13 +608,14 @@ let tychk_fn cx fn =
       ty_err_emit tcx (AssocFnAsMethod (ty, name)) pexpr.expr_span;
       ret)
     else
-      let args' = new vec in
-      args'#copy args;
+      let args' = args#copy in
       let first = tcx#autoderef (args'#get 0) in
       args'#pop_front;
       let args = args' in
-      if first <> ty
-      then ty_err_emit tcx (AssocFnAsMethod (ty, name)) pexpr.expr_span;
+      (match equate first ty with
+       | Ok _ -> ()
+       | Error _ ->
+           ty_err_emit tcx (AssocFnAsMethod (ty, name)) pexpr.expr_span);
       if exprs#len <> args#len
       then tcx#emit @@ mismatch_args args#len exprs#len pexpr.expr_span;
       exprs#iteri (fun i arg ->
@@ -628,33 +654,8 @@ let tychk_fn cx fn =
         let ty = check_expr expr NoExpectation in
         (match !ty with
          | FnPtr fnsig -> check_call expr args fnsig
-         | Fn (def_id, Subst subst) when Fn.is_generic ty ->
-             let fnsig = tcx#get_fn def_id in
-             let subst0 = new vec in
-             subst0#copy subst;
-             let subst = subst0 in
-             check_arguments expr args fnsig.args;
-             let maybe_infer_typaram i arg =
-               if i < fnsig.args#len
-               then
-                 infer_type_argument_from_expr arg (fnsig.args#get i) subst
-             in
-             args#iteri maybe_infer_typaram;
-             let fn = tcx#fn def_id (Subst subst) in
-             let params =
-               tcx#get_ty_params fn
-               |> List.filter (fun param ->
-                      not @@ Array.mem param cx.generics)
-             in
-             if params <> []
-             then
-               type_annotation_required
-                 (tcx#describe_def_id def_id)
-                 params
-                 expr.expr_span
-               |> tcx#emit;
-             write_ty expr.expr_id fn;
-             SubstFolder.fold_ty tcx fnsig.ret subst
+         | Fn (def_id, subst) when Fn.is_generic ty ->
+             tcx#subst (tcx#get_fn def_id) subst |> check_call expr args
          | Fn (def_id, _) -> tcx#get_fn def_id |> check_call expr args
          | Err ->
              args#iter (fun arg -> ignore (check_expr arg NoExpectation));
@@ -754,49 +755,18 @@ let tychk_fn cx fn =
         let remaining_fields = new hashmap in
         variant.fields#iter (fun (Field { ty; name }) ->
             remaining_fields#insert' name ty);
-        let ty =
-          match !ty with
-          | Adt (def_id, Subst subst) when tcx#is_generic ty ->
-              let subst' = new vec in
-              subst'#copy subst;
-              let maybe_infer_field (ident, expr) =
-                match remaining_fields#remove ident with
-                | Some expected ->
-                    infer_type_argument_from_expr expr expected subst'
-                | None ->
-                    let err = UnknownField (name, ident) in
-                    ty_err_emit tcx err expr.expr_span
-              in
-              expr.fields#iter maybe_infer_field;
-              let adt = tcx#adt def_id (Subst subst') in
-              let params =
-                tcx#get_ty_params adt
-                |> List.filter (fun param ->
-                       not @@ Array.mem param cx.generics)
-              in
-              if params <> []
-              then
-                type_annotation_required
-                  (tcx#describe_def_id def_id)
-                  params
-                  expr.struct_expr_span
-                |> tcx#emit;
-              adt
-          | _ ->
-              let check_field (ident, expr) =
-                match remaining_fields#remove ident with
-                | Some expected ->
-                    let ty = check_expr expr (ExpectTy expected) in
-                    (match equate expected ty with
-                     | Ok _ -> ()
-                     | Error e -> ty_err_emit tcx e expr.expr_span)
-                | None ->
-                    let err = UnknownField (name, ident) in
-                    ty_err_emit tcx err expr.expr_span
-              in
-              expr.fields#iter check_field;
-              ty
+        let check_field (ident, expr) =
+          match remaining_fields#remove ident with
+          | Some expected ->
+              let ty = check_expr expr (ExpectTy expected) in
+              (match equate expected ty with
+               | Ok _ -> ()
+               | Error e -> ty_err_emit tcx e expr.expr_span)
+          | None ->
+              let err = UnknownField (name, ident) in
+              ty_err_emit tcx err expr.expr_span
         in
+        expr.fields#iter check_field;
         (if remaining_fields#len <> 0
          then
            (* TODO: display all missing fields *)
@@ -911,9 +881,27 @@ let tychk_fn cx fn =
       | v, FloatVar f -> ignore @@ fold_float_ty f v
       | v, TyVar t ->
           let opt_ty = TyUt.probe_value cx.infcx.ty_ut t in
-          tcx#invalidate
-            !v
-            (match opt_ty with Some ty -> fold_ty ty | None -> assert false))
+          let ty =
+            match opt_ty with
+            | Some ty -> fold_ty ty
+            | None ->
+                (match Hashtbl.find_opt cx.tyvar_origin v with
+                 | Some { did; param; span } ->
+                     Hashtbl.remove cx.tyvar_origin v;
+                     let params =
+                       tcx#get_ty_params param
+                       |> List.filter (fun param ->
+                              not @@ Array.mem param cx.generics)
+                     in
+                     type_annotation_required
+                       (tcx#describe_def_id did)
+                       params
+                       span
+                     |> tcx#emit
+                 | _ -> ());
+                tcx#types.err
+          in
+          tcx#invalidate !v ty)
 ;;
 
 let rec tychk cx (modd : modd) =

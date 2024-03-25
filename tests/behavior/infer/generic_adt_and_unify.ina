@@ -1,0 +1,44 @@
+// EXIT_CODE: 0
+
+extern mod core;
+using Option::*;
+using Result::*;
+
+type Option[T] =
+    | Some(T)
+    | None
+
+type Result[T, E] =
+    | Ok(T)
+    | Err(E)
+
+type Ptr[T] = {
+    inner: *mut T
+}
+
+impl[T] Ptr[T] {
+    fn new(v: &mut T) -> Ptr[T] {
+        Ptr { inner: v as *mut T }
+    }
+
+    fn dangling() -> Ptr[T] {
+        let size = core::intrinsics::sizeof![T]();
+        Ptr {
+            inner: size as *mut T,
+        }
+    }
+}
+
+fn main() {
+    let mut opt = Err(Unit {});
+    let v = ok(opt);
+    let v = Some(v);
+    opt = Ok(Ptr::new(&mut 20));
+    opt = Ok(Ptr::dangling());
+}
+
+fn ok[T](v: T) -> Result[T, Unit] {
+    Ok(v)
+}
+
+type Unit = {}

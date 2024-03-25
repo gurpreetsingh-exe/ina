@@ -232,7 +232,7 @@ let gen cx =
              name)
     | Const { kind; ty } -> get_const ty kind
     | Label bb -> sprintf "bb%d" bb.bid
-    | Aggregate (Adt (did, vidx, (Subst subst as s)), args) ->
+    | Aggregate (Adt (did, vidx, s), args) ->
         let ty = cx.tcx#adt did s in
         let ty' = backend_ty cx ty in
         let data =
@@ -242,7 +242,7 @@ let gen cx =
             let args = mapi args (fun i arg -> sprintf "._%d = %s" i arg) in
             let args = args#join ", " Fun.id in
             let vname = String.cat ty' @@ string_of_int vidx in
-            sprintf "(%s) { %s }" vname args
+            sprintf "{ ._%d = (%s) { %s } }" vidx vname args
           else "{}"
         in
         sprintf "(%s) { .discriminant = %d, .data = %s }" ty' vidx data

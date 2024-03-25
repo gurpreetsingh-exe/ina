@@ -229,7 +229,6 @@ class tcx sess =
     val adt_def : (def_id, adt) hashmap = new hashmap
     val fn_def : (def_id, fnsig) hashmap = new hashmap
     val variant_def : (def_id, variant) hashmap = new hashmap
-    val constructor_def : (def_id, ty ref) hashmap = new hashmap
     val assoc_fn : (def_id, (string, def_id) hashmap) hashmap = new hashmap
     val extern_mods : string vec = new vec
     val definitions : (def_id, DefKey.t) hashmap = new hashmap
@@ -427,6 +426,8 @@ class tcx sess =
     method get_def id =
       match def_id_to_ty#get id with Some ty -> ty | None -> _types.err
 
+    method get_def_debug id = self#get_def (local_def_id id)
+
     method iter_infer_vars f =
       let rec go ty =
         match !ty with
@@ -569,13 +570,6 @@ class tcx sess =
     method fn def_id subst = self#intern (Fn (def_id, subst))
     method get_fn def_id = fn_def#unsafe_get def_id
 
-    method write_adt_cons def_id ty =
-      match !ty with
-      | Ty.Fn _ | FnPtr _ -> assert (constructor_def#insert def_id ty = None)
-      | _ -> assert false
-
-    method get_adt_cons def_id = constructor_def#unsafe_get def_id
-
     method subst fnsig (Subst subst) =
       SubstFolder.fold_fnsig self fnsig subst
 
@@ -605,7 +599,8 @@ class tcx sess =
         ret
         is_variadic
         abi =
-      fn_def#insert' def_id { args; ret; is_variadic; abi };
+      let fn = { args; ret; is_variadic; abi } in
+      fn_def#insert' def_id fn;
       self#fn def_id subst
 
     method ty_param index name = self#intern (Param { index; name })
@@ -683,13 +678,11 @@ class tcx sess =
       | _ -> None
 
     method non_enum_variant ty =
-      match !ty with
-      | Ty.Adt (def_id, Subst subst) ->
-          let adt = SubstFolder.fold_adt self (self#get_adt def_id) subst in
-          let variants = adt.variants in
+      Option.map
+        (fun variants ->
           assert (variants#len = 1);
-          Some (variants#get 0)
-      | _ -> None
+          variants#get 0)
+        (self#variants ty)
 
     method int_ty_to_ty =
       function
@@ -819,11 +812,7 @@ class tcx sess =
       match !ty with
       | Ty.Int i -> display_int_ty i
       | Float f -> display_float_ty f
-      | Infer i ->
-          (match i with
-           | IntVar _ -> "integer"
-           | FloatVar _ -> "float"
-           | TyVar _ -> "infer")
+      | Infer i -> render_infer_ty i false
       | Unit -> "()"
       | Bool -> "bool"
       | Str -> "str"
