@@ -189,6 +189,7 @@ let analyze (tcx : tcx) fn =
         let* _ = visit_expr expr ~e:(`Method segment) in
         args#iter (fun expr -> ignore (visit_expr expr));
         Ok ()
+    | Match _ -> assert false
   and visit_stmt = function
     | Assign (left, right) ->
         (match visit_expr left ~e:`Assign with

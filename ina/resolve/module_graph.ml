@@ -127,6 +127,7 @@ class visitor resolver (modd : Ast.modd) parent dir_ownership =
           self#visit_expr expr;
           args#iter self#visit_expr
       | Lit _ | Path _ -> ()
+      | Match _ -> assert false
 
     method visit_pat _ = ()
 

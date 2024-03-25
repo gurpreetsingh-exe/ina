@@ -696,6 +696,7 @@ class resolver tcx modd =
             visit_expr expr mdl;
             visit_segment seg;
             args#iter (fun expr -> visit_expr expr mdl)
+        | Match _ -> assert false
       and visit_block body =
         let mdl = modules#unsafe_get (local_def_id body.block_id) in
         body.block_stmts#iter (fun stmt ->
@@ -707,12 +708,13 @@ class resolver tcx modd =
                  | Some ty -> resolve_ty ty
                  | None -> ());
                 binding_pat |> ( function
-                | PatIdent (m, name) ->
+                | PIdent (m, name) ->
                     visit_expr binding_expr mdl;
                     let res =
                       Res (Local (tcx#ast_mut_to_mut m, binding_id))
                     in
-                    self#shadow mdl name Value res )
+                    self#shadow mdl name Value res
+                | _ -> assert false )
             | Assert (expr, _) -> visit_expr expr mdl
             | Assign (expr1, expr2) ->
                 visit_expr expr1 mdl;

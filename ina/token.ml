@@ -34,6 +34,7 @@ type token_kind =
   | As
   | Impl
   | Mut
+  | Match
   | Ident
   | Lit of literal
   | Comment of comment_style option
@@ -81,6 +82,7 @@ let display_token_kind = function
   | As -> "as"
   | Impl -> "impl"
   | Mut -> "mut"
+  | Match -> "match"
   | Ident -> "identifier"
   | Lit lit -> display_literal lit
   | Comment (Some kind) -> "comment " ^ display_comment_style kind

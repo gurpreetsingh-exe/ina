@@ -115,7 +115,8 @@ and render_stmt stmt prefix =
       id "Binding" binding_id binding_span;
       out += " ";
       (match binding_pat with
-       | PatIdent (m, ident) -> out += (cyan @@ mut m ^ q ident));
+       | PIdent (m, ident) -> out += (cyan @@ mut m ^ q ident)
+       | _ -> assert false);
       (match binding_ty with
        | Some ty ->
            out += " ";
@@ -251,6 +252,7 @@ and render_expr expr prefix =
       if not empty_args
       then
         render_children ?prefix:(Some prefix) args (fun f -> render_expr f)
+  | _ -> assert false
 
 and render_block block prefix =
   id "Block" block.block_id block.block_span;

@@ -62,9 +62,10 @@ let print_mdl tcx (mdl : modd) =
     | Assert _ -> assert false
   and print_mut mut = printf "%s" (if mut = Mut then "mut " else "")
   and print_pat = function
-    | PatIdent (mut, ident) ->
+    | PIdent (mut, ident) ->
         print_mut mut;
         printf "%s" ident
+    | _ -> assert false
   and print_expr expr =
     let ty = tcx#get_def_debug expr.expr_id in
     enter ();

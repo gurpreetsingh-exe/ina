@@ -59,6 +59,7 @@ class type_lowering resolver modd =
            | Def (_, _) -> ()
            | Err -> ())
       | Lit _ -> ()
+    | Match _ -> assert false
 
     method visit_stmt stmt =
       match stmt with

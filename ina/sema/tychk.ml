@@ -449,7 +449,7 @@ let tychk_fn cx fn =
         (* then tcx#emit (unused_value expr.expr_span) *)
     | Binding { binding_pat; binding_ty; binding_expr; binding_id; _ } ->
         (match binding_pat with
-         | PatIdent _ ->
+         | PIdent _ ->
              (match binding_ty with
               | Some expected ->
                   let expected = tcx#ast_ty_to_ty expected in
@@ -459,7 +459,8 @@ let tychk_fn cx fn =
                    | Error e -> ty_err_emit tcx e binding_expr.expr_span)
               | None ->
                   let ty = check_expr binding_expr NoExpectation in
-                  define binding_id ty))
+                  define binding_id ty)
+         | _ -> assert false)
     | Assert (cond, _) -> ignore (check_expr cond (ExpectTy tcx#types.bool))
   and check_expr expr expected =
     let ty = check_expr_kind expr expected in
@@ -858,6 +859,7 @@ let tychk_fn cx fn =
               | _ ->
                   ty_err_emit tcx (InvalidCall ty) expr.expr_span;
                   tcx#types.err))
+    | Match _ -> assert false
   in
   let ty = tcx#get_def did in
   let ret = Fn.ret tcx ty in

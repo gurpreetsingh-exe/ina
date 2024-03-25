@@ -436,14 +436,37 @@ class parser pcx file tokenizer =
 
     method parse_pat =
       let kind = token.kind in
+      let maybe_parse_cons () =
+        let* path = self#parse_path Type in
+        match token.kind with
+        | LParen ->
+            let* args =
+              parse_spanned_with_sep self LParen RParen Comma (fun () ->
+                  self#parse_pat)
+            in
+            Ok (PCons (path, args))
+        | _ -> Ok (PPath path)
+      in
       match kind with
       | Ident ->
-          let* ident = self#parse_ident in
-          Ok (PatIdent (Imm, ident))
+          (match self#npeek 1 with
+           | (Colon2 | LParen) :: _ -> maybe_parse_cons ()
+           | _ ->
+               let* ident = self#parse_ident in
+               if ident = "_" then Ok PWild else Ok (PIdent (Imm, ident)))
       | Mut ->
+          let s = token.span.lo in
           self#bump;
-          let* ident = self#parse_ident in
-          Ok (PatIdent (Mut, ident))
+          let mutspan = self#mk_span s in
+          let* pat = self#parse_pat in
+          (match pat with
+           | PIdent (_, name) -> Ok (PIdent (Mut, name))
+           | pat ->
+               Diagnostic.create
+                 "`mut` must be followed by a named binding"
+                 ~labels:[Label.primary "remove the `mut` prefix" mutspan]
+               |> self#emit_err;
+               Ok pat)
       | t ->
           self#unexpected_token t ~line:__LINE__;
           exit 1
@@ -509,7 +532,9 @@ class parser pcx file tokenizer =
 
     method should_continue_as_prec_expr expr =
       let is_block =
-        match expr.expr_kind with If _ | Block _ -> true | _ -> false
+        match expr.expr_kind with
+        | If _ | Block _ | Match _ -> true
+        | _ -> false
       in
       match is_block, token.kind, (Option.get prev_token).kind with
       | true, Star, RParen -> true
@@ -549,6 +574,20 @@ class parser pcx file tokenizer =
             let* e = self#parse_expr in
             let* _ = self#expect RParen in
             Ok e.expr_kind
+        | Match ->
+            self#bump;
+            let parse_match_arm () =
+              let s = token.span.lo in
+              let* pat = self#parse_pat in
+              let* _ = self#expect Arrow in
+              let* expr = self#parse_expr in
+              Ok { pat; expr; span = self#mk_span s }
+            in
+            let* e = self#parse_expr in
+            let* arms =
+              parse_spanned_with_sep self LBrace RBrace Comma parse_match_arm
+            in
+            Ok (Ast.Match (e, arms))
         | _ -> self#parse_path_or_call
       in
       Ok { expr_kind; expr_span = self#mk_span s; expr_id = self#id }

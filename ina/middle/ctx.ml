@@ -441,7 +441,7 @@ class tcx sess =
 
     method define_assoc_fn res name fn =
       match res with
-      | Def (id, (Struct | Impl)) ->
+      | Def (id, (Struct | Impl | Adt)) ->
           assoc_fn#insert' id (new hashmap);
           (assoc_fn#unsafe_get id)#insert' name fn
       | Ty ty ->

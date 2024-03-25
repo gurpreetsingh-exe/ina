@@ -21,6 +21,7 @@ let keywords =
    ; "as", As
    ; "impl", Impl
    ; "mut", Mut
+   ; "match", Match
   |]
   |> Array.to_seq
   |> Hashtbl.of_seq
