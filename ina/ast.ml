@@ -215,7 +215,7 @@ and binding = {
 }
 
 and pat =
-  | PIdent of (mutability * ident)
+  | PIdent of (mutability * ident * node_id)
   | PPath of path
   | PCons of (path * pat vec)
   | PWild
@@ -259,6 +259,7 @@ and expr_kind =
 
 and arm = {
     pat: pat
+  ; patspan: Span.t
   ; expr: expr
   ; span: Span.t
 }

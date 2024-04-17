@@ -189,7 +189,13 @@ let analyze (tcx : tcx) fn =
         let* _ = visit_expr expr ~e:(`Method segment) in
         args#iter (fun expr -> ignore (visit_expr expr));
         Ok ()
-    | Match _ -> assert false
+    | Match (expr, arms) ->
+        let* _ = visit_expr expr in
+        arms#iter (fun { expr; _ } ->
+            match visit_expr expr with
+            | Ok () -> ()
+            | Error (_, e) -> tcx#emit e);
+        Ok ()
   and visit_stmt = function
     | Assign (left, right) ->
         (match visit_expr left ~e:`Assign with
@@ -203,9 +209,12 @@ let analyze (tcx : tcx) fn =
              |> tcx#emit);
         visit_expr right
     | Stmt expr | Expr expr -> visit_expr expr
-    | Binding { binding_id; binding_span; binding_expr; _ } ->
+    | Binding { binding_pat; binding_span; binding_expr; _ } ->
         let* _ = visit_expr binding_expr in
-        Ok (Hashtbl.add locals binding_id binding_span)
+        (match binding_pat with
+         | PIdent (_, _, id) -> Ok (Hashtbl.add locals id binding_span)
+         | PWild -> Ok ()
+         | _ -> assert false)
     | Assert (expr, _) -> visit_expr expr
   in
   match fn.body with

@@ -68,7 +68,7 @@ let render_infer_ty ty dbg =
     match ty with
     | IntVar _ -> "integer"
     | FloatVar _ -> "float"
-    | TyVar _ -> "T"
+    | TyVar _ -> "_"
 ;;
 
 type abi =
@@ -87,6 +87,7 @@ and variant =
   | Variant of {
         def_id: def_id
       ; fields: field vec
+      ; index: int
     }
 
 and adt = { variants: variant vec }
@@ -381,7 +382,7 @@ let decode_field tcx dec =
   Field { ty; name }
 ;;
 
-let encode_variant enc (Variant { def_id; fields }) =
+let encode_variant enc (Variant { def_id; fields; _ }) =
   Def_id.encode enc def_id;
   encode_vec enc fields encode_field
 ;;
@@ -390,7 +391,7 @@ let decode_variant tcx dec =
   let def_id = Def_id.decode dec in
   let fields = new vec in
   decode_vec dec fields (tcx |> decode_field);
-  Variant { def_id; fields }
+  Variant { def_id; fields; index = 0 }
 ;;
 
 let rec hash hasher ty =

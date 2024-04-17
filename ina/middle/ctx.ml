@@ -176,6 +176,13 @@ let print_res : res -> string = function
   | Err -> "err"
 ;;
 
+let render_path tcx path =
+  let open Ast in
+  let f id = tcx#res_map#unsafe_get id |> print_res in
+  path.segments#join "::" (fun s -> sprintf "%s[%s]" s.ident (f s.id))
+  |> print_endline
+;;
+
 type types = {
     i8: ty ref
   ; i16: ty ref
@@ -235,6 +242,7 @@ class tcx sess =
     val impls : (def_id, ty ref) hashmap = new hashmap
     val generics : (def_id, Generics.t) hashmap = new hashmap
     val substs : (def_id, generic_arg vec) hashmap = new hashmap
+    val locals : (def_id, ty ref) hashmap = new hashmap
     val decoders : decoder vec = new vec
     val mutable impl_id = 0
 
@@ -423,6 +431,9 @@ class tcx sess =
             (self#render_ty ty')
       | None -> ()
 
+    method define_local id ty = ignore @@ locals#insert id ty
+    method get_local id = locals#get id
+
     method get_def id =
       match def_id_to_ty#get id with Some ty -> ty | None -> _types.err
 
@@ -561,8 +572,8 @@ class tcx sess =
     method adt def_id subst = self#intern (Adt (def_id, subst))
     method get_adt def_id = adt_def#unsafe_get def_id
 
-    method variant def_id fields =
-      let v = Variant { def_id; fields } in
+    method variant def_id fields index =
+      let v = Variant { def_id; fields; index } in
       assert (variant_def#insert def_id v = None);
       v
 

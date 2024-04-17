@@ -450,17 +450,19 @@ class parser pcx file tokenizer =
       match kind with
       | Ident ->
           (match self#npeek 1 with
-           | (Colon2 | LParen) :: _ -> maybe_parse_cons ()
+           | (Colon2 | LParen | LBracket) :: _ -> maybe_parse_cons ()
            | _ ->
                let* ident = self#parse_ident in
-               if ident = "_" then Ok PWild else Ok (PIdent (Imm, ident)))
+               if ident = "_"
+               then Ok PWild
+               else Ok (PIdent (Imm, ident, self#id)))
       | Mut ->
           let s = token.span.lo in
           self#bump;
           let mutspan = self#mk_span s in
           let* pat = self#parse_pat in
           (match pat with
-           | PIdent (_, name) -> Ok (PIdent (Mut, name))
+           | PIdent (_, name, id) -> Ok (PIdent (Mut, name, id))
            | pat ->
                Diagnostic.create
                  "`mut` must be followed by a named binding"
@@ -579,9 +581,27 @@ class parser pcx file tokenizer =
             let parse_match_arm () =
               let s = token.span.lo in
               let* pat = self#parse_pat in
-              let* _ = self#expect Arrow in
+              let patspan = self#mk_span s in
+              let* _ = self#expect FatArrow in
               let* expr = self#parse_expr in
-              Ok { pat; expr; span = self#mk_span s }
+              let expr =
+                match expr.expr_kind with
+                | Block _ -> expr
+                | _ ->
+                    {
+                      expr_kind =
+                        Block
+                          {
+                            block_stmts = new vec
+                          ; last_expr = Some expr
+                          ; block_span = expr.expr_span
+                          ; block_id = self#id
+                          }
+                    ; expr_span = expr.expr_span
+                    ; expr_id = self#id
+                    }
+              in
+              Ok { pat; patspan; expr; span = self#mk_span s }
             in
             let* e = self#parse_expr in
             let* arms =

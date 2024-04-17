@@ -63,6 +63,7 @@ type token_kind =
   | Ampersand
   | Ampersand2
   | Arrow
+  | FatArrow
   | Dot
   | DotDot
   | Dot3
@@ -112,6 +113,7 @@ let display_token_kind = function
   | Ampersand -> "&"
   | Ampersand2 -> "&&"
   | Arrow -> "->"
+  | FatArrow -> "=>"
   | Dot -> "."
   | DotDot -> ".."
   | Dot3 -> "..."

@@ -2,7 +2,7 @@ open Source
 open Structures.Vec
 
 let ( $ ) f g h = f (g h)
-let e = "\x1b[0m"
+let e' = "\x1b[0m"
 
 type level =
   | Note

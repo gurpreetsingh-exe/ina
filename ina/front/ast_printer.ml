@@ -115,7 +115,7 @@ and render_stmt stmt prefix =
       id "Binding" binding_id binding_span;
       out += " ";
       (match binding_pat with
-       | PIdent (m, ident) -> out += (cyan @@ mut m ^ q ident)
+       | PIdent (m, ident, _) -> out += (cyan @@ mut m ^ q ident)
        | _ -> assert false);
       (match binding_ty with
        | Some ty ->

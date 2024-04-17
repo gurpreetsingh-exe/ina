@@ -62,7 +62,7 @@ let print_mdl tcx (mdl : modd) =
     | Assert _ -> assert false
   and print_mut mut = printf "%s" (if mut = Mut then "mut " else "")
   and print_pat = function
-    | PIdent (mut, ident) ->
+    | PIdent (mut, ident, _) ->
         print_mut mut;
         printf "%s" ident
     | _ -> assert false

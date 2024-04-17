@@ -23,7 +23,9 @@ type line =
   | Blank of (int * bool)
   | Footer
 
-let repeat ?(c = " ") n = List.init n (fun _ -> c) |> String.concat ""
+let repeat ?(c = " ") n =
+  if n < 0 then "" else List.init n (fun _ -> c) |> String.concat ""
+;;
 
 let ustring =
   Uutf.String.fold_utf_8
@@ -81,6 +83,7 @@ class emitter sm ui_testing =
     (* private methods *)
     method private emit_messages diagnostic =
       let max_span = max_span diagnostic.labels in
+      let c = level_to_color diagnostic.level in
       match sm with
       | Some sm ->
           let open Span in
@@ -130,7 +133,7 @@ class emitter sm ui_testing =
                 Array.append
                   acc
                   [|
-                     ( (if Label.is_primary label then red else label.color)
+                     ( (if Label.is_primary label then c else label.color)
                      , Array.sub
                          buf'
                          (Array.length buf)
@@ -293,7 +296,7 @@ class emitter sm ui_testing =
                         format
                           [
                             Bold, ""
-                          ; red, display_level level
+                          ; c, display_level level
                           ; Normal, ": "
                           ; Bold, msg
                           ]
@@ -307,7 +310,7 @@ class emitter sm ui_testing =
                     | Annotation (nest, [label]) ->
                         let span = label.span in
                         let c =
-                          if Label.is_primary label then red else label.color
+                          if Label.is_primary label then c else label.color
                         in
                         let ann = format [Bold, ""; c, annotation span] in
                         let nest = nesting nest in
@@ -342,7 +345,7 @@ class emitter sm ui_testing =
                             (Array.length buf' - Array.length buf)
                         in
                         let c =
-                          if Label.is_primary label then red else label.color
+                          if Label.is_primary label then c else label.color
                         in
                         let buf = Array.append acc [|c, buf'|] in
                         let nest = nesting nest in
@@ -374,7 +377,7 @@ class emitter sm ui_testing =
                         let nest = nesting nest in
                         let { span; message = msg; color; _ } = label in
                         let c =
-                          if Label.is_primary label then red else color
+                          if Label.is_primary label then c else color
                         in
                         if not end'
                         then
@@ -402,7 +405,7 @@ class emitter sm ui_testing =
                         let nest = nesting nest in
                         let s = sm#lookup_line_src line in
                         let c =
-                          if Label.is_primary label then red else label.color
+                          if Label.is_primary label then c else label.color
                         in
                         let s =
                           format
@@ -429,7 +432,7 @@ class emitter sm ui_testing =
                               in
                               let c =
                                 if Label.is_primary label
-                                then red
+                                then c
                                 else label.color
                               in
                               let _, s = List.rev acc |> List.hd in

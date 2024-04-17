@@ -11,6 +11,6 @@ class handler source_map ui_testing =
     method span_err span msg = mk_err msg span
 
     method emit_diagnostic diag =
-      err_count <- err_count + 1;
+      if diag.level = Err then err_count <- err_count + 1;
       emitter#emit_diagnostic diag
   end
