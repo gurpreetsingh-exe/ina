@@ -354,20 +354,17 @@ let tychk_fn cx fn =
       | _ -> Error (MismatchTy (t0, t1))
   and unify_adt_or_fn did0 did1 s0 s1 t0 t1 f =
     if did0 = did1 && s0#len = s1#len
-    then (
+    then
       let res = map2 s0 s1 (fun (Ty t0) (Ty t1) -> equate t0 t1) in
       let err = find (function Error e -> Some e | Ok _ -> None) res in
       match err with
       | Some err -> Error err
       | None ->
-          let subst : generic_arg vec = new vec in
-          for i = 0 to res#len - 1 do
-            match res#get i with
-            | Ok ty -> subst#push (Ty ty)
-            | Error _ -> assert false
-          done;
+          let subst =
+            map res (fun ty : generic_arg -> Ty (Result.get_ok ty))
+          in
           let ty = f did0 (Subst subst) in
-          Ok ty)
+          Ok ty
     else Error (MismatchTy (t0, t1))
   in
   let fold_int_ty intvid old_ty =
@@ -895,17 +892,27 @@ let tychk_fn cx fn =
               (match tcx#res_map#unsafe_get id with
                | Def (did, Cons) ->
                    let (Variant variant) = tcx#get_variant did in
-                   if not variant.fields#empty
-                   then
-                     let msg =
-                       sprintf
-                         "try specifying the pattern arguments: `%s(..)`"
-                         name
-                     in
-                     Diagnostic.create
-                       "bindings cannot shadow constructors"
-                       ~labels:[Label.primary msg span]
-                     |> tcx#emit
+                   (if not variant.fields#empty
+                    then
+                      let msg =
+                        sprintf
+                          "try specifying the pattern arguments: `%s(..)`"
+                          name
+                      in
+                      Diagnostic.create
+                        "bindings cannot shadow constructors"
+                        ~labels:[Label.primary msg span]
+                      |> tcx#emit);
+                   let segments = new vec in
+                   segments#push
+                     { ident = name; args = None; id; span = Span.dummy };
+                   let path =
+                     { segments; path_id = id; span = Span.dummy }
+                   in
+                   let found = check_path path in
+                   (match equate ty found with
+                    | Ok _ -> ()
+                    | Error e -> ty_err_emit tcx e span)
                | Def (_, Struct) ->
                    let msg =
                      sprintf
@@ -969,6 +976,14 @@ let tychk_fn cx fn =
         | Ok _ -> ()
         | Error e -> ty_err_emit tcx e span)
    | None -> ());
+  (* this might not be very performant *)
+  Array.iter
+    (fun (var : TyUt.VarValue.t) ->
+      let v = ref (Infer (TyVar var.parent)) in
+      match TyUt.probe_value cx.infcx.ty_ut var.parent with
+      | Some ty -> tcx#invalidate !v (fold_ty ty)
+      | None -> ())
+    cx.infcx.ty_ut.values;
   tcx#iter_infer_vars (function
       | v, IntVar i -> ignore @@ fold_int_ty i v
       | v, FloatVar f -> ignore @@ fold_float_ty f v
