@@ -3,5 +3,5 @@
 fn main() -> bool {
     let a = 34;
     let b = 20;
-    *(if b == 20 { &a } else { let _ = b; &_ }) + 35 == 69
+    *(if b == 20 { &a } else { let c = b; &c }) + 35 == 69
 }

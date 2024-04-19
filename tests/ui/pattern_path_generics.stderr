@@ -1,0 +1,8 @@
+error: mismatch types
+   ╭─[tests/ui/pattern_path_generics.ina:8:9]
+   │
+ 8 │         None[i32] => {},
+   │         ────┬────
+   │             ╰───── expected `str`, found `i32`
+   ∙
+───╯

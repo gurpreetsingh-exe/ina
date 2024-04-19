@@ -1,0 +1,26 @@
+// COMPILE_FAIL
+
+using Unit::Unit;
+type Unit = Unit
+
+using E::*;
+type E = 
+    | UnitVariant
+    | TupleVariant(i32)
+
+type Empty = {}
+
+fn main() {
+    match Unit {
+        Unit => {}
+    }
+
+    let e = Empty {};
+    match e {
+        Empty => {}
+    }
+
+    match 0 {
+        TupleVariant => {},
+    }
+}
