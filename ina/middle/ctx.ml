@@ -244,6 +244,7 @@ class tcx sess =
     val substs : (def_id, generic_arg vec) hashmap = new hashmap
     val locals : (def_id, ty ref) hashmap = new hashmap
     val decoders : decoder vec = new vec
+    val decision_trees : (def_id, Decision.t) hashmap = new hashmap
     val mutable impl_id = 0
 
     val prim_ty_assoc_fn : (ty ref, (string, def_id) hashmap) hashmap =
@@ -282,6 +283,11 @@ class tcx sess =
     method set_main id = main <- Some id
     method decoders = decoders
     method main = main
+
+    method record_decision_tree did decision =
+      assert (decision_trees#insert did decision = None)
+
+    method get_decision_tree did = decision_trees#unsafe_get did
 
     method is_extern did =
       let DefKey.{ parent; _ } = self#def_key did in
@@ -446,6 +452,9 @@ class tcx sess =
         | Adt (_, Subst subst) | Fn (_, Subst subst) ->
             subst#iter (fun (Ty ty) -> go ty)
         | Ref (_, ty) | Ptr (_, ty) -> go ty
+        | FnPtr { args; ret; _ } ->
+            args#iter go;
+            go ret
         | _ -> ()
       in
       def_id_to_ty#iter (fun _ v -> go v)
@@ -680,6 +689,10 @@ class tcx sess =
           let adt = self#get_adt def_id in
           adt.variants#len = 1
       | _ -> false
+
+    method variant_index def_id =
+      let (Variant v) = variant_def#unsafe_get def_id in
+      v.index
 
     method variants ty =
       match !ty with

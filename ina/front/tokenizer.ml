@@ -76,7 +76,7 @@ let get_token_type c tokenizer : token_kind =
        | Some '=' ->
            bump tokenizer;
            EqEq
-       | Some '>' -> 
+       | Some '>' ->
            bump tokenizer;
            FatArrow
        | Some _ | None -> Eq)

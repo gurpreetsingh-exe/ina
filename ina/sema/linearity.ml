@@ -191,6 +191,10 @@ let analyze (tcx : tcx) fn =
         Ok ()
     | Match (expr, arms) ->
         let* _ = visit_expr expr in
+        let did = Middle.Def_id.local_def_id expr.expr_id in
+        let ty = tcx#get_def did in
+        let decision = Exhaustiveness.go tcx ty arms expr.expr_span in
+        tcx#record_decision_tree did decision;
         arms#iter (fun { expr; _ } ->
             match visit_expr expr with
             | Ok () -> ()
