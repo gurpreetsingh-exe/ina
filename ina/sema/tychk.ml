@@ -890,6 +890,7 @@ let tychk_fn cx fn =
         let rec check_pattern ty span = function
           | PIdent (_, name, id) ->
               (match tcx#res_map#unsafe_get id with
+               | Def (_, Adt) -> assert false
                | Def (did, Cons) ->
                    let (Variant variant) = tcx#get_variant did in
                    (if not variant.fields#empty
@@ -923,7 +924,33 @@ let tychk_fn cx fn =
                      "bindings cannot shadow constructors"
                      ~labels:[Label.primary msg span]
                    |> tcx#emit
-               | _ -> define id ty)
+               | _ ->
+                   let f () = define id ty in
+                   (match tcx#variants ty with
+                    | Some variants ->
+                        let vmap = Hashtbl.create 0 in
+                        variants#iter (function Variant v ->
+                            let name = tcx#into_last_segment v.def_id in
+                            Hashtbl.add vmap name v.def_id);
+                        (match Hashtbl.find_opt vmap name with
+                         | Some did ->
+                             let qpath = tcx#qpath did in
+                             let msg =
+                               sprintf
+                                 "pattern binding `%s` is named the same as \
+                                  one of the variants of the type `%s`"
+                                 name
+                                 (tcx#typename ty)
+                             in
+                             let label_msg =
+                               sprintf "use qualified path `%s`" qpath
+                             in
+                             Diagnostic.create
+                               msg
+                               ~labels:[Label.primary label_msg span]
+                             |> tcx#emit
+                         | None -> f ())
+                    | None -> f ()))
           | PCons (path, patns) ->
               let consty = check_path path in
               let fnsig = Fn.get tcx consty in

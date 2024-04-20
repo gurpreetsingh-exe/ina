@@ -425,6 +425,19 @@ class tcx sess =
                | TypeNs name | ValueNs name -> name)
       , extern )
 
+    method into_last_segment id =
+      let segments, _ = self#into_segments id in
+      segments |> List.rev |> List.hd
+
+    method typename ty =
+      match !ty with
+      | Ty.Adt (did, _) -> self#into_last_segment did
+      | _ -> assert false
+
+    method qpath did =
+      let segments, _ = self#into_segments did in
+      segments |> List.tl |> String.concat "::"
+
     method link_impl id ty = assert (impls#insert id ty = None)
 
     method create_def id ty =

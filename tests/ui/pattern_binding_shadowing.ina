@@ -1,7 +1,7 @@
 // COMPILE_FAIL
 
-using Unit::Unit;
-type Unit = Unit
+using U::Unit;
+type U = Unit
 
 using E::*;
 type E = 

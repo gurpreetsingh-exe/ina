@@ -335,7 +335,10 @@ let rec lower_block (lcx : lcx) block =
                   phi_args#push (Label lcx#bx#block, value));
               lcx#with_block switch_bb (fun () -> lcx#bx#switch disc args);
               lcx#append_block_with_builder join';
-              lcx#bx#phi (expr_ty e) phi_args e.expr_span
+              let ty = expr_ty e in
+              if !ty = Unit
+              then lcx#bx#nop
+              else lcx#bx#phi ty phi_args e.expr_span
         in
         let v = go ~first:true decision in
         v
