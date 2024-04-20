@@ -33,6 +33,7 @@ let print_mdl tcx (mdl : modd) =
     printf "{\n";
     block.block_stmts#iter print_stmt;
     leave ();
+    (match block.last_expr with Some expr -> print_expr expr | _ -> ());
     printf "}"
   and print_stmt = function
     | Stmt e ->
@@ -61,16 +62,27 @@ let print_mdl tcx (mdl : modd) =
         print_expr right
     | Assert _ -> assert false
   and print_mut mut = printf "%s" (if mut = Mut then "mut " else "")
+  and print_path path =
+    let name = path.segments#join "::" (fun s -> s.ident) in
+    printf "%s" name
   and print_pat = function
     | PIdent (mut, ident, _) ->
         print_mut mut;
         printf "%s" ident
-    | _ -> assert false
-  and print_expr expr =
+    | PCons (path, patns) ->
+        print_path path;
+        printf "(";
+        patns#iteri (fun i pat ->
+            print_pat pat;
+            if i < patns#len - 1 then printf ", ");
+        printf ")"
+    | PPath path -> print_path path
+    | PWild -> printf "_"
+  and print_expr ?(t = true) expr =
     let ty = tcx#get_def_debug expr.expr_id in
     enter ();
-    printf "{\n";
-    tab ();
+    (* printf "{\n"; *)
+    if t then tab ();
     (match expr.expr_kind with
      | Call (expr, args) ->
          print_expr expr;
@@ -94,13 +106,26 @@ let print_mdl tcx (mdl : modd) =
          print_expr expr;
          printf " as ";
          print_ty ty
+     | Match (scrutinee, arms) ->
+         printf "match ";
+         print_expr ~t:false scrutinee;
+         printf "{\n";
+         enter ();
+         arms#iter (fun arm ->
+             tab ();
+             print_pat arm.pat;
+             printf " => ";
+             print_expr ~t:false arm.expr);
+         leave ();
+         tab ();
+         printf "}"
+     | Block block -> print_block block
      | _ -> assert false);
     leave ();
     printf ": %s\n" (tcx#render_ty ty);
-    tab ();
-    printf "}"
+    tab ()
+    (* printf "}" *)
   and print_ty ty = printf "%s" (render_ty ty) in
   mdl.items#iter (function Fn (fn, _) -> print_fn fn | _ -> ());
-  print_newline ();
-  exit 0
+  print_newline ()
 ;;

@@ -547,6 +547,7 @@ class tcx sess =
 
     method ptr mut ty = self#intern (Ptr (mut, ty))
     method ref mut ty = self#intern (Ref (mut, ty))
+    method tuple tys = self#intern (Tuple tys)
 
     method is_mut_ptr ty =
       match !ty with
@@ -700,6 +701,12 @@ class tcx sess =
           let adt = SubstFolder.fold_adt self (self#get_adt def_id) subst in
           Some adt.variants
       | _ -> None
+
+    method tuple_of_variant ty idx =
+      let variants = Option.get (self#variants ty) in
+      let (Variant variant) = variants#get idx in
+      let tys = map variant.fields (fun (Field { ty; _ }) -> ty) in
+      self#tuple tys
 
     method non_enum_variant ty =
       Option.map
@@ -864,5 +871,7 @@ class tcx sess =
           (self#def_key def_id).data |> ( function
           | TypeNs name -> name ^ self#render_subst subst
           | _ -> assert false )
+      | Tuple tys ->
+          sprintf "(%s,)" (tys#join ", " (fun ty -> self#render_ty ty))
       | Param { name; _ } -> name
   end

@@ -83,6 +83,9 @@ and inst_kind =
   | Binary of binary_kind * value * value
   (* (bb * inst) *)
   | Phi of ty ref * (value * value) vec
+  | Aggregate of (aggregate * value vec)
+  | Discriminant of value
+  | Payload of (value * int)
   | Store of value * value
   | Copy of value
   | Move of value
@@ -101,6 +104,7 @@ and inst_kind =
   | Nop
 
 and terminator =
+  | Switch of (value * (value * value) vec)
   | Br of value * value * value
   | Jmp of value
   | Ret of value
@@ -116,7 +120,6 @@ and value =
   | VReg of t
   | Label of basic_block
   | Param of ty ref * string * int
-  | Aggregate of (aggregate * value vec)
   | Global of item
 
 and const_kind =
@@ -187,12 +190,6 @@ and render_value tcx = function
   | Label bb -> sprintf "label %%bb%d" bb.bid
   | Param (ty, name, _) -> sprintf "%s %%%s" (tcx#render_ty ty) name
   | Global (Fn instance) -> render_instance tcx instance
-  | Aggregate (Adt (did, vidx, subst), values) ->
-      let variants = tcx#variants (tcx#adt did subst) |> Option.get in
-      let (Variant variant) = variants#get vidx in
-      let path, _ = tcx#into_segments variant.def_id in
-      let name = String.concat "::" path in
-      sprintf "%s { %s }" name (values#join ", " (render_value tcx))
 ;;
 
 let get_ty tcx = function
@@ -204,8 +201,6 @@ let get_ty tcx = function
         tcx
         (match def with Fn id | Intrinsic id -> tcx#get_def id)
         subst
-  | Aggregate (Adt (did, _, Subst subst), _) ->
-      Middle.Ctx.SubstFolder.fold_ty tcx (tcx#get_def did) subst
   | _ -> assert false
 ;;
 
@@ -215,6 +210,12 @@ let render_terminator tcx term =
   "    "
   ^
   match term with
+  | Switch (cond, args) ->
+      sprintf
+        "switch %s, [%s]"
+        (render_value tcx cond)
+        (args#join ", " (fun (bb, inst) ->
+             sprintf "%s: %s" (render_value tcx bb) (render_value tcx inst)))
   | Br (cond, true_block, false_block) ->
       sprintf
         "br %s, %s, %s"
@@ -243,6 +244,21 @@ let render_inst tcx inst : string =
         (tcx#render_ty ty)
         (args#join ", " (fun (bb, inst) ->
              sprintf "[%s, %s]" (render_value tcx bb) (render_value tcx inst)))
+  | Aggregate (Adt (did, vidx, subst), values) ->
+      let variants = tcx#variants (tcx#adt did subst) |> Option.get in
+      let (Variant variant) = variants#get vidx in
+      let path, _ = tcx#into_segments variant.def_id in
+      let name = String.concat "::" path in
+      sprintf "%s { %s }" name (values#join ", " (render_value tcx))
+  | Discriminant value -> sprintf "discriminant %s" (render_value tcx value)
+  | Payload (value, idx) ->
+      let (Variant v) =
+        (tcx#variants (get_ty tcx value) |> Option.get)#get idx
+      in
+      let segments, _ = tcx#into_segments v.def_id in
+      let name = segments |> List.rev |> List.hd in
+      (* sprintf "payload %s <{%d}>" (render_value tcx value) idx *)
+      sprintf "%s as %s" (render_value tcx value) name
   | Store (src, dst) ->
       sprintf "store %s, %s" (render_value tcx src) (render_value tcx dst)
   | Copy ptr ->
@@ -262,8 +278,15 @@ let render_inst tcx inst : string =
          | _ -> assert false)
         (render_value tcx ptr)
   | Gep (ty, value, index) ->
-      let (Variant variant) = tcx#non_enum_variant ty |> Option.get in
-      let (Field { ty; _ }) = variant.fields#get index in
+      let ty =
+        match !ty with
+        | Adt _ ->
+            let (Variant variant) = tcx#non_enum_variant ty |> Option.get in
+            let (Field { ty; _ }) = variant.fields#get index in
+            ty
+        | Tuple tys -> tys#get index
+        | _ -> assert false
+      in
       sprintf
         "gep %s, %s, %d"
         (tcx#render_ty ty)

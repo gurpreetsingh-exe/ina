@@ -13,12 +13,16 @@ let rec lower_block (lcx : lcx) block =
     let f stmt =
       match stmt with
       | Binding binding ->
-          let { binding_expr; binding_id; binding_span; _ } = binding in
-          let ty = tcx#get_def (local_def_id binding_id) in
-          let ptr = lcx#bx#alloca ty binding_span in
-          assert (lcx#locals#insert binding_id ptr = None);
-          let src = lower binding_expr in
-          lcx#bx#store src ptr binding_span
+          let { binding_expr; binding_pat; binding_span; _ } = binding in
+          (match binding_pat with
+           | PIdent (_, _, id) ->
+               let ty = tcx#get_def (local_def_id id) in
+               let ptr = lcx#bx#alloca ty binding_span in
+               assert (lcx#locals#insert id ptr = None);
+               let src = lower binding_expr in
+               lcx#bx#store src ptr binding_span
+           | PWild -> ignore (lower binding_expr)
+           | _ -> assert false)
       | Assign (left, right) ->
           let dst = lower_lvalue left in
           let src = lower right in
@@ -66,7 +70,16 @@ let rec lower_block (lcx : lcx) block =
     | _ -> lower_lvalue expr, ty
   and lower_field expr ident =
     let ptr, ty = lower_autoderef expr in
-    lcx#bx#gep ty ptr ident expr.expr_span
+    let (Variant variant) = tcx#non_enum_variant ty |> Option.get in
+    let index = ref (-1) in
+    find
+      (fun (Middle.Ty.Field { name; ty }) ->
+        incr index;
+        if name = ident then Some (!index, ty) else None)
+      variant.fields
+    |> function
+    | Some (index, ty') -> lcx#bx#gep ty ty' ptr index expr.expr_span
+    | None -> assert false
   and lower_method e expr seg args =
     let name = (seg : path_segment).ident in
     let subst =
@@ -144,7 +157,10 @@ let rec lower_block (lcx : lcx) block =
       if variant.def_id = id then vidx := i
     done;
     assert (!vidx >= 0);
-    Aggregate (Adt (parenid, !vidx, Subst subst), new vec)
+    lcx#bx#aggregate
+      (Adt (parenid, !vidx, Subst subst))
+      (new vec)
+      Source.Span.dummy
   and lower e =
     let ty = expr_ty e in
     match e.expr_kind with
@@ -198,11 +214,13 @@ let rec lower_block (lcx : lcx) block =
          | _ -> assert false)
     | Call (expr, args) ->
         let ty = expr_ty expr in
+        let args' = map args (fun arg -> lower arg) in
         let fn = lower expr in
-        let args = map args (fun arg -> lower arg) in
         (match fn with
-         | Aggregate (adt, _) -> Aggregate (adt, args)
-         | _ -> lcx#bx#call ty fn args e.expr_span)
+         | VReg { kind = Aggregate (_, args); _ } ->
+             args#append args';
+             fn
+         | _ -> lcx#bx#call ty fn args' e.expr_span)
     | Deref expr ->
         let ptr = lower expr in
         lcx#bx#move ptr e.expr_span
@@ -265,7 +283,62 @@ let rec lower_block (lcx : lcx) block =
              @@ tcx#sess.parse_sess.sm#span_to_string e.expr_span.lo;
              assert false)
     | MethodCall (expr, seg, args) -> lower_method e expr seg args
-    | Match _ -> assert false
+    | Match (value, arms) ->
+        let open Middle.Decision in
+        let decision = tcx#get_decision_tree (local_def_id value.expr_id) in
+        let v = lower value in
+        let open Ir in
+        let join = ref None in
+        let ptrs = Hashtbl.create 0 in
+        let rec go ?(first = false) = function
+          | Success body ->
+              body.bindings#iter (fun did var ->
+                  let ptr = lcx#bx#alloca var.ty e.expr_span in
+                  match Hashtbl.find_opt ptrs var.index with
+                  | Some value ->
+                      lcx#bx#store value ptr e.expr_span;
+                      assert (lcx#locals#insert did.inner ptr = None)
+                  | None -> ());
+              let arm = arms#get body.index in
+              lower arm.expr
+          | Failure -> lcx#bx#nop
+          | Switch (var, cases, _) ->
+              let v = if first then v else Hashtbl.find ptrs var.index in
+              let disc = lcx#bx#discriminant v value.expr_span in
+              let switch_bb = lcx#bx#block in
+              let join' = Basicblock.create () in
+              (match !join with
+               | Some join ->
+                   lcx#with_block join (fun () -> lcx#bx#jmp (Label join'))
+               | None -> ());
+              join := Some join';
+              let args = new vec in
+              let phi_args = new vec in
+              cases#iter (fun case ->
+                  let bb = Basicblock.create () in
+                  let (Cons (ty, idx)) = case.cons in
+                  lcx#with_block bb (fun () ->
+                      let payload = lcx#bx#payload v idx value.expr_span in
+                      let ty' = tcx#tuple_of_variant ty idx in
+                      case.args#iteri (fun i var ->
+                          let src =
+                            lcx#bx#gep ty' var.ty payload i e.expr_span
+                          in
+                          Hashtbl.add
+                            ptrs
+                            var.index
+                            (lcx#bx#move src e.expr_span)));
+                  lcx#append_block_with_builder bb;
+                  let value = go case.body in
+                  lcx#bx#jmp (Label join');
+                  args#push (Label bb, lcx#bx#const_int tcx#types.u8 idx);
+                  phi_args#push (Label lcx#bx#block, value));
+              lcx#with_block switch_bb (fun () -> lcx#bx#switch disc args);
+              lcx#append_block_with_builder join';
+              lcx#bx#phi (expr_ty e) phi_args e.expr_span
+        in
+        let v = go ~first:true decision in
+        v
   in
   lower_block' ()
 ;;

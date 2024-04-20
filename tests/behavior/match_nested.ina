@@ -1,0 +1,38 @@
+// EXIT_CODE: 0
+
+type T = A | B
+
+fn f(v1: T, v2: T) -> i32 {
+    match v1 {
+        T::A => match v2 {
+            T::A => 1,
+            T::B => 2,
+        },
+        T::B => match v2 {
+            T::A => 3,
+            T::B => 4,
+        },
+    }
+}
+
+fn main() {
+    assert f(T::A, T::A) == 1;
+    assert f(T::A, T::B) == 2;
+    assert f(T::B, T::A) == 3;
+    assert f(T::B, T::B) == 4;
+
+    let v = match T::A {
+        T::A => match T::B {
+            T::A => 0,
+            _ => match T::A {
+                T::A => match T::B {
+                    T::A => 0,
+                    _ => 5,
+                },
+                _ => 0,
+            },
+        },
+        _ => 0
+    };
+    assert v == 5;
+}

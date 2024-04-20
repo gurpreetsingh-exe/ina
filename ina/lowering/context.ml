@@ -23,6 +23,12 @@ class lcx tcx =
     method builder_at_end bb =
       builder <- new Builder.builder tcx (Option.get fn).basic_blocks bb
 
+    method with_block bb f =
+      let tmp = builder in
+      builder <- new Builder.builder tcx (Option.get fn).basic_blocks bb;
+      f ();
+      builder <- tmp
+
     method locals = locals
     method define fn = mdl.items#push fn
     method mdl = mdl
