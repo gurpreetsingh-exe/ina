@@ -12,17 +12,37 @@ let rec lower_block (lcx : lcx) block =
   let rec lower_block' () =
     let f stmt =
       match stmt with
-      | Binding binding ->
-          let { binding_expr; binding_pat; binding_span; _ } = binding in
-          (match binding_pat with
-           | PIdent (_, _, id) ->
-               let ty = tcx#get_def (local_def_id id) in
-               let ptr = lcx#bx#alloca ty binding_span in
-               assert (lcx#locals#insert id ptr = None);
-               let src = lower binding_expr in
-               lcx#bx#store src ptr binding_span
-           | PWild -> ignore (lower binding_expr)
-           | _ -> assert false)
+      | Binding { binding_expr; binding_span = span; binding_id; _ } ->
+          let open Middle.Decision in
+          let did = local_def_id binding_id in
+          let decision = tcx#get_decision_tree did in
+          let v = lower binding_expr in
+          let ptrs = Hashtbl.create 0 in
+          let rec go ?(first = false) = function
+            | Success body ->
+                body.bindings#iter (fun did var ->
+                    let ptr = lcx#bx#alloca var.ty span in
+                    let v =
+                      match Hashtbl.find_opt ptrs var.index with
+                      | _ when first -> v
+                      | Some value -> value
+                      | None -> assert false
+                    in
+                    lcx#bx#store v ptr span;
+                    assert (lcx#locals#insert did.inner ptr = None))
+            | Switch (var, cases, _) ->
+                let v = if first then v else Hashtbl.find ptrs var.index in
+                cases#iter (fun case ->
+                    let (Cons (ty, idx)) = case.cons in
+                    let payload = lcx#bx#payload v idx span in
+                    let ty' = tcx#tuple_of_variant ty idx in
+                    case.args#iteri (fun i var ->
+                        let src = lcx#bx#gep ty' var.ty payload i span in
+                        Hashtbl.add ptrs var.index (lcx#bx#move src span));
+                    go case.body)
+            | _ -> assert false
+          in
+          go ~first:true decision
       | Assign (left, right) ->
           let dst = lower_lvalue left in
           let src = lower right in
@@ -301,7 +321,6 @@ let rec lower_block (lcx : lcx) block =
                   | None -> ());
               let arm = arms#get body.index in
               lower arm.expr
-          | Failure -> lcx#bx#nop
           | Switch (var, cases, _) ->
               let v = if first then v else Hashtbl.find ptrs var.index in
               let disc = lcx#bx#discriminant v value.expr_span in
@@ -339,6 +358,7 @@ let rec lower_block (lcx : lcx) block =
               if !ty = Unit
               then lcx#bx#nop
               else lcx#bx#phi ty phi_args e.expr_span
+          | Failure -> assert false
         in
         let v = go ~first:true decision in
         v

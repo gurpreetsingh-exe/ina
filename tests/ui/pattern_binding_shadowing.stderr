@@ -1,12 +1,4 @@
 error: bindings cannot shadow constructors
-    ╭─[tests/ui/pattern_binding_shadowing.ina:20:9]
-    │
- 20 │         Empty => {}
-    │         ──┬──
-    │           ╰─── try specifying the pattern arguments: `Empty { .. }`
-    ∙
-────╯
-error: bindings cannot shadow constructors
     ╭─[tests/ui/pattern_binding_shadowing.ina:24:9]
     │
  24 │         TupleVariant => {},

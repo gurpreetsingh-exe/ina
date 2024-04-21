@@ -174,7 +174,9 @@ class type_lowering resolver modd =
       in
       let variants = new vec in
       variants#push (Variant { def_id; fields; index = 0 });
-      let ty = resolver#tcx#adt_with_variants def_id variants subst in
+      let ty =
+        resolver#tcx#adt_with_variants def_id variants StructT subst
+      in
       assert (resolver#tcx#node_id_to_def_id#insert id def_id = None);
       resolver#tcx#create_def def_id ty
 
@@ -209,7 +211,7 @@ class type_lowering resolver modd =
             in
             resolver#tcx#variant def_id fields i)
       in
-      let ty = resolver#tcx#adt_with_variants def_id variants subst in
+      let ty = resolver#tcx#adt_with_variants def_id variants AdtT subst in
       assert (resolver#tcx#node_id_to_def_id#insert id def_id = None);
       resolver#tcx#create_def def_id ty
 

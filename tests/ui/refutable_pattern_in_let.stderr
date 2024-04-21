@@ -1,0 +1,8 @@
+error: refutable pattern in let binding
+    ╭─[tests/ui/refutable_pattern_in_let.ina:10:5]
+    │
+ 10 │     let T::A = T::B;
+    │     ────────┬───────
+    │             ╰───────── pattern `B` not covered
+    ∙
+────╯

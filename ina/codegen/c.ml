@@ -128,8 +128,9 @@ and fn cx ty =
       name
 
 and define cx name ty =
+  let kind = cx.tcx#adt_kind ty in
   match !ty with
-  | Adt _ when cx.tcx#is_non_enum ty ->
+  | Adt _ when Option.get kind = StructT ->
       cx.defined_types#insert' name ();
       let (Variant variant) = cx.tcx#non_enum_variant ty |> Option.get in
       let fields =

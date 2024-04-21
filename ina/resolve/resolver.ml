@@ -727,17 +727,15 @@ class resolver tcx modd =
             let res = self#resolve_path mdl path (Some Type) in
             ignore @@ tcx#res_map#insert id res;
             (match res with
-             | Def _ -> ()
-             | Err ->
+             | Def (_, Cons) -> ()
+             | Def _ | Err ->
                  let res = Res (Local (tcx#ast_mut_to_mut m, id)) in
                  self#shadow mdl name Value res
              | _ -> assert false)
         | PCons (path, subpats) ->
             visit_path path mdl (Some Value);
             subpats#iter (fun pat -> visit_pat pat mdl)
-        | PPath path ->
-            (* TODO: report error if path is not a unit constructor *)
-            visit_path path mdl (Some Value)
+        | PPath path -> visit_path path mdl (Some Value)
         | PWild -> ()
       and visit_block body =
         let mdl = modules#unsafe_get (local_def_id body.block_id) in
@@ -749,12 +747,7 @@ class resolver tcx modd =
                  | Some ty -> resolve_ty ty
                  | None -> ());
                 visit_expr binding_expr mdl;
-                binding_pat |> ( function
-                | PIdent (m, name, id) ->
-                    let res = Res (Local (tcx#ast_mut_to_mut m, id)) in
-                    self#shadow mdl name Value res
-                | PWild -> ()
-                | _ -> assert false )
+                visit_pat binding_pat mdl
             | Assert (expr, _) -> visit_expr expr mdl
             | Assign (expr1, expr2) ->
                 visit_expr expr1 mdl;

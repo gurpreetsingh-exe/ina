@@ -135,7 +135,10 @@ module SubstFolder = struct
       }
 
   and fold_adt tcx adt subst =
-    { variants = map adt.variants (fun v -> fold_variant tcx v subst) }
+    {
+      variants = map adt.variants (fun v -> fold_variant tcx v subst)
+    ; kind = adt.kind
+    }
 
   and fold_subst tcx subst subst' =
     Subst (map subst (function Ty ty -> Ty (fold_ty tcx ty subst')))
@@ -327,7 +330,7 @@ class tcx sess =
       decode_hashmap dec adt_def Def_id.decode (fun dec ->
           let variants = new vec in
           decode_vec dec variants (self |> Ty.decode_variant);
-          { variants });
+          { variants; kind = AdtT });
       decode_hashmap dec fn_def Def_id.decode (self |> decode_fn);
       decode_hashmap dec assoc_fn Def_id.decode (fun dec ->
           let methods = new hashmap in
@@ -622,8 +625,8 @@ class tcx sess =
           self#fn_ptr args ret is_variadic abi
       | _ -> assert false
 
-    method adt_with_variants def_id variants =
-      adt_def#insert' def_id { variants };
+    method adt_with_variants def_id variants kind =
+      adt_def#insert' def_id { variants; kind };
       self#adt def_id
 
     method fn_with_sig
@@ -697,13 +700,6 @@ class tcx sess =
       | Bool -> 1
       | _ -> assert false
 
-    method is_non_enum ty =
-      match !ty with
-      | Ty.Adt (def_id, _) ->
-          let adt = self#get_adt def_id in
-          adt.variants#len = 1
-      | _ -> false
-
     method variant_index def_id =
       let (Variant v) = variant_def#unsafe_get def_id in
       v.index
@@ -713,6 +709,13 @@ class tcx sess =
       | Ty.Adt (def_id, Subst subst) ->
           let adt = SubstFolder.fold_adt self (self#get_adt def_id) subst in
           Some adt.variants
+      | _ -> None
+
+    method adt_kind ty =
+      match !ty with
+      | Ty.Adt (def_id, _) ->
+          let adt = self#get_adt def_id in
+          Some adt.kind
       | _ -> None
 
     method tuple_of_variant ty idx =

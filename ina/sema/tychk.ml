@@ -451,22 +451,20 @@ let tychk_fn cx fn =
         ()
         (* if ty <> Unit && ty <> Err *)
         (* then tcx#emit (unused_value expr.expr_span) *)
-    | Binding { binding_pat; binding_ty; binding_expr; _ } ->
-        (match binding_pat with
-         | PIdent (_, _, id) ->
-             (match binding_ty with
-              | Some expected ->
-                  let expected = tcx#ast_ty_to_ty expected in
-                  let ty = check_expr binding_expr (ExpectTy expected) in
-                  (match equate expected ty with
-                   | Ok ty -> ty
-                   | Error e ->
-                       ty_err_emit tcx e binding_expr.expr_span;
-                       expected)
-              | None -> check_expr binding_expr NoExpectation)
-             |> define id
-         | PWild -> ignore @@ check_expr binding_expr NoExpectation
-         | _ -> assert false)
+    | Binding { binding_pat; binding_ty; binding_expr; binding_span; _ } ->
+        let ty =
+          match binding_ty with
+          | Some expected ->
+              let expected = tcx#ast_ty_to_ty expected in
+              let ty = check_expr binding_expr (ExpectTy expected) in
+              (match equate expected ty with
+               | Ok ty -> ty
+               | Error e ->
+                   ty_err_emit tcx e binding_expr.expr_span;
+                   expected)
+          | None -> check_expr binding_expr NoExpectation
+        in
+        check_pattern ty binding_span binding_pat
     | Assert (cond, _) -> ignore (check_expr cond (ExpectTy tcx#types.bool))
   and check_expr expr expected =
     let ty = check_expr_kind expr expected in
@@ -612,6 +610,94 @@ let tychk_fn cx fn =
     | _ ->
         print_endline @@ tcx#sess.parse_sess.sm#span_to_string path.span.lo;
         assert false
+  and check_pattern ty span = function
+    | PIdent (_, name, id) ->
+        (match tcx#res_map#unsafe_get id with
+         | Def (did, Cons) ->
+             let (Variant variant) = tcx#get_variant did in
+             (if not variant.fields#empty
+              then
+                let msg =
+                  sprintf
+                    "try specifying the pattern arguments: `%s(..)`"
+                    name
+                in
+                Diagnostic.create
+                  "bindings cannot shadow constructors"
+                  ~labels:[Label.primary msg span]
+                |> tcx#emit);
+             let segments = new vec in
+             segments#push
+               { ident = name; args = None; id; span = Span.dummy };
+             let path = { segments; path_id = id; span = Span.dummy } in
+             let found = check_path path in
+             (match equate ty found with
+              | Ok _ -> ()
+              | Error e -> ty_err_emit tcx e span)
+         (* | Def (_, Struct) -> *)
+         (*     let msg = *)
+         (*       sprintf *)
+         (*         "try specifying the pattern arguments: `%s { .. }`" *)
+         (*         name *)
+         (*     in *)
+         (*     Diagnostic.create *)
+         (*       "bindings cannot shadow constructors" *)
+         (*       ~labels:[Label.primary msg span] *)
+         (*     |> tcx#emit *)
+         | _ ->
+             let f () = define id ty in
+             (match tcx#variants ty, tcx#adt_kind ty with
+              | Some variants, Some AdtT ->
+                  let vmap = Hashtbl.create 0 in
+                  variants#iter (function Variant v ->
+                      let name = tcx#into_last_segment v.def_id in
+                      Hashtbl.add vmap name v.def_id);
+                  (match Hashtbl.find_opt vmap name with
+                   | Some did ->
+                       let qpath = tcx#qpath did in
+                       let msg =
+                         sprintf
+                           "pattern binding `%s` is named the same as one \
+                            of the variants of the type `%s`"
+                           name
+                           (tcx#typename ty)
+                       in
+                       let label_msg =
+                         sprintf "use qualified path `%s`" qpath
+                       in
+                       Diagnostic.create
+                         msg
+                         ~labels:[Label.primary label_msg span]
+                       |> tcx#emit
+                   | None -> f ())
+              | _ -> f ()))
+    | PCons (path, patns) ->
+        let consty = check_path path in
+        (match !consty with
+         | Fn _ ->
+             let fnsig = Fn.get tcx consty in
+             let nargs = fnsig.args#len in
+             let npatn = patns#len in
+             (match equate ty fnsig.ret with
+              | Ok _ -> ()
+              | Error e -> ty_err_emit tcx e path.span);
+             if nargs <> npatn
+             then mismatch_pattern_args nargs npatn path.span |> tcx#emit;
+             patns#iteri (fun i pat ->
+                 if i < nargs
+                 then
+                   let ty = fnsig.args#get i in
+                   check_pattern ty path.span pat)
+         | _ ->
+             Diagnostic.create
+               "unexpected pattern"
+               ~labels:[Label.primary "not a variant" path.span]
+             |> tcx#emit)
+    | PPath path ->
+        (match equate ty (check_path path) with
+         | Ok _ -> ()
+         | Error e -> ty_err_emit tcx e path.span)
+    | PWild -> ()
   and check_arguments ?(is_variadic = false) pexpr exprs args =
     if (not is_variadic) && exprs#len <> args#len
     then tcx#emit @@ mismatch_args args#len exprs#len pexpr.expr_span
@@ -887,91 +973,6 @@ let tychk_fn cx fn =
                   tcx#types.err))
     | Match (expr, arms) ->
         let ty = check_expr expr NoExpectation in
-        let rec check_pattern ty span = function
-          | PIdent (_, name, id) ->
-              (match tcx#res_map#unsafe_get id with
-               | Def (_, Adt) -> assert false
-               | Def (did, Cons) ->
-                   let (Variant variant) = tcx#get_variant did in
-                   (if not variant.fields#empty
-                    then
-                      let msg =
-                        sprintf
-                          "try specifying the pattern arguments: `%s(..)`"
-                          name
-                      in
-                      Diagnostic.create
-                        "bindings cannot shadow constructors"
-                        ~labels:[Label.primary msg span]
-                      |> tcx#emit);
-                   let segments = new vec in
-                   segments#push
-                     { ident = name; args = None; id; span = Span.dummy };
-                   let path =
-                     { segments; path_id = id; span = Span.dummy }
-                   in
-                   let found = check_path path in
-                   (match equate ty found with
-                    | Ok _ -> ()
-                    | Error e -> ty_err_emit tcx e span)
-               | Def (_, Struct) ->
-                   let msg =
-                     sprintf
-                       "try specifying the pattern arguments: `%s { .. }`"
-                       name
-                   in
-                   Diagnostic.create
-                     "bindings cannot shadow constructors"
-                     ~labels:[Label.primary msg span]
-                   |> tcx#emit
-               | _ ->
-                   let f () = define id ty in
-                   (match tcx#variants ty with
-                    | Some variants ->
-                        let vmap = Hashtbl.create 0 in
-                        variants#iter (function Variant v ->
-                            let name = tcx#into_last_segment v.def_id in
-                            Hashtbl.add vmap name v.def_id);
-                        (match Hashtbl.find_opt vmap name with
-                         | Some did ->
-                             let qpath = tcx#qpath did in
-                             let msg =
-                               sprintf
-                                 "pattern binding `%s` is named the same as \
-                                  one of the variants of the type `%s`"
-                                 name
-                                 (tcx#typename ty)
-                             in
-                             let label_msg =
-                               sprintf "use qualified path `%s`" qpath
-                             in
-                             Diagnostic.create
-                               msg
-                               ~labels:[Label.primary label_msg span]
-                             |> tcx#emit
-                         | None -> f ())
-                    | None -> f ()))
-          | PCons (path, patns) ->
-              let consty = check_path path in
-              let fnsig = Fn.get tcx consty in
-              let nargs = fnsig.args#len in
-              let npatn = patns#len in
-              (match equate ty fnsig.ret with
-               | Ok _ -> ()
-               | Error e -> ty_err_emit tcx e path.span);
-              if nargs <> npatn
-              then mismatch_pattern_args nargs npatn path.span |> tcx#emit;
-              patns#iteri (fun i pat ->
-                  if i < nargs
-                  then
-                    let ty = fnsig.args#get i in
-                    check_pattern ty path.span pat)
-          | PPath path ->
-              (match equate ty (check_path path) with
-               | Ok _ -> ()
-               | Error e -> ty_err_emit tcx e path.span)
-          | PWild -> ()
-        in
         let first = ref None in
         arms#iter (fun { pat; patspan; expr; _ } ->
             check_pattern ty patspan pat;

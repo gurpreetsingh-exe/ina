@@ -1,6 +1,7 @@
 open Ast
 open Middle.Ty
 open Middle.Ctx
+open Middle.Def_id
 open Errors
 open Diagnostic
 open Printf
@@ -45,7 +46,7 @@ let analyze (tcx : tcx) fn =
     | Some expr -> visit_expr expr ~e
     | None -> Ok ()
   and visit_expr ?(e = `None) expr =
-    let ty expr = tcx#get_def (Middle.Def_id.local_def_id expr.expr_id) in
+    let ty expr = tcx#get_def (local_def_id expr.expr_id) in
     let expr_name = function
       | Path path -> Some (path.segments#join "" (fun s -> s.ident))
       | _ -> None
@@ -200,7 +201,7 @@ let analyze (tcx : tcx) fn =
         Ok ()
     | Match (expr, arms) ->
         let* _ = visit_expr expr ~e in
-        let did = Middle.Def_id.local_def_id expr.expr_id in
+        let did = local_def_id expr.expr_id in
         let ty = tcx#get_def did in
         let decision = Exhaustiveness.go tcx ty arms expr.expr_span in
         tcx#record_decision_tree did decision;
@@ -222,12 +223,20 @@ let analyze (tcx : tcx) fn =
              |> tcx#emit);
         visit_expr right
     | Stmt expr | Expr expr -> visit_expr expr ~e
-    | Binding { binding_pat; binding_span; binding_expr; _ } ->
+    | Binding { binding_pat; binding_span; binding_expr; binding_id; _ } ->
         let* _ = visit_expr binding_expr in
-        (match binding_pat with
-         | PIdent (_, _, id) -> Ok (Hashtbl.add locals id binding_span)
-         | PWild -> Ok ()
-         | _ -> assert false)
+        let ty = tcx#get_def (local_def_id binding_expr.expr_id) in
+        let rec go span = function
+          | PIdent (_, _, id) -> Hashtbl.add locals id span
+          | PCons (_, patns) -> patns#iter @@ go span
+          | PWild | PPath _ -> ()
+        in
+        go binding_span binding_pat;
+        let decision =
+          Exhaustiveness.check_let tcx ty binding_pat binding_span
+        in
+        tcx#record_decision_tree (local_def_id binding_id) decision;
+        Ok ()
     | Assert (expr, _) -> visit_expr expr
   in
   match fn.body with

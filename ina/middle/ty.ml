@@ -90,7 +90,14 @@ and variant =
       ; index: int
     }
 
-and adt = { variants: variant vec }
+and adtkind =
+  | StructT
+  | AdtT
+
+and adt = {
+    variants: variant vec
+  ; kind: adtkind
+}
 
 and typaram = {
     index: int
