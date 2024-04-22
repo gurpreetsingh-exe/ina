@@ -13,7 +13,9 @@ type body = {
   ; index: int
 }
 
-type cons = Cons of (ty ref * int)
+type cons =
+  | Cons of (ty ref * int)
+  | Int of int
 
 type t =
   | Success of body

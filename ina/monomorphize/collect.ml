@@ -83,10 +83,11 @@ let collect tcx mdl =
       in
       { inst with kind; ty }
     and fold_terminator = function
-      | Switch (cond, args) ->
+      | Switch (cond, args, default) ->
           Switch
             ( fold_value cond
-            , map args (fun (bb, value) -> bb, fold_value value) )
+            , map args (fun (bb, value) -> bb, fold_value value)
+            , default )
       | Br (cond, then', else') ->
           Br (fold_value cond, fold_value then', fold_value else')
       | Jmp value -> Jmp (fold_value value)

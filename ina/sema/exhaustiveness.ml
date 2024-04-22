@@ -8,6 +8,9 @@ open Structures.Vec
 open Structures.Hashmap
 open Format
 
+(* Implementation based on
+   https://github.com/yorickpeterse/pattern-matching-in-rust *)
+
 type column = {
     variable: variable
   ; pattern: pat
@@ -58,6 +61,9 @@ let rec compile_rows compiler rows =
       else
         let bv = branch_var rows in
         (match !(bv.ty) with
+         | Int _ ->
+             let cases, fallback = compile_int_cases compiler rows bv in
+             Switch (bv, cases, Some fallback)
          | Adt _ ->
              let variants = tcx#variants bv.ty |> Option.get in
              let cases =
@@ -79,6 +85,35 @@ and new_variable compiler ty =
   let var = { ty; index = compiler.variable_id } in
   compiler.variable_id <- compiler.variable_id + 1;
   var
+
+and compile_int_cases compiler rows bv =
+  let tested = new hashmap in
+  let raw_cases = new vec in
+  let fallback_rows = new vec in
+  rows#iter (fun row ->
+      match remove_column row bv with
+      | Some col ->
+          let key, cons =
+            match col.pattern with
+            | PInt v -> (v, v), Decision.Int v
+            | _ -> assert false
+          in
+          (match tested#get key with
+           | Some idx ->
+               let _, _, rows' = raw_cases#get idx in
+               rows'#push row
+           | None ->
+               let rows' = new vec in
+               rows'#push row;
+               assert (tested#insert key raw_cases#len = None);
+               raw_cases#push (cons, new vec, rows'))
+      | None -> fallback_rows#push row);
+  raw_cases#iter (fun (_, _, rows') -> rows'#append fallback_rows);
+  let cases =
+    map raw_cases (fun (cons, vars, rows) ->
+        { cons; args = vars; body = compile_rows compiler rows })
+  in
+  cases, compile_rows compiler fallback_rows
 
 and compile_constructor_cases compiler rows bv cases =
   let tcx = compiler.tcx in
@@ -161,7 +196,7 @@ and add_missing_patterns compiler decision terms missing =
         |> Option.value ~default:"_"
       in
       Hashtbl.add missing name ()
-  | Switch (variable, cases, _) ->
+  | Switch (variable, cases, fallback) ->
       cases#iter (fun case ->
           (match case.cons with
            | Cons (ty, idx) ->
@@ -170,9 +205,14 @@ and add_missing_patterns compiler decision terms missing =
                in
                let s, _ = tcx#into_segments variant.def_id in
                let name = List.rev s |> List.hd in
-               terms#push { variable; name; args = case.args });
+               terms#push { variable; name; args = case.args }
+           | Int _ -> terms#push { variable; name = "_"; args = new vec });
           add_missing_patterns compiler case.body terms missing;
-          ignore @@ terms#pop)
+          ignore @@ terms#pop);
+      Option.iter
+        (fun decision ->
+          add_missing_patterns compiler decision terms missing)
+        fallback
 
 and pattern_name term terms mapping =
   if term.args#empty

@@ -456,6 +456,11 @@ class parser pcx file tokenizer =
                if ident = "_"
                then Ok PWild
                else Ok (PIdent (Imm, ident, self#id)))
+      | Lit Int ->
+          let buf = get_token_str token file#src in
+          self#bump;
+          let v = int_of_string buf in
+          Ok (PInt v)
       | Mut ->
           let s = token.span.lo in
           self#bump;

@@ -36,8 +36,8 @@ class builder tcx blocks block =
 
     method store src dst = self#add_inst (Store (src, dst))
 
-    method switch cond args =
-      self#add_terminator (Switch (cond, args));
+    method switch ?default cond args =
+      self#add_terminator (Switch (cond, args, default));
       args#iter (function bb, _ ->
           let bb = Inst.extract_block bb in
           Basicblock.append_succ block bb)

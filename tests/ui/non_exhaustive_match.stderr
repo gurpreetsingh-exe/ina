@@ -30,3 +30,19 @@ error: non-exhaustive patterns
     │             ╰─── patterns `None` and `Some(A(B, A))` not covered
     ∙
 ────╯
+error: non-exhaustive patterns
+    ╭─[tests/ui/non_exhaustive_match.ina:43:11]
+    │
+ 43 │     match 0 {
+    │           ┬
+    │           ╰─ pattern `_` not covered
+    ∙
+────╯
+error: non-exhaustive patterns
+    ╭─[tests/ui/non_exhaustive_match.ina:47:11]
+    │
+ 47 │     match None {
+    │           ──┬─
+    │             ╰─── pattern `Some(_)` not covered
+    ∙
+────╯

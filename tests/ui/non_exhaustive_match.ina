@@ -39,4 +39,19 @@ fn main() {
         Some(T2::A(T::A, _)) => {},
         Some(T2::A(_, T::B)) => {},
     }
+    // error
+    match 0 {
+        0 => {},
+    }
+    // error
+    match None {
+        Some(20) => {},
+        Some(21) => {},
+        None => {},
+    }
+    // ok
+    match 0 {
+        0 => {},
+        _ => {},
+    }
 }

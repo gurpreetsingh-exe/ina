@@ -218,6 +218,7 @@ and pat =
   | PIdent of (mutability * ident * node_id)
   | PPath of path
   | PCons of (path * pat vec)
+  | PInt of int
   | PWild
 
 and expr = {

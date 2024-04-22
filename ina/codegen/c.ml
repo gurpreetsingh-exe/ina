@@ -370,13 +370,17 @@ let gen cx =
         print_endline @@ render_inst cx.tcx inst;
         assert false
   and gen_terminator = function
-    | Switch (value, branches) ->
+    | Switch (value, branches, default) ->
         out
         ^ sprintf
-            "switch (%s) { %s default: __builtin_unreachable(); };\n"
+            "switch (%s) { %s %s };\n"
             (get_value value)
             (branches#join " " (fun (bb, value) ->
                  sprintf "case %s: goto %s;" (get_value value) (get_value bb)))
+            (default
+             |> Option.map (fun bb ->
+                    sprintf "default: goto %s;" (get_value bb))
+             |> Option.value ~default:"default: __builtin_unreachable();")
     | Ret value -> out ^ sprintf "return %s;\n" (get_value value)
     | RetUnit -> out ^ "return;\n"
     | Br (cond, then_block, else_block) ->

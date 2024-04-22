@@ -104,7 +104,7 @@ and inst_kind =
   | Nop
 
 and terminator =
-  | Switch of (value * (value * value) vec)
+  | Switch of (value * (value * value) vec * value option)
   | Br of value * value * value
   | Jmp of value
   | Ret of value
@@ -210,12 +210,16 @@ let render_terminator tcx term =
   "    "
   ^
   match term with
-  | Switch (cond, args) ->
+  | Switch (cond, args, default) ->
       sprintf
-        "switch %s, [%s]"
+        "switch %s, [%s%s]"
         (render_value tcx cond)
         (args#join ", " (fun (bb, inst) ->
              sprintf "%s: %s" (render_value tcx bb) (render_value tcx inst)))
+        (default
+         |> Option.map (render_value tcx)
+         |> Option.map (sprintf ", default: %s")
+         |> Option.value ~default:"")
   | Br (cond, true_block, false_block) ->
       sprintf
         "br %s, %s, %s"

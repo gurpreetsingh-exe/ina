@@ -698,6 +698,12 @@ let tychk_fn cx fn =
          | Ok _ -> ()
          | Error e -> ty_err_emit tcx e path.span)
     | PWild -> ()
+    | PInt _ ->
+        (* TODO: check integer range *)
+        let found = infcx_new_int_var cx.infcx in
+        (match equate ty found with
+         | Ok _ -> ()
+         | Error e -> ty_err_emit tcx e span)
   and check_arguments ?(is_variadic = false) pexpr exprs args =
     if (not is_variadic) && exprs#len <> args#len
     then tcx#emit @@ mismatch_args args#len exprs#len pexpr.expr_span

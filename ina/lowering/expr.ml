@@ -33,13 +33,15 @@ let rec lower_block (lcx : lcx) block =
             | Switch (var, cases, _) ->
                 let v = if first then v else Hashtbl.find ptrs var.index in
                 cases#iter (fun case ->
-                    let (Cons (ty, idx)) = case.cons in
-                    let payload = lcx#bx#payload v idx span in
-                    let ty' = tcx#tuple_of_variant ty idx in
-                    case.args#iteri (fun i var ->
-                        let src = lcx#bx#gep ty' var.ty payload i span in
-                        Hashtbl.add ptrs var.index (lcx#bx#move src span));
-                    go case.body)
+                    match case.cons with
+                    | Cons (ty, idx) ->
+                        let payload = lcx#bx#payload v idx span in
+                        let ty' = tcx#tuple_of_variant ty idx in
+                        case.args#iteri (fun i var ->
+                            let src = lcx#bx#gep ty' var.ty payload i span in
+                            Hashtbl.add ptrs var.index (lcx#bx#move src span));
+                        go case.body
+                    | Int _ -> assert false)
             | _ -> assert false
           in
           go ~first:true decision
@@ -321,9 +323,13 @@ let rec lower_block (lcx : lcx) block =
                   | None -> ());
               let arm = arms#get body.index in
               lower arm.expr
-          | Switch (var, cases, _) ->
+          | Switch (var, cases, default) ->
               let v = if first then v else Hashtbl.find ptrs var.index in
-              let disc = lcx#bx#discriminant v value.expr_span in
+              let disc =
+                if tcx#adt_kind var.ty |> Option.is_some
+                then lcx#bx#discriminant v value.expr_span
+                else v
+              in
               let switch_bb = lcx#bx#block in
               let join' = Basicblock.create () in
               (match !join with
@@ -335,24 +341,43 @@ let rec lower_block (lcx : lcx) block =
               let phi_args = new vec in
               cases#iter (fun case ->
                   let bb = Basicblock.create () in
-                  let (Cons (ty, idx)) = case.cons in
-                  lcx#with_block bb (fun () ->
-                      let payload = lcx#bx#payload v idx value.expr_span in
-                      let ty' = tcx#tuple_of_variant ty idx in
-                      case.args#iteri (fun i var ->
-                          let src =
-                            lcx#bx#gep ty' var.ty payload i e.expr_span
-                          in
-                          Hashtbl.add
-                            ptrs
-                            var.index
-                            (lcx#bx#move src e.expr_span)));
+                  let const =
+                    match case.cons with
+                    | Cons (ty, idx) ->
+                        lcx#with_block bb (fun () ->
+                            let payload =
+                              lcx#bx#payload v idx value.expr_span
+                            in
+                            let ty' = tcx#tuple_of_variant ty idx in
+                            case.args#iteri (fun i var ->
+                                let src =
+                                  lcx#bx#gep ty' var.ty payload i e.expr_span
+                                in
+                                Hashtbl.add
+                                  ptrs
+                                  var.index
+                                  (lcx#bx#move src e.expr_span)));
+                        lcx#bx#const_int tcx#types.u8 idx
+                    | Int v -> lcx#bx#const_int var.ty v
+                  in
                   lcx#append_block_with_builder bb;
                   let value = go case.body in
                   lcx#bx#jmp (Label join');
-                  args#push (Label bb, lcx#bx#const_int tcx#types.u8 idx);
+                  args#push (Label bb, const);
                   phi_args#push (Label lcx#bx#block, value));
-              lcx#with_block switch_bb (fun () -> lcx#bx#switch disc args);
+              let default =
+                Option.map
+                  (fun decision ->
+                    let bb = Basicblock.create () in
+                    lcx#append_block_with_builder bb;
+                    let value = go decision in
+                    lcx#bx#jmp (Label join');
+                    phi_args#push (Label lcx#bx#block, value);
+                    Label bb)
+                  default
+              in
+              lcx#with_block switch_bb (fun () ->
+                  lcx#bx#switch ?default disc args);
               lcx#append_block_with_builder join';
               let ty = expr_ty e in
               if !ty = Unit
