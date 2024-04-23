@@ -16,6 +16,8 @@ type body = {
 type cons =
   | Cons of (ty ref * int)
   | Int of int
+  | True
+  | False
 
 type t =
   | Success of body

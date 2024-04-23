@@ -1,0 +1,8 @@
+error: non-exhaustive patterns
+   ╭─[tests/ui/non_exhaustive_match2.ina:8:11]
+   │
+ 8 │     match T2::T(T::T1, V::V2(true)) {
+   │           ────────────┬────────────
+   │                       ╰───────────── patterns `T(T1, V2(_))` and `T(T2, V1(_))` not covered
+   ∙
+───╯

@@ -704,6 +704,10 @@ let tychk_fn cx fn =
         (match equate ty found with
          | Ok _ -> ()
          | Error e -> ty_err_emit tcx e span)
+    | PBool _ ->
+        (match equate ty tcx#types.bool with
+         | Ok _ -> ()
+         | Error e -> ty_err_emit tcx e span)
   and check_arguments ?(is_variadic = false) pexpr exprs args =
     if (not is_variadic) && exprs#len <> args#len
     then tcx#emit @@ mismatch_args args#len exprs#len pexpr.expr_span

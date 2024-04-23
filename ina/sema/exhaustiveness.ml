@@ -64,6 +64,12 @@ let rec compile_rows compiler rows =
          | Int _ ->
              let cases, fallback = compile_int_cases compiler rows bv in
              Switch (bv, cases, Some fallback)
+         | Bool ->
+             let cases = new vec in
+             cases#push (True, new vec, new vec);
+             cases#push (False, new vec, new vec);
+             Switch
+               (bv, compile_constructor_cases compiler rows bv cases, None)
          | Adt _ ->
              let variants = tcx#variants bv.ty |> Option.get in
              let cases =
@@ -117,17 +123,20 @@ and compile_int_cases compiler rows bv =
 
 and compile_constructor_cases compiler rows bv cases =
   let tcx = compiler.tcx in
+  let g row args idx =
+    let case = cases#get idx in
+    let _, vars, rows' = case in
+    iter2 vars args (fun variable pattern ->
+        row.columns#push { variable; pattern });
+    rows'#push { columns = row.columns; body = row.body }
+  in
   let f row args id =
     let idx =
       match tcx#res_map#unsafe_get id with
       | Def (did, Cons) -> tcx#variant_index did
       | _ -> assert false
     in
-    let case = cases#get idx in
-    let _, vars, rows' = case in
-    iter2 vars args (fun variable pattern ->
-        row.columns#push { variable; pattern });
-    rows'#push { columns = row.columns; body = row.body }
+    g row args idx
   in
   rows#iter (fun row ->
       match remove_column row bv with
@@ -138,7 +147,9 @@ and compile_constructor_cases compiler rows bv cases =
            | PIdent (_, _, id)
              when tcx#get_local (local_def_id id) |> Option.is_none ->
                f row (new vec) id
-           | _ -> ())
+           | PBool true -> g row (new vec) 0
+           | PBool false -> g row (new vec) 1
+           | PInt _ | PIdent _ | PWild -> ())
       | None -> cases#iter (fun (_, _, rows) -> rows#push row));
   map cases (fun (cons, vars, rows) ->
       { cons; args = vars; body = compile_rows compiler rows })
@@ -206,7 +217,9 @@ and add_missing_patterns compiler decision terms missing =
                let s, _ = tcx#into_segments variant.def_id in
                let name = List.rev s |> List.hd in
                terms#push { variable; name; args = case.args }
-           | Int _ -> terms#push { variable; name = "_"; args = new vec });
+           | Int _ -> terms#push { variable; name = "_"; args = new vec }
+           | True -> terms#push { variable; name = "true"; args = new vec }
+           | False -> terms#push { variable; name = "false"; args = new vec });
           add_missing_patterns compiler case.body terms missing;
           ignore @@ terms#pop);
       Option.iter

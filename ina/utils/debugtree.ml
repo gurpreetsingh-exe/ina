@@ -79,6 +79,7 @@ let print_mdl tcx (mdl : modd) =
     | PPath path -> print_path path
     | PWild -> printf "_"
     | PInt v -> printf "%d" v
+    | PBool v -> printf "%b" v
   and print_expr ?(t = true) expr =
     let ty = tcx#get_def_debug expr.expr_id in
     enter ();

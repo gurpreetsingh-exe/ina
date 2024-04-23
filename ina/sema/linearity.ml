@@ -229,7 +229,7 @@ let analyze (tcx : tcx) fn =
         let rec go span = function
           | PIdent (_, _, id) -> Hashtbl.add locals id span
           | PCons (_, patns) -> patns#iter @@ go span
-          | PWild | PPath _ | PInt _ -> ()
+          | PWild | PPath _ | PInt _ | PBool _ -> ()
         in
         go binding_span binding_pat;
         let decision =

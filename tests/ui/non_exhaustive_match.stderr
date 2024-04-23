@@ -46,3 +46,11 @@ error: non-exhaustive patterns
     │             ╰─── pattern `Some(_)` not covered
     ∙
 ────╯
+error: non-exhaustive patterns
+    ╭─[tests/ui/non_exhaustive_match.ina:58:11]
+    │
+ 58 │     match true {
+    │           ──┬─
+    │             ╰─── pattern `false` not covered
+    ∙
+────╯

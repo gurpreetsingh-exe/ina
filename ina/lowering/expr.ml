@@ -41,7 +41,7 @@ let rec lower_block (lcx : lcx) block =
                             let src = lcx#bx#gep ty' var.ty payload i span in
                             Hashtbl.add ptrs var.index (lcx#bx#move src span));
                         go case.body
-                    | Int _ -> assert false)
+                    | Int _ | True | False -> assert false)
             | _ -> assert false
           in
           go ~first:true decision
@@ -359,6 +359,8 @@ let rec lower_block (lcx : lcx) block =
                                   (lcx#bx#move src e.expr_span)));
                         lcx#bx#const_int tcx#types.u8 idx
                     | Int v -> lcx#bx#const_int var.ty v
+                    | True -> lcx#bx#const_bool var.ty true
+                    | False -> lcx#bx#const_bool var.ty false
                   in
                   lcx#append_block_with_builder bb;
                   let value = go case.body in

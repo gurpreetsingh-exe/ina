@@ -54,4 +54,13 @@ fn main() {
         0 => {},
         _ => {},
     }
+    // error
+    match true {
+        true => {},
+    }
+    // ok
+    match true {
+        true => {},
+        false => {},
+    }
 }
