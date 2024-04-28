@@ -31,6 +31,11 @@ class builder tcx blocks block =
 
     method binary kind left right =
       let ty = get_ty tcx right in
+      let ty =
+        match kind with
+        | Lt | LtEq | Gt | GtEq | Eq | NotEq -> tcx#types.bool
+        | _ -> ty
+      in
       let inst = Binary (kind, left, right) in
       self#add_inst_with_ty ty inst
 

@@ -697,6 +697,7 @@ let tychk_fn cx fn =
         (match equate ty (check_path path) with
          | Ok _ -> ()
          | Error e -> ty_err_emit tcx e path.span)
+    | POr patns -> patns#iter (fun pat -> check_pattern ty span pat)
     | PWild -> ()
     | PInt _ ->
         (* TODO: check integer range *)

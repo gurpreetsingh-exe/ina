@@ -80,6 +80,10 @@ let print_mdl tcx (mdl : modd) =
     | PWild -> printf "_"
     | PInt v -> printf "%d" v
     | PBool v -> printf "%b" v
+    | POr v ->
+        v#iter (fun v ->
+            printf "| ";
+            print_pat v)
   and print_expr ?(t = true) expr =
     let ty = tcx#get_def_debug expr.expr_id in
     enter ();

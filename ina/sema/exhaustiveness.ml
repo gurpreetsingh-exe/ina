@@ -50,6 +50,7 @@ let rec compile_rows compiler rows =
       compiler.diag.missing <- true;
       Failure
   | false ->
+      expand_or_patterns rows;
       rows#iter (move_variable_patterns tcx);
       if rows#first
          |> Option.map (fun row -> row.columns#empty)
@@ -84,6 +85,34 @@ let rec compile_rows compiler rows =
          | _ ->
              print_endline @@ tcx#render_ty bv.ty;
              assert false)
+
+and expand_or_patterns rows =
+  let new_rows = new vec in
+  let found = ref true in
+  while !found do
+    found := false;
+    rows#iter (fun row ->
+        let res =
+          find
+            (fun (i, col) ->
+              match col.pattern with
+              | POr patns -> Some (i, col.variable, patns)
+              | _ -> None)
+            (mapi row.columns (fun i v -> i, v))
+        in
+        match res with
+        | Some (i, variable, patns) ->
+            found := true;
+            patns#iter (fun pattern ->
+                let new_row =
+                  { columns = row.columns#copy; body = row.body }
+                in
+                new_row.columns#set i { variable; pattern };
+                new_rows#push new_row)
+        | None -> new_rows#push row);
+    rows#replace new_rows#inner;
+    new_rows#clear
+  done
 
 and new_variables compiler tys = map tys (new_variable compiler)
 
@@ -149,7 +178,7 @@ and compile_constructor_cases compiler rows bv cases =
                f row (new vec) id
            | PBool true -> g row (new vec) 0
            | PBool false -> g row (new vec) 1
-           | PInt _ | PIdent _ | PWild -> ())
+           | PInt _ | PIdent _ | POr _ | PWild -> ())
       | None -> cases#iter (fun (_, _, rows) -> rows#push row));
   map cases (fun (cons, vars, rows) ->
       { cons; args = vars; body = compile_rows compiler rows })

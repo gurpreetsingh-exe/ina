@@ -20,7 +20,7 @@ class ['a] vec =
 
     method copy =
       let v = new vec in
-      v#replace inner;
+      v#replace (Array.copy inner);
       v
 
     method pop_front =

@@ -435,52 +435,64 @@ class parser pcx file tokenizer =
         }
 
     method parse_pat =
-      let kind = token.kind in
-      let maybe_parse_cons () =
-        let* path = self#parse_path Type in
-        match token.kind with
-        | LParen ->
-            let* args =
-              parse_spanned_with_sep self LParen RParen Comma (fun () ->
-                  self#parse_pat)
-            in
-            Ok (PCons (path, args))
-        | _ -> Ok (PPath path)
+      let patterns = new vec in
+      let go () =
+        let kind = token.kind in
+        let maybe_parse_cons () =
+          let* path = self#parse_path Type in
+          match token.kind with
+          | LParen ->
+              let* args =
+                parse_spanned_with_sep self LParen RParen Comma (fun () ->
+                    self#parse_pat)
+              in
+              Ok (PCons (path, args))
+          | _ -> Ok (PPath path)
+        in
+        match kind with
+        | Ident ->
+            (match self#npeek 1 with
+             | (Colon2 | LParen | LBracket) :: _ -> maybe_parse_cons ()
+             | _ ->
+                 let* ident = self#parse_ident in
+                 if ident = "_"
+                 then Ok PWild
+                 else Ok (PIdent (Imm, ident, self#id)))
+        | Lit l ->
+            let buf = get_token_str token file#src in
+            self#bump;
+            (match l with
+             | Int -> Ok (PInt (int_of_string buf))
+             | Bool -> Ok (PBool (bool_of_string buf))
+             | _ ->
+                 self#unexpected_token kind ~line:__LINE__;
+                 exit 1)
+        | Mut ->
+            let s = token.span.lo in
+            self#bump;
+            let mutspan = self#mk_span s in
+            let* pat = self#parse_pat in
+            (match pat with
+             | PIdent (_, name, id) -> Ok (PIdent (Mut, name, id))
+             | pat ->
+                 Diagnostic.create
+                   "`mut` must be followed by a named binding"
+                   ~labels:[Label.primary "remove the `mut` prefix" mutspan]
+                 |> self#emit_err;
+                 Ok pat)
+        | t ->
+            self#unexpected_token t ~line:__LINE__;
+            exit 1
       in
-      match kind with
-      | Ident ->
-          (match self#npeek 1 with
-           | (Colon2 | LParen | LBracket) :: _ -> maybe_parse_cons ()
-           | _ ->
-               let* ident = self#parse_ident in
-               if ident = "_"
-               then Ok PWild
-               else Ok (PIdent (Imm, ident, self#id)))
-      | Lit l ->
-          let buf = get_token_str token file#src in
-          self#bump;
-          (match l with
-           | Int -> Ok (PInt (int_of_string buf))
-           | Bool -> Ok (PBool (bool_of_string buf))
-           | _ ->
-               self#unexpected_token kind ~line:__LINE__;
-               exit 1)
-      | Mut ->
-          let s = token.span.lo in
-          self#bump;
-          let mutspan = self#mk_span s in
-          let* pat = self#parse_pat in
-          (match pat with
-           | PIdent (_, name, id) -> Ok (PIdent (Mut, name, id))
-           | pat ->
-               Diagnostic.create
-                 "`mut` must be followed by a named binding"
-                 ~labels:[Label.primary "remove the `mut` prefix" mutspan]
-               |> self#emit_err;
-               Ok pat)
-      | t ->
-          self#unexpected_token t ~line:__LINE__;
-          exit 1
+      self#eat_if_present Pipe;
+      let rec go' () =
+        let* pattern = go () in
+        patterns#push pattern;
+        if self#eat Pipe then go' () else Ok ()
+      in
+      go' ()
+      |> Result.map (fun () ->
+             if patterns#len = 1 then patterns#get 0 else POr patterns)
 
     method parse_let =
       let s = token.span.lo in

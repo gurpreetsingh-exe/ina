@@ -736,6 +736,7 @@ class resolver tcx modd =
             visit_path path mdl (Some Value);
             subpats#iter (fun pat -> visit_pat pat mdl)
         | PPath path -> visit_path path mdl (Some Value)
+        | POr subpats -> subpats#iter (fun pat -> visit_pat pat mdl)
         | PWild | PInt _ | PBool _ -> ()
       and visit_block body =
         let mdl = modules#unsafe_get (local_def_id body.block_id) in
