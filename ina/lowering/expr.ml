@@ -310,10 +310,15 @@ let rec lower_block (lcx : lcx) block =
         let decision = tcx#get_decision_tree (local_def_id value.expr_id) in
         let v = lower value in
         let open Ir in
-        let join = ref None in
         let ptrs = Hashtbl.create 0 in
+        let bbs = Hashtbl.create 0 in
+        let check_if_present = function
+          | Success body -> Hashtbl.find_opt bbs body.index
+          | _ -> None
+        in
         let rec go ?(first = false) = function
           | Success body ->
+              Hashtbl.replace bbs body.index lcx#bx#block;
               body.bindings#iter (fun did var ->
                   let ptr = lcx#bx#alloca var.ty e.expr_span in
                   match Hashtbl.find_opt ptrs var.index with
@@ -331,12 +336,7 @@ let rec lower_block (lcx : lcx) block =
                 else v
               in
               let switch_bb = lcx#bx#block in
-              let join' = Basicblock.create () in
-              (match !join with
-               | Some join ->
-                   lcx#with_block join (fun () -> lcx#bx#jmp (Label join'))
-               | None -> ());
-              join := Some join';
+              let join = Basicblock.create () in
               let args = new vec in
               let phi_args = new vec in
               cases#iter (fun case ->
@@ -362,25 +362,28 @@ let rec lower_block (lcx : lcx) block =
                     | True -> lcx#bx#const_bool var.ty true
                     | False -> lcx#bx#const_bool var.ty false
                   in
-                  lcx#append_block_with_builder bb;
-                  let value = go case.body in
-                  lcx#bx#jmp (Label join');
-                  args#push (Label bb, const);
-                  phi_args#push (Label lcx#bx#block, value));
+                  match check_if_present case.body with
+                  | Some bb -> args#push (Label bb, const)
+                  | None ->
+                      lcx#append_block_with_builder bb;
+                      let value = go case.body in
+                      lcx#bx#jmp (Label join);
+                      args#push (Label bb, const);
+                      phi_args#push (Label lcx#bx#block, value));
               let default =
                 Option.map
                   (fun decision ->
                     let bb = Basicblock.create () in
                     lcx#append_block_with_builder bb;
                     let value = go decision in
-                    lcx#bx#jmp (Label join');
+                    lcx#bx#jmp (Label join);
                     phi_args#push (Label lcx#bx#block, value);
                     Label bb)
                   default
               in
               lcx#with_block switch_bb (fun () ->
                   lcx#bx#switch ?default disc args);
-              lcx#append_block_with_builder join';
+              lcx#append_block_with_builder join;
               let ty = expr_ty e in
               if !ty = Unit
               then lcx#bx#nop
