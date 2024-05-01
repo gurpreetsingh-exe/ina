@@ -29,7 +29,7 @@ let rec lower_block (lcx : lcx) block =
                       | None -> assert false
                     in
                     lcx#bx#store v ptr span;
-                    assert (lcx#locals#insert did.inner ptr = None))
+                    lcx#locals#insert' did.inner ptr)
             | Switch (var, cases, _) ->
                 let v = if first then v else Hashtbl.find ptrs var.index in
                 cases#iter (fun case ->
@@ -325,7 +325,7 @@ let rec lower_block (lcx : lcx) block =
                   | Some value ->
                       lcx#bx#store value ptr e.expr_span;
                       assert (lcx#locals#insert did.inner ptr = None)
-                  | None -> ());
+                  | None -> assert false);
               let arm = arms#get body.index in
               lower arm.expr
           | Switch (var, cases, default) ->

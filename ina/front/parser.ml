@@ -457,7 +457,7 @@ class parser pcx file tokenizer =
                  let* ident = self#parse_ident in
                  if ident = "_"
                  then Ok PWild
-                 else Ok (PIdent (Imm, ident, self#id)))
+                 else Ok (PIdent (Imm, ident, ref self#id)))
         | Lit l ->
             let buf = get_token_str token file#src in
             self#bump;

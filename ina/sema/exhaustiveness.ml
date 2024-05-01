@@ -174,8 +174,8 @@ and compile_constructor_cases compiler rows bv cases =
            | PCons (path, args) -> f row args path.path_id
            | PPath path -> f row (new vec) path.path_id
            | PIdent (_, _, id)
-             when tcx#get_local (local_def_id id) |> Option.is_none ->
-               f row (new vec) id
+             when tcx#get_local (local_def_id !id) |> Option.is_none ->
+               f row (new vec) !id
            | PBool true -> g row (new vec) 0
            | PBool false -> g row (new vec) 1
            | PInt _ | PIdent _ | POr _ | PWild -> ())
@@ -213,10 +213,10 @@ and move_variable_patterns tcx row =
   @@ (row.columns#filter (fun col ->
           match col.pattern with
           | PIdent (_, _, id) ->
-              let did = local_def_id id in
+              let did = local_def_id !id in
               if tcx#get_local did |> Option.is_some
               then (
-                assert (row.body.bindings#insert did col.variable = None);
+                row.body.bindings#insert' did col.variable;
                 false)
               else true
           | PWild -> false

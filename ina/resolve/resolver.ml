@@ -715,10 +715,11 @@ class resolver tcx modd =
                     visit_pat pat mdl';
                     visit_expr expr mdl
                 | _ -> assert false)
-      and visit_pat pat mdl =
+      and visit_pat ?(env = new hashmap) pat mdl =
         match pat with
-        | PIdent (m, name, id) ->
+        | PIdent (m, name, id) when not @@ env#has name ->
             let segments = new vec in
+            let id = !id in
             segments#push
               { ident = name; args = None; id; span = Source.Span.dummy };
             let path =
@@ -729,14 +730,16 @@ class resolver tcx modd =
             (match res with
              | Def (_, Cons) -> ()
              | Def _ | Err ->
+                 assert (env#insert name id = None);
                  let res = Res (Local (tcx#ast_mut_to_mut m, id)) in
                  self#shadow mdl name Value res
              | _ -> assert false)
+        | PIdent (_, name, id) -> id := env#unsafe_get name
         | PCons (path, subpats) ->
             visit_path path mdl (Some Value);
-            subpats#iter (fun pat -> visit_pat pat mdl)
+            subpats#iter (fun pat -> visit_pat ~env pat mdl)
         | PPath path -> visit_path path mdl (Some Value)
-        | POr subpats -> subpats#iter (fun pat -> visit_pat pat mdl)
+        | POr subpats -> subpats#iter (fun pat -> visit_pat ~env pat mdl)
         | PWild | PInt _ | PBool _ -> ()
       and visit_block body =
         let mdl = modules#unsafe_get (local_def_id body.block_id) in

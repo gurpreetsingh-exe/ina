@@ -464,7 +464,7 @@ let tychk_fn cx fn =
                    expected)
           | None -> check_expr binding_expr NoExpectation
         in
-        check_pattern ty binding_span binding_pat
+        check_pattern (new hashmap) ty binding_span binding_pat
     | Assert (cond, _) -> ignore (check_expr cond (ExpectTy tcx#types.bool))
   and check_expr expr expected =
     let ty = check_expr_kind expr expected in
@@ -610,8 +610,22 @@ let tychk_fn cx fn =
     | _ ->
         print_endline @@ tcx#sess.parse_sess.sm#span_to_string path.span.lo;
         assert false
-  and check_pattern ty span = function
+  and err_if_not_bound env span =
+    env#iter (fun name _ ->
+        let msg = sprintf "`%s` is not bound in all patterns" name in
+        let label_msg = sprintf "pattern doesn't bind `%s`" name in
+        Diagnostic.create msg ~labels:[Label.primary label_msg span]
+        |> tcx#emit)
+  and collect_bindings env = function
     | PIdent (_, name, id) ->
+        (match tcx#res_map#unsafe_get !id with
+         | Def (_, Cons) -> ()
+         | _ -> env#insert' name ())
+    | PCons (_, patns) | POr patns -> patns#iter (collect_bindings env)
+    | _ -> ()
+  and check_pattern env ty span = function
+    | PIdent (_, name, id) ->
+        let id = !id in
         (match tcx#res_map#unsafe_get id with
          | Def (did, Cons) ->
              let (Variant variant) = tcx#get_variant did in
@@ -645,7 +659,15 @@ let tychk_fn cx fn =
          (*       ~labels:[Label.primary msg span] *)
          (*     |> tcx#emit *)
          | _ ->
-             let f () = define id ty in
+             let f () =
+               define id ty;
+               match env#insert name ty with
+               | Some ty' ->
+                   let r = equate ty ty' in
+                   if Result.is_error r
+                   then ty_err_emit tcx (Result.get_error r) span
+               | None -> ()
+             in
              (match tcx#variants ty, tcx#adt_kind ty with
               | Some variants, Some AdtT ->
                   let vmap = Hashtbl.create 0 in
@@ -687,7 +709,7 @@ let tychk_fn cx fn =
                  if i < nargs
                  then
                    let ty = fnsig.args#get i in
-                   check_pattern ty path.span pat)
+                   check_pattern env ty path.span pat)
          | _ ->
              Diagnostic.create
                "unexpected pattern"
@@ -697,7 +719,11 @@ let tychk_fn cx fn =
         (match equate ty (check_path path) with
          | Ok _ -> ()
          | Error e -> ty_err_emit tcx e path.span)
-    | POr patns -> patns#iter (fun pat -> check_pattern ty span pat)
+    | POr patns ->
+        (* let env' = new hashmap in *)
+        (* collect_bindings env' pat; *)
+        (* err_if_not_bound env' span; *)
+        patns#iter (check_pattern env ty span)
     | PWild -> ()
     | PInt _ ->
         (* TODO: check integer range *)
@@ -713,7 +739,7 @@ let tychk_fn cx fn =
     if (not is_variadic) && exprs#len <> args#len
     then tcx#emit @@ mismatch_args args#len exprs#len pexpr.expr_span
   and check_call pexpr exprs { args; ret; is_variadic; _ } =
-    check_arguments pexpr exprs args ?is_variadic:(Some is_variadic);
+    check_arguments pexpr exprs args ~is_variadic;
     exprs#iteri (fun i arg ->
         let expected =
           if i < args#len then ExpectTy (args#get i) else NoExpectation
@@ -986,7 +1012,7 @@ let tychk_fn cx fn =
         let ty = check_expr expr NoExpectation in
         let first = ref None in
         arms#iter (fun { pat; patspan; expr; _ } ->
-            check_pattern ty patspan pat;
+            check_pattern (new hashmap) ty patspan pat;
             let ty = check_expr expr NoExpectation in
             match !first with
             | Some expected ->

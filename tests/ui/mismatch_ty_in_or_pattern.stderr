@@ -1,0 +1,8 @@
+error: mismatch types
+   ╭─[tests/ui/mismatch_ty_in_or_pattern.ina:9:21]
+   │
+ 9 │         Foo::A(x) | Foo::B(x) => x,
+   │                     ───┬──
+   │                        ╰──── expected `i64`, found `i32`
+   ∙
+───╯

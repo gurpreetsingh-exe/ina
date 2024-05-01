@@ -227,7 +227,7 @@ let analyze (tcx : tcx) fn =
         let* _ = visit_expr binding_expr in
         let ty = tcx#get_def (local_def_id binding_expr.expr_id) in
         let rec go span = function
-          | PIdent (_, _, id) -> Hashtbl.add locals id span
+          | PIdent (_, _, id) -> Hashtbl.add locals !id span
           | POr patns | PCons (_, patns) -> patns#iter @@ go span
           | PWild | PPath _ | PInt _ | PBool _ -> ()
         in
