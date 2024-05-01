@@ -11,6 +11,7 @@ type variable = {
 type body = {
     bindings: (def_id, variable) hashmap
   ; index: int
+  ; mutable is_or: bool
 }
 
 type cons =

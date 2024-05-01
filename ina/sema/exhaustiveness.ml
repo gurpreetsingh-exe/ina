@@ -104,9 +104,9 @@ and expand_or_patterns rows =
         | Some (i, variable, patns) ->
             found := true;
             patns#iter (fun pattern ->
-                let new_row =
-                  { columns = row.columns#copy; body = row.body }
-                in
+                row.body.is_or <- true;
+                let body = { row.body with bindings = new hashmap } in
+                let new_row = { columns = row.columns#copy; body } in
                 new_row.columns#set i { variable; pattern };
                 new_rows#push new_row)
         | None -> new_rows#push row);
@@ -294,7 +294,7 @@ let go (tcx : tcx) scrutinee_ty arms scrutinee_span =
     mapi arms (fun index arm ->
         let columns = new vec in
         columns#push { variable; pattern = arm.pat };
-        let body = { bindings = new hashmap; index } in
+        let body = { bindings = new hashmap; index; is_or = false } in
         { columns; body })
   in
   let decision = compile_rows compiler rows in
@@ -332,7 +332,7 @@ let check_let (tcx : tcx) ty pattern span =
   let rows = new vec in
   let columns = new vec in
   columns#push { variable; pattern };
-  let body = { bindings = new hashmap; index = 0 } in
+  let body = { bindings = new hashmap; index = 0; is_or = false } in
   rows#push { columns; body };
   let decision = compile_rows compiler rows in
   (if compiler.diag.missing

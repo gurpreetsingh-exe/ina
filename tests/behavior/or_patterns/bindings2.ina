@@ -1,0 +1,19 @@
+using Option::*;
+type Option[T] = Some(T) | None
+
+type Foo =
+    | A(i32)
+    | B(Option[i32])
+
+fn test(v: Foo) -> i32 {
+    match v {
+        Foo::A(x) | Foo::B(Some(x)) => x,
+        _ => 50
+    }
+}
+
+fn main() {
+    assert test(Foo::B(Some(20))) == 20;
+    assert test(Foo::A(21)) == 21;
+    assert test(Foo::B(None)) == 50;
+}

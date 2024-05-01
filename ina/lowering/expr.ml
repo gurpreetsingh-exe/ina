@@ -1,6 +1,7 @@
 open Ast
 open Context
 open Structures.Vec
+open Structures.Hashmap
 open Middle.Def_id
 open Middle.Ty
 open Ir.Inst
@@ -13,38 +14,13 @@ let rec lower_block (lcx : lcx) block =
     let f stmt =
       match stmt with
       | Binding { binding_expr; binding_span = span; binding_id; _ } ->
-          let open Middle.Decision in
           let did = local_def_id binding_id in
           let decision = tcx#get_decision_tree did in
           let v = lower binding_expr in
-          let ptrs = Hashtbl.create 0 in
-          let rec go ?(first = false) = function
-            | Success body ->
-                body.bindings#iter (fun did var ->
-                    let ptr = lcx#bx#alloca var.ty span in
-                    let v =
-                      match Hashtbl.find_opt ptrs var.index with
-                      | _ when first -> v
-                      | Some value -> value
-                      | None -> assert false
-                    in
-                    lcx#bx#store v ptr span;
-                    lcx#locals#insert' did.inner ptr)
-            | Switch (var, cases, _) ->
-                let v = if first then v else Hashtbl.find ptrs var.index in
-                cases#iter (fun case ->
-                    match case.cons with
-                    | Cons (ty, idx) ->
-                        let payload = lcx#bx#payload v idx span in
-                        let ty' = tcx#tuple_of_variant ty idx in
-                        case.args#iteri (fun i var ->
-                            let src = lcx#bx#gep ty' var.ty payload i span in
-                            Hashtbl.add ptrs var.index (lcx#bx#move src span));
-                        go case.body
-                    | Int _ | True | False -> assert false)
-            | _ -> assert false
-          in
-          go ~first:true decision
+          let ty = expr_ty binding_expr in
+          let exprs = new vec in
+          exprs#push binding_expr;
+          ignore @@ lower_match ~lett:true ty v decision exprs span
       | Assign (left, right) ->
           let dst = lower_lvalue left in
           let src = lower right in
@@ -183,6 +159,148 @@ let rec lower_block (lcx : lcx) block =
       (Adt (parenid, !vidx, Subst subst))
       (new vec)
       Source.Span.dummy
+  and lower_match ?(lett = false) ty v decision arms span =
+    let open Middle.Decision in
+    let open Ir in
+    let rec fold_vars f = function
+      | Success body -> body.bindings#iter (fun _ var -> f var)
+      | Switch (var, cases, default) ->
+          f var;
+          cases#iter (fun case ->
+              case.args#iter f;
+              fold_vars f case.body);
+          Option.iter (fold_vars f) default
+      | _ -> assert false
+    in
+    let vars = new hashmap in
+    let ptrs = new hashmap in
+    let bbs = new hashmap in
+    fold_vars
+      (fun var ->
+        match vars#has var.index with
+        | false ->
+            let ptr = lcx#bx#alloca var.ty span in
+            assert (vars#insert var.index ptr = None)
+        | _ -> ())
+      decision;
+    let gen_bindings ?(first = false) body =
+      body.bindings#iter (fun did var ->
+          let ptr = vars#unsafe_get var.index in
+          (if lett
+           then
+             let v =
+               match ptrs#get var.index with
+               | _ when first -> v
+               | Some v -> v
+               | _ -> assert false
+             in
+             lcx#bx#store v ptr span);
+          assert (lcx#locals#insert did.inner ptr = None))
+    in
+    let lower_body prev body =
+      match bbs#get body.index with
+      | Some (_, value) when not body.is_or ->
+          gen_bindings body;
+          value
+      | Some (_, value) ->
+          let prev = Option.get prev in
+          body.bindings#iter (fun did var ->
+              let value = lcx#locals#unsafe_get did.inner in
+              match value with
+              | VReg { kind = Phi (_, args); _ } ->
+                  args#push (Label prev, vars#unsafe_get var.index)
+              | _ -> assert false);
+          value
+      | None when not body.is_or ->
+          gen_bindings body;
+          let value = lower (arms#get body.index) in
+          assert (bbs#insert body.index (lcx#bx#block, value) = None);
+          value
+      | None ->
+          let prev = Option.get prev in
+          body.bindings#iter (fun did var ->
+              let args = new vec in
+              args#push (Label prev, vars#unsafe_get var.index);
+              let value = lcx#bx#phi (tcx#ptr Mut var.ty) args span in
+              ignore @@ lcx#locals#insert did.inner value);
+          let value = lower (arms#get body.index) in
+          assert (bbs#insert body.index (lcx#bx#block, value) = None);
+          value
+    in
+    let check_if_present = function
+      | Success body -> Option.map fst (bbs#get body.index)
+      | _ -> None
+    in
+    let rec go ?prev ?(first = false) = function
+      | Success body when lett && first ->
+          gen_bindings ~first body;
+          lcx#bx#nop
+      | Success body -> lower_body prev body
+      | Switch (var, cases, default) ->
+          let v = if first then v else ptrs#unsafe_get var.index in
+          let disc =
+            if tcx#adt_kind var.ty |> Option.is_some
+            then lcx#bx#discriminant v span
+            else v
+          in
+          let switch_bb = lcx#bx#block in
+          let join = Basicblock.create () in
+          let args = new vec in
+          let phi_args = new vec in
+          cases#iter (fun case ->
+              let bb = Basicblock.create () in
+              lcx#append_block_with_builder bb;
+              let const =
+                match case.cons with
+                | Cons (ty, idx) ->
+                    let payload = lcx#bx#payload v idx span in
+                    let ty' = tcx#tuple_of_variant ty idx in
+                    case.args#iteri (fun i var ->
+                        let src = lcx#bx#gep ty' var.ty payload i span in
+                        let value = lcx#bx#move src span in
+                        ignore @@ ptrs#insert var.index value;
+                        let ptr = vars#unsafe_get var.index in
+                        lcx#bx#store value ptr span);
+                    lcx#bx#const_int tcx#types.u8 idx
+                | Int v -> lcx#bx#const_int var.ty v
+                | True -> lcx#bx#const_bool var.ty true
+                | False -> lcx#bx#const_bool var.ty false
+              in
+              match check_if_present case.body with
+              | Some bb' ->
+                  lcx#with_block bb (fun () -> lcx#bx#jmp (Label bb'));
+                  let value = go ~prev:bb case.body in
+                  args#push (Label bb, const);
+                  phi_args#push (Label bb', value)
+              | None ->
+                  let bb' = Basicblock.create () in
+                  lcx#with_block bb (fun () -> lcx#bx#jmp (Label bb'));
+                  lcx#append_block_with_builder bb';
+                  let value = go ~prev:bb case.body in
+                  lcx#bx#jmp (Label join);
+                  args#push (Label bb, const);
+                  phi_args#push (Label lcx#bx#block, value));
+          let default =
+            Option.map
+              (fun decision ->
+                let prev = lcx#bx#block in
+                let bb = Basicblock.create () in
+                lcx#append_block_with_builder bb;
+                let value = go ~prev decision in
+                lcx#bx#jmp (Label join);
+                phi_args#push (Label lcx#bx#block, value);
+                Label bb)
+              default
+          in
+          lcx#with_block switch_bb (fun () ->
+              lcx#bx#switch ?default disc args);
+          lcx#append_block_with_builder join;
+          if ty = tcx#types.unit
+          then lcx#bx#nop
+          else lcx#bx#phi ty phi_args span
+      | Failure -> assert false
+    in
+    go ~first:true decision
   and lower e =
     let ty = expr_ty e in
     match e.expr_kind with
@@ -306,92 +424,11 @@ let rec lower_block (lcx : lcx) block =
              assert false)
     | MethodCall (expr, seg, args) -> lower_method e expr seg args
     | Match (value, arms) ->
-        let open Middle.Decision in
         let decision = tcx#get_decision_tree (local_def_id value.expr_id) in
         let v = lower value in
-        let open Ir in
-        let ptrs = Hashtbl.create 0 in
-        let bbs = Hashtbl.create 0 in
-        let check_if_present = function
-          | Success body -> Hashtbl.find_opt bbs body.index
-          | _ -> None
-        in
-        let rec go ?(first = false) = function
-          | Success body ->
-              Hashtbl.replace bbs body.index lcx#bx#block;
-              body.bindings#iter (fun did var ->
-                  let ptr = lcx#bx#alloca var.ty e.expr_span in
-                  match Hashtbl.find_opt ptrs var.index with
-                  | Some value ->
-                      lcx#bx#store value ptr e.expr_span;
-                      assert (lcx#locals#insert did.inner ptr = None)
-                  | None -> assert false);
-              let arm = arms#get body.index in
-              lower arm.expr
-          | Switch (var, cases, default) ->
-              let v = if first then v else Hashtbl.find ptrs var.index in
-              let disc =
-                if tcx#adt_kind var.ty |> Option.is_some
-                then lcx#bx#discriminant v value.expr_span
-                else v
-              in
-              let switch_bb = lcx#bx#block in
-              let join = Basicblock.create () in
-              let args = new vec in
-              let phi_args = new vec in
-              cases#iter (fun case ->
-                  let bb = Basicblock.create () in
-                  let const =
-                    match case.cons with
-                    | Cons (ty, idx) ->
-                        lcx#with_block bb (fun () ->
-                            let payload =
-                              lcx#bx#payload v idx value.expr_span
-                            in
-                            let ty' = tcx#tuple_of_variant ty idx in
-                            case.args#iteri (fun i var ->
-                                let src =
-                                  lcx#bx#gep ty' var.ty payload i e.expr_span
-                                in
-                                Hashtbl.add
-                                  ptrs
-                                  var.index
-                                  (lcx#bx#move src e.expr_span)));
-                        lcx#bx#const_int tcx#types.u8 idx
-                    | Int v -> lcx#bx#const_int var.ty v
-                    | True -> lcx#bx#const_bool var.ty true
-                    | False -> lcx#bx#const_bool var.ty false
-                  in
-                  match check_if_present case.body with
-                  | Some bb -> args#push (Label bb, const)
-                  | None ->
-                      lcx#append_block_with_builder bb;
-                      let value = go case.body in
-                      lcx#bx#jmp (Label join);
-                      args#push (Label bb, const);
-                      phi_args#push (Label lcx#bx#block, value));
-              let default =
-                Option.map
-                  (fun decision ->
-                    let bb = Basicblock.create () in
-                    lcx#append_block_with_builder bb;
-                    let value = go decision in
-                    lcx#bx#jmp (Label join);
-                    phi_args#push (Label lcx#bx#block, value);
-                    Label bb)
-                  default
-              in
-              lcx#with_block switch_bb (fun () ->
-                  lcx#bx#switch ?default disc args);
-              lcx#append_block_with_builder join;
-              let ty = expr_ty e in
-              if !ty = Unit
-              then lcx#bx#nop
-              else lcx#bx#phi ty phi_args e.expr_span
-          | Failure -> assert false
-        in
-        let v = go ~first:true decision in
-        v
+        let ty = expr_ty e in
+        let exprs = map arms (fun arm -> arm.expr) in
+        lower_match ty v decision exprs e.expr_span
   in
   lower_block' ()
 ;;
