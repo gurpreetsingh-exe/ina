@@ -1,0 +1,30 @@
+// SKIP
+
+using Option::*;
+type Option[T] = Some(T) | None
+
+fn main() {
+    match None {
+        Some(x) => {},
+        Some(50) => {},
+        None => {},
+    }
+
+    match 20 {
+        1 => {},
+        2 => {},
+        1 | 2 => {},
+        _ => {},
+    }
+
+    match true {
+        true | false => {},
+        true => {},
+    }
+
+    match 20 {
+        _ => {},
+        1 => {},
+        _ => {},
+    }
+}

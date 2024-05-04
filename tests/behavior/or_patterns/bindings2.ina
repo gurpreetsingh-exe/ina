@@ -5,6 +5,10 @@ type Foo =
     | A(i32)
     | B(Option[i32])
 
+type Bar =
+    | A(Foo, i32)
+    | B(i32, i32)
+
 fn test(v: Foo) -> i32 {
     match v {
         Foo::A(x) | Foo::B(Some(x)) => x,
@@ -12,8 +16,21 @@ fn test(v: Foo) -> i32 {
     }
 }
 
+fn test2(v: Bar) -> i32 {
+    match v {
+        Bar::A(Foo::A(x) | Foo::B(Some(x)), _)
+        | Bar::A(Foo::B(None), x) => x,
+        Bar::B(x, y) => x + y,
+    }
+}
+
 fn main() {
     assert test(Foo::B(Some(20))) == 20;
     assert test(Foo::A(21)) == 21;
     assert test(Foo::B(None)) == 50;
+
+    assert test2(Bar::A(Foo::A(1), 34)) == 1;
+    assert test2(Bar::A(Foo::B(None), 34)) == 34;
+    assert test2(Bar::A(Foo::B(Some(2)), 34)) == 2;
+    assert test2(Bar::B(34, 35)) == 69;
 }
