@@ -186,15 +186,13 @@ let rec lower_block (lcx : lcx) block =
     let gen_bindings ?(first = false) body =
       body.bindings#iter (fun did var ->
           let ptr = vars#unsafe_get var.index in
-          (if lett
-           then
-             let v =
-               match ptrs#get var.index with
-               | _ when first -> v
-               | Some v -> v
-               | _ -> assert false
-             in
-             lcx#bx#store v ptr span);
+          let v =
+            match ptrs#get var.index with
+            | _ when first -> v
+            | Some v -> v
+            | None -> v
+          in
+          lcx#bx#store v ptr span;
           assert (lcx#locals#insert did.inner ptr = None))
     in
     let lower_body prev body =
