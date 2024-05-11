@@ -1,0 +1,15 @@
+// EXIT_CODE: 0
+
+type T = A | B
+
+fn f(v: T) -> i32 {
+    match v {
+        T::A => 22,
+        T::B => 43,
+    }
+}
+
+fn main() {
+    assert f(T::A) == 22;
+    assert f(T::B) == 43;
+}

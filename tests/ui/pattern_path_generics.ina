@@ -1,0 +1,11 @@
+// COMPILE_FAIL
+
+using Option::*;
+type Option[T] = Some(T) | None
+
+fn main() {
+    match Some("foo") {
+        None[i32] => {},
+        Some(a) => {},
+    }
+}

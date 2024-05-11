@@ -68,7 +68,7 @@ let render_infer_ty ty dbg =
     match ty with
     | IntVar _ -> "integer"
     | FloatVar _ -> "float"
-    | TyVar _ -> "T"
+    | TyVar _ -> "_"
 ;;
 
 type abi =
@@ -87,9 +87,17 @@ and variant =
   | Variant of {
         def_id: def_id
       ; fields: field vec
+      ; index: int
     }
 
-and adt = { variants: variant vec }
+and adtkind =
+  | StructT
+  | AdtT
+
+and adt = {
+    variants: variant vec
+  ; kind: adtkind
+}
 
 and typaram = {
     index: int
@@ -118,6 +126,7 @@ and ty =
   | Ptr of (mutability * ty ref)
   | Ref of (mutability * ty ref)
   | Adt of (def_id * subst)
+  | Tuple of ty ref vec
   | Fn of (def_id * subst)
   | FnPtr of fnsig
   | Param of typaram
@@ -141,6 +150,7 @@ let discriminator = function
   | Param _ -> 11L
   | Fn _ -> 12L
   | Err -> 13L
+  | Tuple _ -> 14L
 ;;
 
 type fxhasher = { mutable hash: int }
@@ -381,7 +391,7 @@ let decode_field tcx dec =
   Field { ty; name }
 ;;
 
-let encode_variant enc (Variant { def_id; fields }) =
+let encode_variant enc (Variant { def_id; fields; _ }) =
   Def_id.encode enc def_id;
   encode_vec enc fields encode_field
 ;;
@@ -390,7 +400,7 @@ let decode_variant tcx dec =
   let def_id = Def_id.decode dec in
   let fields = new vec in
   decode_vec dec fields (tcx |> decode_field);
-  Variant { def_id; fields }
+  Variant { def_id; fields; index = 0 }
 ;;
 
 let rec hash hasher ty =
@@ -408,6 +418,7 @@ let rec hash hasher ty =
       g inner;
       g mod_id;
       subst#iter (function Ty ty -> f !ty)
+  | Tuple tys -> tys#iter (fun ty -> f !ty)
   | Fn ({ inner; mod_id }, Subst subst) ->
       g inner;
       g mod_id;
@@ -475,6 +486,7 @@ let rec render_ty2 ty =
   | Ptr (m, ty) -> "*" ^ mut m ^ render_ty2 ty
   | Ref (m, ty) -> "&" ^ mut m ^ render_ty2 ty
   | Adt (def_id, _) -> sprintf "adt(%s)" (print_def_id def_id)
+  | Tuple tys -> tys#join ", " render_ty2
   | Fn (def_id, _) -> sprintf "fn(%s)" (print_def_id def_id)
   | Param { index; name } -> sprintf "%s%d" name index
 ;;

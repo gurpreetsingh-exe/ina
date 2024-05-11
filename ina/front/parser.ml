@@ -1,6 +1,6 @@
 open Ast
 open Token
-open Tokenizer
+open Lexer
 open Errors
 open Diagnostic
 open Handler
@@ -94,13 +94,13 @@ let parse_spanned_with_sep
   Ok items
 ;;
 
-class parser pcx file tokenizer =
+class parser pcx file lx =
   object (self)
     val pcx : parse_sess = pcx
     val file : file = file
     val mutable token : token = { kind = Eof; span = Span.make 0 0 }
     val mutable prev_token : token option = None
-    val tokenizer : tokenizer = tokenizer
+    val mutable lx : lexer = lx
     val expected_tokens : token_kind vec = new vec
     method token = token
 
@@ -117,15 +117,12 @@ class parser pcx file tokenizer =
     method eat_if_present kind = if self#check kind then self#bump
 
     method npeek n =
-      let loc, c = tokenizer.pos, tokenizer.c in
-      let t =
-        match next tokenizer with
-        | Some { kind = Eof; _ } | None -> []
-        | Some t -> if n = 1 then [t.kind] else [t.kind] @ self#npeek (n - 1)
+      let rec go n lx =
+        match next lx with
+        | _, (Some { kind = Eof; _ } | None) -> []
+        | lx, Some t -> if n = 1 then [t.kind] else [t.kind] @ go (n - 1) lx
       in
-      tokenizer.pos <- loc;
-      tokenizer.c <- c;
-      t
+      go n lx
 
     method peek = self#npeek 1 |> List.hd
 
@@ -163,11 +160,12 @@ class parser pcx file tokenizer =
       else self#expect_one_of [kind] []
 
     method bump =
-      (match next tokenizer with
-       | Some t ->
+      (match next lx with
+       | lx', Some t ->
            prev_token <- Some token;
-           token <- t
-       | None -> ());
+           token <- t;
+           lx <- lx'
+       | _ -> ());
       expected_tokens#clear
 
     method mk_span start =
@@ -435,18 +433,63 @@ class parser pcx file tokenizer =
         }
 
     method parse_pat =
-      let kind = token.kind in
-      match kind with
-      | Ident ->
-          let* ident = self#parse_ident in
-          Ok (PatIdent (Imm, ident))
-      | Mut ->
-          self#bump;
-          let* ident = self#parse_ident in
-          Ok (PatIdent (Mut, ident))
-      | t ->
-          self#unexpected_token t ~line:__LINE__;
-          exit 1
+      let patterns = new vec in
+      let go () =
+        let kind = token.kind in
+        let maybe_parse_cons () =
+          let* path = self#parse_path Type in
+          match token.kind with
+          | LParen ->
+              let* args =
+                parse_spanned_with_sep self LParen RParen Comma (fun () ->
+                    self#parse_pat)
+              in
+              Ok (PCons (path, args))
+          | _ -> Ok (PPath path)
+        in
+        match kind with
+        | Ident ->
+            (match self#npeek 1 with
+             | (Colon2 | LParen | LBracket) :: _ -> maybe_parse_cons ()
+             | _ ->
+                 let* ident = self#parse_ident in
+                 if ident = "_"
+                 then Ok PWild
+                 else Ok (PIdent (Imm, ident, ref self#id)))
+        | Lit (Int | Bool) ->
+            let* start = self#parse_literal in
+            if token.kind = DotDot
+            then (
+              self#bump;
+              let* stop = self#parse_literal in
+              Ok (PRange (start, stop)))
+            else Ok (PLit start)
+        | Mut ->
+            let s = token.span.lo in
+            self#bump;
+            let mutspan = self#mk_span s in
+            let* pat = self#parse_pat in
+            (match pat with
+             | PIdent (_, name, id) -> Ok (PIdent (Mut, name, id))
+             | pat ->
+                 Diagnostic.create
+                   "`mut` must be followed by a named binding"
+                   ~labels:[Label.primary "remove the `mut` prefix" mutspan]
+                 |> self#emit_err;
+                 Ok pat)
+        | t ->
+            self#unexpected_token t ~line:__LINE__;
+            exit 1
+      in
+      self#eat_if_present Pipe;
+      let rec go' () =
+        let* pattern = go () in
+        patterns#push pattern;
+        if self#eat Pipe then go' () else Ok ()
+      in
+      go' ()
+      |> Result.map (fun () ->
+             if patterns#len = 1 then patterns#get 0 else POr patterns)
 
     method parse_let =
       let s = token.span.lo in
@@ -509,7 +552,9 @@ class parser pcx file tokenizer =
 
     method should_continue_as_prec_expr expr =
       let is_block =
-        match expr.expr_kind with If _ | Block _ -> true | _ -> false
+        match expr.expr_kind with
+        | If _ | Block _ | Match _ -> true
+        | _ -> false
       in
       match is_block, token.kind, (Option.get prev_token).kind with
       | true, Star, RParen -> true
@@ -517,27 +562,32 @@ class parser pcx file tokenizer =
       | false, _, _ -> true
       | _ -> true
 
+    method parse_literal =
+      match token.kind with
+      | Lit lit ->
+          let buf = get_token_str token file#src in
+          self#bump;
+          Ok
+            (match lit with
+             | Int -> LitInt (int_of_string buf)
+             | Float -> LitFloat (float_of_string buf)
+             | Bool -> LitBool (bool_of_string buf)
+             | String ->
+                 let s = String.sub buf 1 (String.length buf - 2) in
+                 let s = Scanf.unescaped s in
+                 LitStr s
+             | lit_kind ->
+                 ignore (Printf.printf "%s\n" (display_literal lit_kind));
+                 assert false)
+      | _ -> assert false
+
     method parse_primary =
       let s = token.span.lo in
       let* expr_kind =
         match token.kind with
-        | Lit lit ->
-            let buf = get_token_str token file#src in
-            self#bump;
-            Ok
-              (Ast.Lit
-                 (match lit with
-                  | Int -> LitInt (int_of_string buf)
-                  | Float -> LitFloat (float_of_string buf)
-                  | Bool -> LitBool (bool_of_string buf)
-                  | String ->
-                      let s = String.sub buf 1 (String.length buf - 2) in
-                      let s = Scanf.unescaped s in
-                      LitStr s
-                  | lit_kind ->
-                      ignore
-                        (Printf.printf "%s\n" (display_literal lit_kind));
-                      assert false))
+        | Lit _ ->
+            let* lit = self#parse_literal in
+            Ok (Ast.Lit lit)
         | If ->
             let* iff = self#parse_if in
             Ok (Ast.If iff)
@@ -549,6 +599,38 @@ class parser pcx file tokenizer =
             let* e = self#parse_expr in
             let* _ = self#expect RParen in
             Ok e.expr_kind
+        | Match ->
+            self#bump;
+            let parse_match_arm () =
+              let s = token.span.lo in
+              let* pat = self#parse_pat in
+              let patspan = self#mk_span s in
+              let* _ = self#expect FatArrow in
+              let* expr = self#parse_expr in
+              let expr =
+                match expr.expr_kind with
+                | Block _ -> expr
+                | _ ->
+                    {
+                      expr_kind =
+                        Block
+                          {
+                            block_stmts = new vec
+                          ; last_expr = Some expr
+                          ; block_span = expr.expr_span
+                          ; block_id = self#id
+                          }
+                    ; expr_span = expr.expr_span
+                    ; expr_id = self#id
+                    }
+              in
+              Ok { pat; patspan; expr; span = self#mk_span s }
+            in
+            let* e = self#parse_expr in
+            let* arms =
+              parse_spanned_with_sep self LBrace RBrace Comma parse_match_arm
+            in
+            Ok (Ast.Match (e, arms))
         | _ -> self#parse_path_or_call
       in
       Ok { expr_kind; expr_span = self#mk_span s; expr_id = self#id }
@@ -1096,7 +1178,7 @@ class parser pcx file tokenizer =
     method parse_mod =
       let s = token.span.lo in
       let* mod_attrs = self#parse_inner_attrs in
-      let mod_path = tokenizer.filename in
+      let mod_path = file#name in
       let mod_name =
         match Filename.remove_extension (Filename.basename mod_path) with
         | "lib" -> Filename.basename (Filename.dirname mod_path)
@@ -1124,8 +1206,8 @@ class parser pcx file tokenizer =
 
 let parse_mod_from_file pcx path =
   let file = pcx.sm#load_file path in
-  let tokenizer = Tokenizer.tokenize path file#src in
-  let parser = new parser pcx file tokenizer in
+  let lx = Lexer.create file#src in
+  let parser = new parser pcx file lx in
   parser#bump;
   parser#parse_mod
 ;;

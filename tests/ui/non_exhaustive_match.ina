@@ -1,0 +1,66 @@
+// COMPILE_FAIL
+
+type T = A | B
+using Option::*;
+type Option[T] = Some(T) | None
+type T2 = A(T, T)
+
+fn main() {
+    let x = T::A;
+    // error
+    match x {
+        T::A => {},
+    }
+    // error
+    match Some(20) {
+        None => {}
+    }
+    // ok
+    match T::A {
+        _ => {}
+    }
+    // ok
+    match T::B {
+        _b => {}
+    }
+    // error
+    match Some(T::A) {
+        Some(T::A) => {},
+        None => {},
+    }
+    // ok
+    match T2::A(T::A, T::A) {
+        T2::A(T::A, _) => {},
+        T2::A(_, T::A) => {},
+        T2::A(T::B, T::B) => {},
+    }
+    // error
+    match None {
+        Some(T2::A(T::A, _)) => {},
+        Some(T2::A(_, T::B)) => {},
+    }
+    // error
+    match 0 {
+        0 => {},
+    }
+    // error
+    match None {
+        Some(20) => {},
+        Some(21) => {},
+        None => {},
+    }
+    // ok
+    match 0 {
+        0 => {},
+        _ => {},
+    }
+    // error
+    match true {
+        true => {},
+    }
+    // ok
+    match true {
+        true => {},
+        false => {},
+    }
+}

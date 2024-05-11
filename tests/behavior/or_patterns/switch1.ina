@@ -1,0 +1,22 @@
+using Option::*;
+type Option[T] = Some(T) | None
+type Test =
+    | Foo
+    | Bar
+    | Baz
+    | Qux
+
+fn test(x: Option[Test]) -> usize {
+    match x {
+        Some(Test::Bar | Test::Qux) => 0,
+        Some(_) | None => 1,
+    }
+}
+
+fn main() {
+    assert test(Some(Test::Foo)) == 1;
+    assert test(Some(Test::Bar)) == 0;
+    assert test(Some(Test::Baz)) == 1;
+    assert test(Some(Test::Qux)) == 0;
+    assert test(None) == 1;
+}

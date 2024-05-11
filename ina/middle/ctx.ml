@@ -135,7 +135,10 @@ module SubstFolder = struct
       }
 
   and fold_adt tcx adt subst =
-    { variants = map adt.variants (fun v -> fold_variant tcx v subst) }
+    {
+      variants = map adt.variants (fun v -> fold_variant tcx v subst)
+    ; kind = adt.kind
+    }
 
   and fold_subst tcx subst subst' =
     Subst (map subst (function Ty ty -> Ty (fold_ty tcx ty subst')))
@@ -174,6 +177,13 @@ let print_res : res -> string = function
   | Ty ty -> render_ty ty
   | Local (m, id) -> "local#" ^ mut m ^ string_of_int id
   | Err -> "err"
+;;
+
+let render_path tcx path =
+  let open Ast in
+  let f id = tcx#res_map#unsafe_get id |> print_res in
+  path.segments#join "::" (fun s -> sprintf "%s[%s]" s.ident (f s.id))
+  |> print_endline
 ;;
 
 type types = {
@@ -235,7 +245,9 @@ class tcx sess =
     val impls : (def_id, ty ref) hashmap = new hashmap
     val generics : (def_id, Generics.t) hashmap = new hashmap
     val substs : (def_id, generic_arg vec) hashmap = new hashmap
+    val locals : (def_id, ty ref) hashmap = new hashmap
     val decoders : decoder vec = new vec
+    val decision_trees : (def_id, Decision.t) hashmap = new hashmap
     val mutable impl_id = 0
 
     val prim_ty_assoc_fn : (ty ref, (string, def_id) hashmap) hashmap =
@@ -275,6 +287,11 @@ class tcx sess =
     method decoders = decoders
     method main = main
 
+    method record_decision_tree did decision =
+      assert (decision_trees#insert did decision = None)
+
+    method get_decision_tree did = decision_trees#unsafe_get did
+
     method is_extern did =
       let DefKey.{ parent; _ } = self#def_key did in
       let parent = Option.get parent in
@@ -313,7 +330,7 @@ class tcx sess =
       decode_hashmap dec adt_def Def_id.decode (fun dec ->
           let variants = new vec in
           decode_vec dec variants (self |> Ty.decode_variant);
-          { variants });
+          { variants; kind = AdtT });
       decode_hashmap dec fn_def Def_id.decode (self |> decode_fn);
       decode_hashmap dec assoc_fn Def_id.decode (fun dec ->
           let methods = new hashmap in
@@ -411,6 +428,19 @@ class tcx sess =
                | TypeNs name | ValueNs name -> name)
       , extern )
 
+    method into_last_segment id =
+      let segments, _ = self#into_segments id in
+      segments |> List.rev |> List.hd
+
+    method typename ty =
+      match !ty with
+      | Ty.Adt (did, _) -> self#into_last_segment did
+      | _ -> assert false
+
+    method qpath did =
+      let segments, _ = self#into_segments did in
+      segments |> List.tl |> String.concat "::"
+
     method link_impl id ty = assert (impls#insert id ty = None)
 
     method create_def id ty =
@@ -422,6 +452,9 @@ class tcx sess =
             (self#render_ty ty)
             (self#render_ty ty')
       | None -> ()
+
+    method define_local id ty = ignore @@ locals#insert id ty
+    method get_local id = locals#get id
 
     method get_def id =
       match def_id_to_ty#get id with Some ty -> ty | None -> _types.err
@@ -435,13 +468,16 @@ class tcx sess =
         | Adt (_, Subst subst) | Fn (_, Subst subst) ->
             subst#iter (fun (Ty ty) -> go ty)
         | Ref (_, ty) | Ptr (_, ty) -> go ty
+        | FnPtr { args; ret; _ } ->
+            args#iter go;
+            go ret
         | _ -> ()
       in
       def_id_to_ty#iter (fun _ v -> go v)
 
     method define_assoc_fn res name fn =
       match res with
-      | Def (id, (Struct | Impl)) ->
+      | Def (id, (Struct | Impl | Adt)) ->
           assoc_fn#insert' id (new hashmap);
           (assoc_fn#unsafe_get id)#insert' name fn
       | Ty ty ->
@@ -527,6 +563,7 @@ class tcx sess =
 
     method ptr mut ty = self#intern (Ptr (mut, ty))
     method ref mut ty = self#intern (Ref (mut, ty))
+    method tuple tys = self#intern (Tuple tys)
 
     method is_mut_ptr ty =
       match !ty with
@@ -561,8 +598,8 @@ class tcx sess =
     method adt def_id subst = self#intern (Adt (def_id, subst))
     method get_adt def_id = adt_def#unsafe_get def_id
 
-    method variant def_id fields =
-      let v = Variant { def_id; fields } in
+    method variant def_id fields index =
+      let v = Variant { def_id; fields; index } in
       assert (variant_def#insert def_id v = None);
       v
 
@@ -588,8 +625,8 @@ class tcx sess =
           self#fn_ptr args ret is_variadic abi
       | _ -> assert false
 
-    method adt_with_variants def_id variants =
-      adt_def#insert' def_id { variants };
+    method adt_with_variants def_id variants kind =
+      adt_def#insert' def_id { variants; kind };
       self#adt def_id
 
     method fn_with_sig
@@ -663,12 +700,9 @@ class tcx sess =
       | Bool -> 1
       | _ -> assert false
 
-    method is_non_enum ty =
-      match !ty with
-      | Ty.Adt (def_id, _) ->
-          let adt = self#get_adt def_id in
-          adt.variants#len = 1
-      | _ -> false
+    method variant_index def_id =
+      let (Variant v) = variant_def#unsafe_get def_id in
+      v.index
 
     method variants ty =
       match !ty with
@@ -676,6 +710,19 @@ class tcx sess =
           let adt = SubstFolder.fold_adt self (self#get_adt def_id) subst in
           Some adt.variants
       | _ -> None
+
+    method adt_kind ty =
+      match !ty with
+      | Ty.Adt (def_id, _) ->
+          let adt = self#get_adt def_id in
+          Some adt.kind
+      | _ -> None
+
+    method tuple_of_variant ty idx =
+      let variants = Option.get (self#variants ty) in
+      let (Variant variant) = variants#get idx in
+      let tys = map variant.fields (fun (Field { ty; _ }) -> ty) in
+      self#tuple tys
 
     method non_enum_variant ty =
       Option.map
@@ -840,5 +887,7 @@ class tcx sess =
           (self#def_key def_id).data |> ( function
           | TypeNs name -> name ^ self#render_subst subst
           | _ -> assert false )
+      | Tuple tys ->
+          sprintf "(%s,)" (tys#join ", " (fun ty -> self#render_ty ty))
       | Param { name; _ } -> name
   end

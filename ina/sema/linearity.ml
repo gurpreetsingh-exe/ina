@@ -1,6 +1,7 @@
 open Ast
 open Middle.Ty
 open Middle.Ctx
+open Middle.Def_id
 open Errors
 open Diagnostic
 open Printf
@@ -28,16 +29,24 @@ let use_of_moved_value name prev_span =
 let analyze (tcx : tcx) fn =
   let locals = Hashtbl.create 0 in
   let moved = Hashtbl.create 0 in
-  let rec visit_block block =
+  let rec visit_block ?(e = `None) block =
     block.block_stmts#iter (fun stmt ->
-        match visit_stmt stmt with Ok _ -> () | Error (_, e) -> tcx#emit e);
-    match block.last_expr with Some expr -> visit_expr expr | None -> Ok ()
-  and visit_block_with_exp block =
+        match visit_stmt ~e stmt with
+        | Ok _ -> ()
+        | Error (_, e) -> tcx#emit e);
+    match block.last_expr with
+    | Some expr -> visit_expr expr ~e
+    | None -> Ok ()
+  and visit_block_with_exp ?(e = `None) block =
     block.block_stmts#iter (fun stmt ->
-        match visit_stmt stmt with Ok _ -> () | Error (_, e) -> tcx#emit e);
-    match block.last_expr with Some expr -> visit_expr expr | None -> Ok ()
+        match visit_stmt ~e stmt with
+        | Ok _ -> ()
+        | Error (_, e) -> tcx#emit e);
+    match block.last_expr with
+    | Some expr -> visit_expr expr ~e
+    | None -> Ok ()
   and visit_expr ?(e = `None) expr =
-    let ty expr = tcx#get_def (Middle.Def_id.local_def_id expr.expr_id) in
+    let ty expr = tcx#get_def (local_def_id expr.expr_id) in
     let expr_name = function
       | Path path -> Some (path.segments#join "" (fun s -> s.ident))
       | _ -> None
@@ -70,6 +79,7 @@ let analyze (tcx : tcx) fn =
              let ty = tcx#lookup_method ty segment.ident in
              let self = (Fn.args tcx ty)#get 0 in
              check_path path self
+         | `Branch -> check_path path (ty expr) ~move:false
          | `None -> check_path path (ty expr)
          | `Assign ->
              (match tcx#res_map#unsafe_get path.path_id with
@@ -93,18 +103,18 @@ let analyze (tcx : tcx) fn =
         args#iter (fun expr -> ignore (visit_expr expr));
         Ok ()
     | Binary (_, left, right) ->
-        let* _ = visit_expr left in
-        let* _ = visit_expr right in
+        let* _ = visit_expr left ~e in
+        let* _ = visit_expr right ~e in
         Ok ()
     | If { cond; then_block; else_block; _ } ->
-        let* _ = visit_expr cond in
+        let* _ = visit_expr cond ~e in
         let* _ = visit_block_with_exp then_block in
         let* _ =
-          Option.map (fun expr -> visit_expr expr) else_block
+          Option.map (fun expr -> visit_expr expr ~e) else_block
           |> Option.value ~default:(Ok ())
         in
         Ok ()
-    | Block block -> visit_block_with_exp block
+    | Block block -> visit_block_with_exp block ~e
     | Ref (m, expr') ->
         let m = tcx#ast_mut_to_mut m in
         (match visit_expr expr' ~e:(`Ref m) with
@@ -121,7 +131,7 @@ let analyze (tcx : tcx) fn =
              |> tcx#emit);
         Ok ()
     | StructExpr { fields; _ } ->
-        fields#iter (fun (_, expr) -> ignore (visit_expr expr));
+        fields#iter (fun (_, expr) -> ignore (visit_expr expr ~e));
         Ok ()
     | Deref expr' ->
         let ty = ty expr' in
@@ -184,12 +194,23 @@ let analyze (tcx : tcx) fn =
          | _ -> ());
         visit_expr expr' ~e:`Deref
     | Field (expr, _) -> visit_expr expr ~e:`Field
-    | Cast (expr, _) -> visit_expr expr
+    | Cast (expr, _) -> visit_expr expr ~e
     | MethodCall (expr, segment, args) ->
         let* _ = visit_expr expr ~e:(`Method segment) in
-        args#iter (fun expr -> ignore (visit_expr expr));
+        args#iter (fun expr -> ignore (visit_expr expr ~e));
         Ok ()
-  and visit_stmt = function
+    | Match (expr, arms) ->
+        let* _ = visit_expr expr ~e in
+        let did = local_def_id expr.expr_id in
+        let ty = tcx#get_def did in
+        let decision = Exhaustiveness.go tcx ty arms expr.expr_span in
+        tcx#record_decision_tree did decision;
+        arms#iter (fun { expr; _ } ->
+            match visit_expr expr ~e:`Branch with
+            | Ok () -> ()
+            | Error (_, e) -> tcx#emit e);
+        Ok ()
+  and visit_stmt ?(e = `None) = function
     | Assign (left, right) ->
         (match visit_expr left ~e:`Assign with
          | Ok () -> ()
@@ -201,10 +222,21 @@ let analyze (tcx : tcx) fn =
              |> Diagnostic.label (Label.primary msg left.expr_span)
              |> tcx#emit);
         visit_expr right
-    | Stmt expr | Expr expr -> visit_expr expr
-    | Binding { binding_id; binding_span; binding_expr; _ } ->
+    | Stmt expr | Expr expr -> visit_expr expr ~e
+    | Binding { binding_pat; binding_span; binding_expr; binding_id; _ } ->
         let* _ = visit_expr binding_expr in
-        Ok (Hashtbl.add locals binding_id binding_span)
+        let ty = tcx#get_def (local_def_id binding_expr.expr_id) in
+        let rec go span = function
+          | PIdent (_, _, id) -> Hashtbl.add locals !id span
+          | POr patns | PCons (_, patns) -> patns#iter @@ go span
+          | PWild | PPath _ | PLit _ | PRange _ -> ()
+        in
+        go binding_span binding_pat;
+        let decision =
+          Exhaustiveness.check_let tcx ty binding_pat binding_span
+        in
+        tcx#record_decision_tree (local_def_id binding_id) decision;
+        Ok ()
     | Assert (expr, _) -> visit_expr expr
   in
   match fn.body with

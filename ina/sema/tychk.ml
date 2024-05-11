@@ -24,18 +24,12 @@ type tyvar_origin = {
 
 type cx = {
     infcx: infer_ctx
-  ; locals: (node_id, ty ref) hashmap
   ; mutable generics: typaram array
   ; tyvar_origin: (ty ref, tyvar_origin) Hashtbl.t
 }
 
 let create infcx =
-  {
-    infcx
-  ; locals = new hashmap
-  ; generics = [||]
-  ; tyvar_origin = Hashtbl.create 0
-  }
+  { infcx; generics = [||]; tyvar_origin = Hashtbl.create 0 }
 ;;
 
 type 'a expected_found = {
@@ -119,6 +113,18 @@ let missing_generic_args expected span =
   |> label (Label.primary msg span)
 ;;
 
+let mismatch_pattern_args expected found span =
+  let msg =
+    sprintf
+      "expected %d field%s, found %d"
+      expected
+      (if expected = 1 then "" else "s")
+      found
+  in
+  Diagnostic.create "mismatch fields in pattern"
+  |> label (Label.primary msg span)
+;;
+
 let unused_value span = mk_err "expression result unused" span
 
 let uninitialized_fields name span =
@@ -150,6 +156,12 @@ let type_annotation_required name params span =
              name)
           span
       ]
+;;
+
+let invalid_literal_pattern span =
+  Diagnostic.create
+    "only integer range patterns are allowed"
+    ~labels:[Label.primary "not an integer" span]
 ;;
 
 let ty_err_emit (tcx : tcx) err span =
@@ -237,8 +249,9 @@ let tychk_fn cx fn =
     |> Array.map (function Middle.Ty.Ty ty ->
            !ty |> ( function Param p -> p | _ -> assert false ));
   let define id ty =
-    tcx#create_def (local_def_id id) ty;
-    ignore (cx.locals#insert id ty)
+    let did = local_def_id id in
+    tcx#create_def did ty;
+    tcx#define_local did ty
   in
   let resolve_expected = function
     | NoExpectation -> None
@@ -335,7 +348,7 @@ let tychk_fn cx fn =
       | Ptr (Imm, t0), Ptr (_, t1) ->
           let* ty = equate t0 t1 in
           Ok (tcx#ptr Imm ty)
-      | FnPtr t0', Fn (def_id, _) ->
+      | FnPtr t0', Fn (def_id, _) | Fn (def_id, _), FnPtr t0' ->
           let t1' = tcx#get_fn def_id in
           if fnhash t0' = fnhash t1'
           then Ok t0
@@ -347,20 +360,17 @@ let tychk_fn cx fn =
       | _ -> Error (MismatchTy (t0, t1))
   and unify_adt_or_fn did0 did1 s0 s1 t0 t1 f =
     if did0 = did1 && s0#len = s1#len
-    then (
+    then
       let res = map2 s0 s1 (fun (Ty t0) (Ty t1) -> equate t0 t1) in
       let err = find (function Error e -> Some e | Ok _ -> None) res in
       match err with
       | Some err -> Error err
       | None ->
-          let subst : generic_arg vec = new vec in
-          for i = 0 to res#len - 1 do
-            match res#get i with
-            | Ok ty -> subst#push (Ty ty)
-            | Error _ -> assert false
-          done;
+          let subst =
+            map res (fun ty : generic_arg -> Ty (Result.get_ok ty))
+          in
           let ty = f did0 (Subst subst) in
-          Ok ty)
+          Ok ty
     else Error (MismatchTy (t0, t1))
   in
   let fold_int_ty intvid old_ty =
@@ -447,19 +457,20 @@ let tychk_fn cx fn =
         ()
         (* if ty <> Unit && ty <> Err *)
         (* then tcx#emit (unused_value expr.expr_span) *)
-    | Binding { binding_pat; binding_ty; binding_expr; binding_id; _ } ->
-        (match binding_pat with
-         | PatIdent _ ->
-             (match binding_ty with
-              | Some expected ->
-                  let expected = tcx#ast_ty_to_ty expected in
-                  let ty = check_expr binding_expr (ExpectTy expected) in
-                  (match equate expected ty with
-                   | Ok ty -> define binding_id ty
-                   | Error e -> ty_err_emit tcx e binding_expr.expr_span)
-              | None ->
-                  let ty = check_expr binding_expr NoExpectation in
-                  define binding_id ty))
+    | Binding { binding_pat; binding_ty; binding_expr; binding_span; _ } ->
+        let ty =
+          match binding_ty with
+          | Some expected ->
+              let expected = tcx#ast_ty_to_ty expected in
+              let ty = check_expr binding_expr (ExpectTy expected) in
+              (match equate expected ty with
+               | Ok ty -> ty
+               | Error e ->
+                   ty_err_emit tcx e binding_expr.expr_span;
+                   expected)
+          | None -> check_expr binding_expr NoExpectation
+        in
+        check_pattern (new hashmap) ty binding_span binding_pat
     | Assert (cond, _) -> ignore (check_expr cond (ExpectTy tcx#types.bool))
   and check_expr expr expected =
     let ty = check_expr_kind expr expected in
@@ -544,8 +555,28 @@ let tychk_fn cx fn =
              in
              mk_type_constructor adtty id fargs path.span
          | _ ->
-             (* TODO: check for generics in second last segment *)
-             mk_type_constructor adtty id fargs path.span)
+             let last = path.segments#get (-1) in
+             let second_last = path.segments#get (-2) in
+             let adtty =
+               tcx#res_map#unsafe_get second_last.id |> function
+               | Def (id, Adt) ->
+                   let ty = tcx#get_def id in
+                   let ty =
+                     match second_last.args with
+                     | Some args ->
+                         check_generic_args ty (Some args) path.span tcx#adt
+                     | None -> ty
+                   in
+                   ty
+               | _ -> assert false
+             in
+             let ty =
+               match last.args with
+               | Some args ->
+                   check_generic_args adtty (Some args) path.span tcx#adt
+               | None -> adtty
+             in
+             mk_type_constructor ty id fargs path.span)
     | Def (id, (Fn | Intrinsic)) ->
         let ty = tcx#get_def id in
         let last = Option.get path.segments#last in
@@ -580,16 +611,147 @@ let tychk_fn cx fn =
           | None -> ty
         in
         infer_generic_args ty tcx#fn path.span
-    | Local (_, id) -> cx.locals#unsafe_get id
+    | Local (_, id) -> tcx#get_local (local_def_id id) |> Option.get
     | Err | Def (_, TyParam) -> tcx#types.err
     | _ ->
         print_endline @@ tcx#sess.parse_sess.sm#span_to_string path.span.lo;
         assert false
+  and err_if_not_bound env span =
+    env#iter (fun name _ ->
+        let msg = sprintf "`%s` is not bound in all patterns" name in
+        let label_msg = sprintf "pattern doesn't bind `%s`" name in
+        Diagnostic.create msg ~labels:[Label.primary label_msg span]
+        |> tcx#emit)
+  and collect_bindings env = function
+    | PIdent (_, name, id) ->
+        (match tcx#res_map#unsafe_get !id with
+         | Def (_, Cons) -> ()
+         | _ -> env#insert' name ())
+    | PCons (_, patns) | POr patns -> patns#iter (collect_bindings env)
+    | _ -> ()
+  and check_pattern env ty span = function
+    | PIdent (_, name, id) ->
+        let id = !id in
+        (match tcx#res_map#unsafe_get id with
+         | Def (did, Cons) ->
+             let (Variant variant) = tcx#get_variant did in
+             (if not variant.fields#empty
+              then
+                let msg =
+                  sprintf
+                    "try specifying the pattern arguments: `%s(..)`"
+                    name
+                in
+                Diagnostic.create
+                  "bindings cannot shadow constructors"
+                  ~labels:[Label.primary msg span]
+                |> tcx#emit);
+             let segments = new vec in
+             segments#push
+               { ident = name; args = None; id; span = Span.dummy };
+             let path = { segments; path_id = id; span = Span.dummy } in
+             let found = check_path path in
+             (match equate ty found with
+              | Ok _ -> ()
+              | Error e -> ty_err_emit tcx e span)
+         (* | Def (_, Struct) -> *)
+         (*     let msg = *)
+         (*       sprintf *)
+         (*         "try specifying the pattern arguments: `%s { .. }`" *)
+         (*         name *)
+         (*     in *)
+         (*     Diagnostic.create *)
+         (*       "bindings cannot shadow constructors" *)
+         (*       ~labels:[Label.primary msg span] *)
+         (*     |> tcx#emit *)
+         | _ ->
+             let f () =
+               define id ty;
+               match env#insert name ty with
+               | Some ty' ->
+                   let r = equate ty ty' in
+                   if Result.is_error r
+                   then ty_err_emit tcx (Result.get_error r) span
+               | None -> ()
+             in
+             (match tcx#variants ty, tcx#adt_kind ty with
+              | Some variants, Some AdtT ->
+                  let vmap = Hashtbl.create 0 in
+                  variants#iter (function Variant v ->
+                      let name = tcx#into_last_segment v.def_id in
+                      Hashtbl.add vmap name v.def_id);
+                  (match Hashtbl.find_opt vmap name with
+                   | Some did ->
+                       let qpath = tcx#qpath did in
+                       let msg =
+                         sprintf
+                           "pattern binding `%s` is named the same as one \
+                            of the variants of the type `%s`"
+                           name
+                           (tcx#typename ty)
+                       in
+                       let label_msg =
+                         sprintf "use qualified path `%s`" qpath
+                       in
+                       Diagnostic.create
+                         msg
+                         ~labels:[Label.primary label_msg span]
+                       |> tcx#emit
+                   | None -> f ())
+              | _ -> f ()))
+    | PCons (path, patns) ->
+        let consty = check_path path in
+        (match !consty with
+         | Fn _ ->
+             let fnsig = Fn.get tcx consty in
+             let nargs = fnsig.args#len in
+             let npatn = patns#len in
+             (match equate ty fnsig.ret with
+              | Ok _ -> ()
+              | Error e -> ty_err_emit tcx e path.span);
+             if nargs <> npatn
+             then mismatch_pattern_args nargs npatn path.span |> tcx#emit;
+             patns#iteri (fun i pat ->
+                 if i < nargs
+                 then
+                   let ty = fnsig.args#get i in
+                   check_pattern env ty path.span pat)
+         | _ ->
+             Diagnostic.create
+               "unexpected pattern"
+               ~labels:[Label.primary "not a variant" path.span]
+             |> tcx#emit)
+    | PPath path ->
+        (match equate ty (check_path path) with
+         | Ok _ -> ()
+         | Error e -> ty_err_emit tcx e path.span)
+    | POr patns ->
+        (* let env' = new hashmap in *)
+        (* collect_bindings env' pat; *)
+        (* err_if_not_bound env' span; *)
+        patns#iter (check_pattern env ty span)
+    | PWild -> ()
+    | PLit (LitInt _) ->
+        (* TODO: check integer range *)
+        let found = infcx_new_int_var cx.infcx in
+        (match equate ty found with
+         | Ok _ -> ()
+         | Error e -> ty_err_emit tcx e span)
+    | PLit (LitBool _) ->
+        (match equate ty tcx#types.bool with
+         | Ok _ -> ()
+         | Error e -> ty_err_emit tcx e span)
+    | PRange (LitInt _, LitInt _) ->
+        let found = infcx_new_int_var cx.infcx in
+        (match equate ty found with
+         | Ok _ -> ()
+         | Error e -> ty_err_emit tcx e span)
+    | PLit _ | PRange _ -> invalid_literal_pattern span |> tcx#emit
   and check_arguments ?(is_variadic = false) pexpr exprs args =
     if (not is_variadic) && exprs#len <> args#len
     then tcx#emit @@ mismatch_args args#len exprs#len pexpr.expr_span
   and check_call pexpr exprs { args; ret; is_variadic; _ } =
-    check_arguments pexpr exprs args ?is_variadic:(Some is_variadic);
+    check_arguments pexpr exprs args ~is_variadic;
     exprs#iteri (fun i arg ->
         let expected =
           if i < args#len then ExpectTy (args#get i) else NoExpectation
@@ -610,7 +772,7 @@ let tychk_fn cx fn =
     else
       let args' = args#copy in
       let first = tcx#autoderef (args'#get 0) in
-      args'#pop_front;
+      ignore @@ args'#pop_front;
       let args = args' in
       (match equate first ty with
        | Ok _ -> ()
@@ -858,24 +1020,47 @@ let tychk_fn cx fn =
               | _ ->
                   ty_err_emit tcx (InvalidCall ty) expr.expr_span;
                   tcx#types.err))
+    | Match (expr, arms) ->
+        let ty = check_expr expr NoExpectation in
+        let first = ref None in
+        arms#iter (fun { pat; patspan; expr; _ } ->
+            check_pattern (new hashmap) ty patspan pat;
+            let ty = check_expr expr NoExpectation in
+            match !first with
+            | Some expected ->
+                (match equate expected ty with
+                 | Ok _ -> ()
+                 | Error e -> ty_err_emit tcx e expr.expr_span)
+            | None -> first := Some ty);
+        !first |> Option.get
   in
   let ty = tcx#get_def did in
   let ret = Fn.ret tcx ty in
-  (* TODO: display better error span *)
-  let span =
-    match fn.fn_sig.ret_ty with
-    | Some ty -> ty.span
-    | None -> fn.fn_sig.fn_span
-  in
+  (* let span = *)
+  (*   match fn.fn_sig.ret_ty with *)
+  (*   | Some ty -> ty.span *)
+  (*   | None -> fn.fn_sig.fn_span *)
+  (* in *)
   (match fn.body with
    | Some block ->
        fn.fn_sig.args#iter (fun { ty; arg_id; _ } ->
            define arg_id (tcx#ast_ty_to_ty ty));
        let ty = check_block block in
-       (match equate ret ty with
+       let span =
+         last_stmt_span block |> Option.value ~default:block.block_span
+       in
+       (match equate ty ret with
         | Ok _ -> ()
         | Error e -> ty_err_emit tcx e span)
    | None -> ());
+  (* this might not be very performant *)
+  Array.iter
+    (fun (var : TyUt.VarValue.t) ->
+      let v = ref (Infer (TyVar var.parent)) in
+      match TyUt.probe_value cx.infcx.ty_ut var.parent with
+      | Some ty -> tcx#invalidate !v (fold_ty ty)
+      | None -> ())
+    cx.infcx.ty_ut.values;
   tcx#iter_infer_vars (function
       | v, IntVar i -> ignore @@ fold_int_ty i v
       | v, FloatVar f -> ignore @@ fold_float_ty f v

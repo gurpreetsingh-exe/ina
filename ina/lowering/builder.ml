@@ -9,6 +9,7 @@ class builder tcx blocks block =
     val blocks : Func.blocks = blocks
     val block : Inst.basic_block = block
     method block = block
+    method blocks = blocks
 
     method private add_inst kind span =
       let inst = { kind; ty = tcx#types.unit; id = -1; span } in
@@ -30,10 +31,36 @@ class builder tcx blocks block =
 
     method binary kind left right =
       let ty = get_ty tcx right in
+      let ty =
+        match kind with
+        | Lt | LtEq | Gt | GtEq | Eq | NotEq -> tcx#types.bool
+        | _ -> ty
+      in
       let inst = Binary (kind, left, right) in
       self#add_inst_with_ty ty inst
 
     method store src dst = self#add_inst (Store (src, dst))
+
+    method switch ?default cond args =
+      self#add_terminator (Switch (cond, args, default));
+      args#iter (function bb, _ ->
+          let bb = Inst.extract_block bb in
+          Basicblock.append_succ block bb)
+
+    method discriminant value =
+      let ty = get_ty tcx value in
+      assert (Option.is_some (tcx#variants ty));
+      self#add_inst_with_ty tcx#types.u8 (Discriminant value)
+
+    method payload value idx =
+      let ty = get_ty tcx value in
+      let ty = tcx#tuple_of_variant ty idx in
+      self#add_inst_with_ty (tcx#ptr Mut ty) (Payload (value, idx))
+
+    method aggregate adt args =
+      let (Adt (did, _, Subst subst)) = adt in
+      let ty = SubstFolder.fold_ty tcx (tcx#get_def did) subst in
+      self#add_inst_with_ty ty (Aggregate (adt, args))
 
     method copy ptr =
       let ty = get_ty tcx ptr in
@@ -45,18 +72,8 @@ class builder tcx blocks block =
       let ty = Option.get @@ tcx#inner_ty ty in
       self#add_inst_with_ty ty (Move ptr)
 
-    method gep ty ptr ident =
-      let (Variant variant) = tcx#non_enum_variant ty |> Option.get in
-      let index = ref (-1) in
-      Structures.Vec.find
-        (fun (Middle.Ty.Field { name; ty }) ->
-          incr index;
-          if name = ident then Some (!index, ty) else None)
-        variant.fields
-      |> function
-      | Some (index, ty') ->
-          self#add_inst_with_ty (tcx#ptr Mut ty') (Gep (ty, ptr, index))
-      | None -> assert false
+    method gep ty ty' ptr index =
+      self#add_inst_with_ty (tcx#ptr Mut ty') (Gep (ty, ptr, index))
 
     method call ty value args =
       let ret = Fn.ret tcx ty in

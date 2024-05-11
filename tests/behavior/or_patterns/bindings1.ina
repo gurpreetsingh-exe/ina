@@ -1,0 +1,26 @@
+type Foo =
+    | A(i32)
+    | B(i32)
+
+type Bar =
+    | A(Foo)
+    | B(i32)
+
+fn test(v: Bar) -> i32 {
+    let Bar::A(Foo::A(x) | Foo::B(x)) | Bar::B(x) = v;
+    x
+}
+
+fn main() {
+    let x = match Foo::A(20) {
+        Foo::A(x) | Foo::B(x) => x
+    };
+    assert x == 20;
+
+    let Foo::A(x) | Foo::B(x) = Foo::B(50);
+    assert x == 50;
+
+    assert test(Bar::A(Foo::A(25))) == 25;
+    assert test(Bar::A(Foo::B(26))) == 26;
+    assert test(Bar::B(27)) == 27;
+}

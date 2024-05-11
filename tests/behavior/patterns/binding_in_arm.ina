@@ -1,0 +1,7 @@
+fn main() {
+    let x = match 20 {
+        1 => 1,
+        x => x,
+    };
+    assert x == 20;
+}

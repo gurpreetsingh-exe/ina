@@ -37,9 +37,6 @@ let collect tcx mdl =
       | VReg inst -> VReg (fold_inst2 inst) (* this might be sus *)
       | Label bb -> Label bb
       | Param (ty, name, i) -> Param (fold_ty ty, name, i)
-      | Aggregate (Adt (did, i, Subst subst'), values) ->
-          let subst = SubstFolder.fold_subst tcx subst' subst in
-          Aggregate (Adt (did, i, subst), map values fold_value)
       | Global (Fn instance) -> Global (Fn (fold_instance instance))
     and fold_pair (value, ty) = fold_value value, fold_ty ty
     and fold_inst2 inst = { inst with ty = fold_ty inst.ty }
@@ -54,6 +51,11 @@ let collect tcx mdl =
             Phi
               ( fold_ty ty
               , map branches (fun (bb, value) -> bb, fold_value value) )
+        | Discriminant value -> Discriminant (fold_value value)
+        | Payload (value, idx) -> Payload (fold_value value, idx)
+        | Aggregate (Adt (did, i, Subst subst'), values) ->
+            let subst = SubstFolder.fold_subst tcx subst' subst in
+            Aggregate (Adt (did, i, subst), map values fold_value)
         | Store (src, dst) -> Store (fold_value src, fold_value dst)
         | Copy ptr -> Copy (fold_value ptr)
         | Move ptr -> Move (fold_value ptr)
@@ -81,6 +83,11 @@ let collect tcx mdl =
       in
       { inst with kind; ty }
     and fold_terminator = function
+      | Switch (cond, args, default) ->
+          Switch
+            ( fold_value cond
+            , map args (fun (bb, value) -> bb, fold_value value)
+            , default )
       | Br (cond, then', else') ->
           Br (fold_value cond, fold_value then', fold_value else')
       | Jmp value -> Jmp (fold_value value)

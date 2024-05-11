@@ -2,6 +2,6 @@
 
 fn main() -> bool {
     let a: i32 = 34;
-    *(if a == 34 { &a } else { let _ = 0; &_ }) + 35 == 69
+    *(if a == 34 { &a } else { let c = 0; &c }) + 35 == 69
 }
 

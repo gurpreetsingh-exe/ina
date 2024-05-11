@@ -1,0 +1,13 @@
+// COMPILE_FAIL
+
+type T = T1 | T2
+type V = V1(isize) | V2(bool)
+type T2 = T(T, V)
+
+fn main() {
+    match T2::T(T::T1, V::V2(true)) {
+        T2::T(T::T1, V::V1(i)) => {},
+        T2::T(T::T2, V::V2(b)) => {},
+    }
+}
+

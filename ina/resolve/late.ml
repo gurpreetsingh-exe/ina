@@ -36,29 +36,43 @@ class type_lowering resolver modd =
       | Call (expr, args) | MethodCall (expr, _, args) ->
           self#visit_expr expr;
           args#iter self#visit_expr
-      | Path path ->
-          let tcx = resolver#tcx in
-          let res = tcx#res_map#unsafe_get path.path_id in
-          (match res with
-           | Def (id, ((Struct | Adt) as kind)) ->
-               let open Middle.Ctx in
-               let name = (Option.get path.segments#last).ident in
-               (match tcx#lookup_assoc_fn res name with
-                | Some did ->
-                    (if path.segments#len >= 2
-                     then
-                       let slast = path.segments#get (-2) in
-                       ignore (tcx#res_map#insert slast.id (Def (id, kind))));
-                    ignore
-                      (tcx#res_map#insert path.path_id (Def (did, AssocFn)))
-                | None ->
-                    ignore (tcx#res_map#insert path.path_id Err);
-                    resolver#not_found path)
-           | Ty _ -> assert false
-           | Local _ -> ()
-           | Def (_, _) -> ()
-           | Err -> ())
+      | Path path -> self#visit_path path
       | Lit _ -> ()
+      | Match (expr, arms) ->
+          self#visit_expr expr;
+          arms#iter (fun { pat; expr; _ } ->
+              self#visit_pat pat;
+              self#visit_expr expr)
+
+    method visit_path path =
+      let tcx = resolver#tcx in
+      let res = tcx#res_map#unsafe_get path.path_id in
+      match res with
+      | Def (id, ((Struct | Adt) as kind)) ->
+          let open Middle.Ctx in
+          let name = (Option.get path.segments#last).ident in
+          (match tcx#lookup_assoc_fn res name with
+           | Some did ->
+               (if path.segments#len >= 2
+                then
+                  let slast = path.segments#get (-2) in
+                  ignore (tcx#res_map#insert slast.id (Def (id, kind))));
+               ignore (tcx#res_map#insert path.path_id (Def (did, AssocFn)))
+           | None ->
+               ignore (tcx#res_map#insert path.path_id Err);
+               resolver#not_found path)
+      | Ty _ -> assert false
+      | Local _ -> ()
+      | Def (_, _) -> ()
+      | Err -> ()
+
+    method visit_pat pat =
+      match pat with
+      | PPath path -> self#visit_path path
+      | PCons (path, pats) ->
+          self#visit_path path;
+          pats#iter (fun pat -> self#visit_pat pat)
+      | _ -> ()
 
     method visit_stmt stmt =
       match stmt with
@@ -159,8 +173,10 @@ class type_lowering resolver modd =
             Field { ty = resolver#tcx#ast_ty_to_ty ty; name })
       in
       let variants = new vec in
-      variants#push (Variant { def_id; fields });
-      let ty = resolver#tcx#adt_with_variants def_id variants subst in
+      variants#push (Variant { def_id; fields; index = 0 });
+      let ty =
+        resolver#tcx#adt_with_variants def_id variants StructT subst
+      in
       assert (resolver#tcx#node_id_to_def_id#insert id def_id = None);
       resolver#tcx#create_def def_id ty
 
@@ -183,7 +199,7 @@ class type_lowering resolver modd =
       let def_id = local_def_id id in
       resolver#tcx#define_generics def_id generics;
       let variants =
-        map adt.variants (fun variant ->
+        mapi adt.variants (fun i variant ->
             let def_id = local_def_id variant.id in
             let fields =
               mapi variant.fields (fun i ty ->
@@ -193,9 +209,9 @@ class type_lowering resolver modd =
                     ; name = string_of_int i
                     })
             in
-            resolver#tcx#variant def_id fields)
+            resolver#tcx#variant def_id fields i)
       in
-      let ty = resolver#tcx#adt_with_variants def_id variants subst in
+      let ty = resolver#tcx#adt_with_variants def_id variants AdtT subst in
       assert (resolver#tcx#node_id_to_def_id#insert id def_id = None);
       resolver#tcx#create_def def_id ty
 

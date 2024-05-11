@@ -89,6 +89,20 @@ let rec backend_ty cx ty =
            TypeMap.add cx.types ty name;
            name)
   | Fn _ as ty -> fn cx ty
+  | Tuple tys as ty' ->
+      (match TypeMap.find_opt cx.types ty' with
+       | Some ty -> ty
+       | None ->
+           let name = sprintf "__tuple_%d" (TypeMap.length cx.types) in
+           prelude ^ sprintf "// %s\n" (cx.tcx#render_ty ty);
+           let tys =
+             mapi tys (fun i ty -> sprintf "%s _%d;" (backend_ty cx ty) i)
+           in
+           let body = tys#join ";" Fun.id in
+           prelude
+           ^ sprintf "typedef struct %s { %s } %s;\n\n" name body name;
+           TypeMap.add cx.types ty' name;
+           name)
   | _ ->
       print_endline @@ Middle.Ty.render_ty2 ty;
       assert false
@@ -114,8 +128,9 @@ and fn cx ty =
       name
 
 and define cx name ty =
+  let kind = cx.tcx#adt_kind ty in
   match !ty with
-  | Adt _ when cx.tcx#is_non_enum ty ->
+  | Adt _ when Option.get kind = StructT ->
       cx.defined_types#insert' name ();
       let (Variant variant) = cx.tcx#non_enum_variant ty |> Option.get in
       let fields =
@@ -232,20 +247,6 @@ let gen cx =
              name)
     | Const { kind; ty } -> get_const ty kind
     | Label bb -> sprintf "bb%d" bb.bid
-    | Aggregate (Adt (did, vidx, s), args) ->
-        let ty = cx.tcx#adt did s in
-        let ty' = backend_ty cx ty in
-        let data =
-          if not args#empty
-          then
-            let args = map args (fun v -> get_value v) in
-            let args = mapi args (fun i arg -> sprintf "._%d = %s" i arg) in
-            let args = args#join ", " Fun.id in
-            let vname = String.cat ty' @@ string_of_int vidx in
-            sprintf "{ ._%d = (%s) { %s } }" vidx vname args
-          else "{}"
-        in
-        sprintf "(%s) { .discriminant = %d, .data = %s }" ty' vidx data
   in
   let rec gen_bb bb =
     let open Ir.Inst in
@@ -292,6 +293,20 @@ let gen cx =
     match inst.kind with
     | Alloca ty ->
         out ^ sprintf "__builtin_alloca(sizeof(%s));\n" (backend_ty cx ty)
+    | Aggregate (Adt (did, vidx, s), args) ->
+        let ty = cx.tcx#adt did s in
+        let ty' = backend_ty cx ty in
+        let data =
+          if not args#empty
+          then
+            let args = map args get_value in
+            let args = mapi args (fun i arg -> sprintf "._%d = %s" i arg) in
+            let args = args#join ", " Fun.id in
+            let vname = String.cat ty' @@ string_of_int vidx in
+            sprintf "{ ._%d = (%s) { %s } }" vidx vname args
+          else "{}"
+        in
+        out ^ sprintf "{ .discriminant = %d, .data = %s };\n" vidx data
     | Binary (kind, left, right) ->
         let op =
           match kind with
@@ -324,9 +339,15 @@ let gen cx =
                  (get_value value)
                  (args#join ", " get_value))
     | Gep (ty, ptr, index) ->
-        let (Variant variant) = cx.tcx#non_enum_variant ty |> Option.get in
-        let (Field { name; _ }) = variant.fields#get index in
-        out ^ sprintf "&%s->%s;\n" (get_value ptr) name
+        (match !ty with
+         | Adt _ ->
+             let (Variant variant) =
+               cx.tcx#non_enum_variant ty |> Option.get
+             in
+             let (Field { name; _ }) = variant.fields#get index in
+             out ^ sprintf "&%s->%s;\n" (get_value ptr) name
+         | Tuple _ -> out ^ sprintf "&%s->_%d;\n" (get_value ptr) index
+         | _ -> assert false)
     | BitCast (value, ty)
     | IntToPtr (value, ty)
     | PtrToInt (value, ty)
@@ -336,12 +357,30 @@ let gen cx =
     | Trap value ->
         out ^ sprintf "  __builtin_printf(\"%s\");\n" (String.escaped value);
         out ^ "  __builtin_abort();\n"
+    | Discriminant value ->
+        out ^ sprintf "(%s).discriminant;\n" (get_value value)
+    | Payload (value, _) ->
+        out
+        ^ sprintf
+            "(%s)(&%s.data);\n"
+            (backend_ty cx inst.ty)
+            (get_value value)
     | _ ->
-        print_endline !out;
         newline ();
         print_endline @@ render_inst cx.tcx inst;
         assert false
   and gen_terminator = function
+    | Switch (value, branches, default) ->
+        out
+        ^ sprintf
+            "switch (%s) { %s %s };\n"
+            (get_value value)
+            (branches#join " " (fun (bb, value) ->
+                 sprintf "case %s: goto %s;" (get_value value) (get_value bb)))
+            (default
+             |> Option.map (fun bb ->
+                    sprintf "default: goto %s;" (get_value bb))
+             |> Option.value ~default:"default: __builtin_unreachable();")
     | Ret value -> out ^ sprintf "return %s;\n" (get_value value)
     | RetUnit -> out ^ "return;\n"
     | Br (cond, then_block, else_block) ->

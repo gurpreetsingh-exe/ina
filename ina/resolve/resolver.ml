@@ -511,7 +511,13 @@ class resolver tcx modd =
                        Def
                          ( Module.binding_to_def_id r
                          , Module.binding_to_def_kind r )
-                     else f i mdl)
+                     else (
+                       tcx#res_map#insert'
+                         seg.id
+                         (Def
+                            ( Module.binding_to_def_id r
+                            , Module.binding_to_def_kind r ));
+                       f i mdl))
             | None ->
                 let segments = new vec in
                 segments#push seg;
@@ -522,7 +528,9 @@ class resolver tcx modd =
                   then res
                   else
                     match self#res_to_module res with
-                    | Some mdl -> f i mdl
+                    | Some mdl ->
+                        tcx#res_map#insert' seg.id res;
+                        f i mdl
                     | None -> res
                 in
                 if res = Err
@@ -572,7 +580,7 @@ class resolver tcx modd =
             tcx#res_map#insert' seg.id res;
             res
         | _, _, "mod" ->
-            segs#pop_front;
+            ignore @@ segs#pop_front;
             if segs#empty
             then
               let did = binding_to_def_id (Module mod_root) in
@@ -696,23 +704,54 @@ class resolver tcx modd =
             visit_expr expr mdl;
             visit_segment seg;
             args#iter (fun expr -> visit_expr expr mdl)
+        | Match (expr, arms) ->
+            visit_expr expr mdl;
+            arms#iter (fun { pat; expr; _ } ->
+                match expr.expr_kind with
+                | Block block ->
+                    let mdl' =
+                      modules#unsafe_get (local_def_id block.block_id)
+                    in
+                    visit_pat pat mdl';
+                    visit_expr expr mdl
+                | _ -> assert false)
+      and visit_pat ?(env = new hashmap) pat mdl =
+        match pat with
+        | PIdent (m, name, id) when not @@ env#has name ->
+            let segments = new vec in
+            let id = !id in
+            segments#push
+              { ident = name; args = None; id; span = Source.Span.dummy };
+            let path =
+              { segments; path_id = id; span = Source.Span.dummy }
+            in
+            let res = self#resolve_path mdl path (Some Type) in
+            ignore @@ tcx#res_map#insert id res;
+            (match res with
+             | Def (_, Cons) -> ()
+             | Def _ | Err ->
+                 assert (env#insert name id = None);
+                 let res = Res (Local (tcx#ast_mut_to_mut m, id)) in
+                 self#shadow mdl name Value res
+             | _ -> assert false)
+        | PIdent (_, name, id) -> id := env#unsafe_get name
+        | PCons (path, subpats) ->
+            visit_path path mdl (Some Value);
+            subpats#iter (fun pat -> visit_pat ~env pat mdl)
+        | PPath path -> visit_path path mdl (Some Value)
+        | POr subpats -> subpats#iter (fun pat -> visit_pat ~env pat mdl)
+        | PWild | PLit _ | PRange _ -> ()
       and visit_block body =
         let mdl = modules#unsafe_get (local_def_id body.block_id) in
         body.block_stmts#iter (fun stmt ->
             match stmt with
             | Stmt expr | Expr expr -> visit_expr expr mdl
-            | Binding
-                { binding_pat; binding_expr; binding_ty; binding_id; _ } ->
+            | Binding { binding_pat; binding_expr; binding_ty; _ } ->
                 (match binding_ty with
                  | Some ty -> resolve_ty ty
                  | None -> ());
-                binding_pat |> ( function
-                | PatIdent (m, name) ->
-                    visit_expr binding_expr mdl;
-                    let res =
-                      Res (Local (tcx#ast_mut_to_mut m, binding_id))
-                    in
-                    self#shadow mdl name Value res )
+                visit_expr binding_expr mdl;
+                visit_pat binding_pat mdl
             | Assert (expr, _) -> visit_expr expr mdl
             | Assign (expr1, expr2) ->
                 visit_expr expr1 mdl;

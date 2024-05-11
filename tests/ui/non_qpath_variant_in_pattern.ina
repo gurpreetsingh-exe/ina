@@ -1,0 +1,10 @@
+// COMPILE_FAIL
+
+type T = A | B
+
+fn main() {
+    match T::A {
+        A => {},
+        B => {},
+    }
+}

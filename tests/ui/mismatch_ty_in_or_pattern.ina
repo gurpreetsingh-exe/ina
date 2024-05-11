@@ -1,0 +1,11 @@
+// COMPILE_FAIL
+
+type Foo =
+    | A(i32)
+    | B(i64)
+
+fn main() {
+    match Foo::A(20) {
+        Foo::A(x) | Foo::B(x) => x,
+    };
+}

@@ -1,0 +1,12 @@
+// COMPILE_PASS
+
+using Option::*;
+type Option[T] = Some(T) | None
+
+fn main() {
+    let _: i64 = match None {
+        None => 10,
+        Some(None) => 30,
+        Some(Some(v)) => v,
+    };
+}

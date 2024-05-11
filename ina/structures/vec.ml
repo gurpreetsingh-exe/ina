@@ -16,22 +16,31 @@ class ['a] vec =
     method clear = inner <- [||]
     method all f = Array.for_all f inner
     method any f = Array.exists f inner
+    method mem v = Array.mem v inner
 
     method copy =
       let v = new vec in
-      v#replace inner;
+      v#replace (Array.copy inner);
       v
 
     method pop_front =
-      let _, tl = self#split 1 in
-      inner <- tl
+      let hd, tl = self#split 1 in
+      inner <- tl;
+      hd.(0)
 
     method pop =
       let hd, tl = self#split (self#len - 1) in
       inner <- hd;
       tl.(0)
 
+    method remove i =
+      let left, right = self#split (i + 1) in
+      let value = left.(Array.length left - 1) in
+      inner <- Array.append (Array.sub left 0 i) right;
+      value
+
     method private split i =
+      assert (i <= Array.length inner);
       if i = 0
       then [||], inner
       else

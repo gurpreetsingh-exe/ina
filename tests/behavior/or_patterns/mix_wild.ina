@@ -1,0 +1,14 @@
+using Option::*;
+type Option[T] = Some(T) | None
+
+fn test(v: Option[usize]) -> bool {
+    match v {
+        Some(0 | _) => true,
+        None => false,
+    }
+}
+
+fn main() {
+    assert test(Some(42));
+    assert test(None) == false;
+}

@@ -127,6 +127,9 @@ class visitor resolver (modd : Ast.modd) parent dir_ownership =
           self#visit_expr expr;
           args#iter self#visit_expr
       | Lit _ | Path _ -> ()
+      | Match (expr, arms) ->
+          self#visit_expr expr;
+          arms#iter (fun { expr; _ } -> self#visit_expr expr)
 
     method visit_pat _ = ()
 

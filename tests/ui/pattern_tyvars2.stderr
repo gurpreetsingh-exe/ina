@@ -1,0 +1,8 @@
+error: mismatch types
+    ╭─[tests/ui/pattern_tyvars2.ina:14:27]
+    │
+ 14 │             let x2: i32 = x;
+    │                           ┬
+    │                           ╰─ expected `i32`, found `isize`
+    ∙
+────╯

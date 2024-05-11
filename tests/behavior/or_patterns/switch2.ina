@@ -1,0 +1,32 @@
+type Foo =
+    | One(usize)
+    | Two(usize, usize)
+
+fn test(x: Foo) -> usize {
+    match x {
+        Foo::One(0) | Foo::One(1) | Foo::One(2) => 0,
+        Foo::One(42 | 255) => 1,
+        Foo::Two(42 | 255, 1024 | 2048) => 2,
+        Foo::One(100 | 115 | 215) => 3,
+        Foo::Two(0 | 100, 0 | _) => 4,
+        _ => 10,
+    }
+}
+
+fn main() {
+    assert test(Foo::One(0)) == 0;
+    assert test(Foo::One(42)) == 1;
+    assert test(Foo::One(43)) == 10;
+    assert test(Foo::One(255)) == 1;
+    assert test(Foo::One(256)) == 10;
+    assert test(Foo::Two(42, 1023)) == 10;
+    assert test(Foo::Two(255, 2048)) == 2;
+    assert test(Foo::One(100)) == 3;
+    assert test(Foo::One(115)) == 3;
+    assert test(Foo::One(105)) == 10;
+    assert test(Foo::One(215)) == 3;
+    assert test(Foo::One(121)) == 10;
+    assert test(Foo::Two(0, 42)) == 4;
+    assert test(Foo::Two(100, 0)) == 4;
+    assert test(Foo::Two(42, 0)) == 10;
+}

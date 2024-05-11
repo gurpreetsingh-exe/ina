@@ -1,0 +1,56 @@
+error: non-exhaustive patterns
+    ╭─[tests/ui/non_exhaustive_match.ina:11:11]
+    │
+ 11 │     match x {
+    │           ┬
+    │           ╰─ pattern `B` not covered
+    ∙
+────╯
+error: non-exhaustive patterns
+    ╭─[tests/ui/non_exhaustive_match.ina:15:11]
+    │
+ 15 │     match Some(20) {
+    │           ────┬───
+    │               ╰───── pattern `Some(_)` not covered
+    ∙
+────╯
+error: non-exhaustive patterns
+    ╭─[tests/ui/non_exhaustive_match.ina:27:11]
+    │
+ 27 │     match Some(T::A) {
+    │           ─────┬────
+    │                ╰────── pattern `Some(B)` not covered
+    ∙
+────╯
+error: non-exhaustive patterns
+    ╭─[tests/ui/non_exhaustive_match.ina:38:11]
+    │
+ 38 │     match None {
+    │           ──┬─
+    │             ╰─── patterns `None` and `Some(A(B, A))` not covered
+    ∙
+────╯
+error: non-exhaustive patterns
+    ╭─[tests/ui/non_exhaustive_match.ina:43:11]
+    │
+ 43 │     match 0 {
+    │           ┬
+    │           ╰─ pattern `_` not covered
+    ∙
+────╯
+error: non-exhaustive patterns
+    ╭─[tests/ui/non_exhaustive_match.ina:47:11]
+    │
+ 47 │     match None {
+    │           ──┬─
+    │             ╰─── pattern `Some(_)` not covered
+    ∙
+────╯
+error: non-exhaustive patterns
+    ╭─[tests/ui/non_exhaustive_match.ina:58:11]
+    │
+ 58 │     match true {
+    │           ──┬─
+    │             ╰─── pattern `false` not covered
+    ∙
+────╯

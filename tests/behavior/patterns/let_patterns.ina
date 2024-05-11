@@ -1,0 +1,13 @@
+// EXIT_CODE: 0
+
+type T = A(i32)
+type T2 = B(i32, T)
+
+fn main() {
+    let v = T::A(50);
+    let v1 = T2::B(10, v);
+    let T2::B(v1, T::A(v2)) = v1;
+    assert v1 == 10;
+    assert v2 == 50;
+}
+

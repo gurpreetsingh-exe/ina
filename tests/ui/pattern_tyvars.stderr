@@ -1,0 +1,8 @@
+error: mismatch types
+    ╭─[tests/ui/pattern_tyvars.ina:13:12]
+    │
+ 13 │         T1(Some[i32](a)) => {},
+    │            ────┬────
+    │                ╰───── expected `isize`, found `i32`
+    ∙
+────╯

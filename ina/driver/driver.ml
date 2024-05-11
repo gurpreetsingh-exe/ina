@@ -64,6 +64,7 @@ let () =
           let infcx = Infer.infer_ctx_create tcx in
           let cx = Tychk.create infcx in
           Tychk.tychk cx mdl;
+          if tcx#has_errors then exit 1;
           Linearity.analyze_module tcx mdl)
     in
     sess.timings.sema <- time;

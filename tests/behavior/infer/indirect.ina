@@ -4,6 +4,6 @@ fn main() -> bool {
     let a = 34;
     let b = 20;
     let c: i8 = 69;
-    *(if b == 20 { &a } else { let _ = b; &_ }) + 35 == c
+    *(if b == 20 { &a } else { let c = b; &c }) + 35 == c
 }
 

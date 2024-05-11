@@ -214,7 +214,14 @@ and binding = {
   ; binding_span: Span.t
 }
 
-and pat = PatIdent of (mutability * ident)
+and pat =
+  | PIdent of (mutability * ident * node_id ref)
+  | PPath of path
+  | PCons of (path * pat vec)
+  | POr of pat vec
+  | PRange of (lit * lit)
+  | PLit of lit
+  | PWild
 
 and expr = {
     mutable expr_kind: expr_kind
@@ -251,6 +258,14 @@ and expr_kind =
   | Field of expr * ident
   | Cast of expr * ty
   | MethodCall of expr * path_segment * expr vec
+  | Match of expr * arm vec
+
+and arm = {
+    pat: pat
+  ; patspan: Span.t
+  ; expr: expr
+  ; span: Span.t
+}
 
 and struct_expr = {
     struct_name: path

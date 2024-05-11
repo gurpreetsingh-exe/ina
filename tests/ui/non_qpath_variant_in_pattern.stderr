@@ -1,0 +1,16 @@
+error: pattern binding `A` is named the same as one of the variants of the type `T`
+   ╭─[tests/ui/non_qpath_variant_in_pattern.ina:7:9]
+   │
+ 7 │         A => {},
+   │         ┬
+   │         ╰─ use qualified path `T::A`
+   ∙
+───╯
+error: pattern binding `B` is named the same as one of the variants of the type `T`
+   ╭─[tests/ui/non_qpath_variant_in_pattern.ina:8:9]
+   │
+ 8 │         B => {},
+   │         ┬
+   │         ╰─ use qualified path `T::B`
+   ∙
+───╯

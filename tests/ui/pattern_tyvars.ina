@@ -1,0 +1,17 @@
+// COMPILE_FAIL
+
+using Option::*;
+type Option[T] = Some(T) | None
+
+using Foo::*;
+type Foo =
+    | T1(Option[isize])
+    | T2
+
+fn main() {
+    match T2 {
+        T1(Some[i32](a)) => {},
+        T1(None) => {},
+        T2 => {}
+    }
+}
