@@ -130,7 +130,8 @@ and compile_int_cases compiler rows bv =
       | Some col ->
           let key, cons =
             match col.pattern with
-            | PInt v -> (v, v), Decision.Int v
+            | PLit (LitInt v) -> (v, v), Decision.Int v
+            | PRange (LitInt s, LitInt e) -> (s, e), Range (s, e)
             | _ -> assert false
           in
           (match tested#get key with
@@ -176,9 +177,10 @@ and compile_constructor_cases compiler rows bv cases =
            | PIdent (_, _, id)
              when tcx#get_local (local_def_id !id) |> Option.is_none ->
                f row (new vec) !id
-           | PBool true -> g row (new vec) 0
-           | PBool false -> g row (new vec) 1
-           | PInt _ | PIdent _ | POr _ | PWild -> ())
+           | PLit (LitBool true) -> g row (new vec) 0
+           | PLit (LitBool false) -> g row (new vec) 1
+           | PLit (LitInt _) | PIdent _ | POr _ | PWild | PRange _ -> ()
+           | PLit _ -> assert false)
       | None -> cases#iter (fun (_, _, rows) -> rows#push row));
   map cases (fun (cons, vars, rows) ->
       { cons; args = vars; body = compile_rows compiler rows })
@@ -246,7 +248,8 @@ and add_missing_patterns compiler decision terms missing =
                let s, _ = tcx#into_segments variant.def_id in
                let name = List.rev s |> List.hd in
                terms#push { variable; name; args = case.args }
-           | Int _ -> terms#push { variable; name = "_"; args = new vec }
+           | Int _ | Range _ ->
+               terms#push { variable; name = "_"; args = new vec }
            | True -> terms#push { variable; name = "true"; args = new vec }
            | False -> terms#push { variable; name = "false"; args = new vec });
           add_missing_patterns compiler case.body terms missing;

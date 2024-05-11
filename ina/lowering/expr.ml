@@ -263,6 +263,7 @@ let rec lower_block (lcx : lcx) block =
                 | Int v -> lcx#bx#const_int var.ty v
                 | True -> lcx#bx#const_bool var.ty true
                 | False -> lcx#bx#const_bool var.ty false
+                | Range _ -> assert false
               in
               match check_if_present case.body with
               | Some bb' ->

@@ -219,8 +219,8 @@ and pat =
   | PPath of path
   | PCons of (path * pat vec)
   | POr of pat vec
-  | PInt of int
-  | PBool of bool
+  | PRange of (lit * lit)
+  | PLit of lit
   | PWild
 
 and expr = {

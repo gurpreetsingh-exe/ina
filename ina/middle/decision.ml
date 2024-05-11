@@ -19,6 +19,7 @@ type cons =
   | Int of int
   | True
   | False
+  | Range of (int * int)
 
 type t =
   | Success of body

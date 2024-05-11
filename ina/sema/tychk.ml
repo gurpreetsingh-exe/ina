@@ -158,6 +158,12 @@ let type_annotation_required name params span =
       ]
 ;;
 
+let invalid_literal_pattern span =
+  Diagnostic.create
+    "only integer range patterns are allowed"
+    ~labels:[Label.primary "not an integer" span]
+;;
+
 let ty_err_emit (tcx : tcx) err span =
   match err with
   | MismatchTy (expected, ty) ->
@@ -725,16 +731,22 @@ let tychk_fn cx fn =
         (* err_if_not_bound env' span; *)
         patns#iter (check_pattern env ty span)
     | PWild -> ()
-    | PInt _ ->
+    | PLit (LitInt _) ->
         (* TODO: check integer range *)
         let found = infcx_new_int_var cx.infcx in
         (match equate ty found with
          | Ok _ -> ()
          | Error e -> ty_err_emit tcx e span)
-    | PBool _ ->
+    | PLit (LitBool _) ->
         (match equate ty tcx#types.bool with
          | Ok _ -> ()
          | Error e -> ty_err_emit tcx e span)
+    | PRange (LitInt _, LitInt _) ->
+        let found = infcx_new_int_var cx.infcx in
+        (match equate ty found with
+         | Ok _ -> ()
+         | Error e -> ty_err_emit tcx e span)
+    | PLit _ | PRange _ -> invalid_literal_pattern span |> tcx#emit
   and check_arguments ?(is_variadic = false) pexpr exprs args =
     if (not is_variadic) && exprs#len <> args#len
     then tcx#emit @@ mismatch_args args#len exprs#len pexpr.expr_span

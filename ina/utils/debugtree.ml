@@ -78,12 +78,20 @@ let print_mdl tcx (mdl : modd) =
         printf ")"
     | PPath path -> print_path path
     | PWild -> printf "_"
-    | PInt v -> printf "%d" v
-    | PBool v -> printf "%b" v
+    | PLit l -> print_lit l
+    | PRange (s, e) ->
+        print_lit s;
+        printf "..";
+        print_lit e
     | POr v ->
         v#iter (fun v ->
             printf "| ";
             print_pat v)
+  and print_lit = function
+    | LitInt i -> print_int i
+    | LitFloat f -> print_float f
+    | LitBool b -> printf "%b" b
+    | LitStr s -> print_string s
   and print_expr ?(t = true) expr =
     let ty = tcx#get_def_debug expr.expr_id in
     enter ();
@@ -98,12 +106,7 @@ let print_mdl tcx (mdl : modd) =
      | Path path ->
          let name = path.segments#join "::" (fun s -> s.ident) in
          printf "%s" name
-     | Lit lit ->
-         (match lit with
-          | LitInt i -> print_int i
-          | LitFloat f -> print_float f
-          | LitBool b -> printf "%b" b
-          | LitStr s -> print_string s)
+     | Lit lit -> print_lit lit
      | Ref (mut, expr) ->
          printf "&";
          print_mut mut;
