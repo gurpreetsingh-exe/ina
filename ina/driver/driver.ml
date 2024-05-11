@@ -9,7 +9,27 @@ open Lowering
 
 let () =
   let start = Sys.time () in
+  let passes =
+    Array.map (fun (module P : Transform.Pass) -> P.name) Transform.passes
+  in
+  Args.passes := passes;
   let sess = Sess.create (Args.parse_args ()) in
+  if sess.options.list_passes
+  then (
+    printf
+      "IR Passes:\n  %s\n\n"
+      (passes
+       |> Array.to_list
+       |> List.sort String.compare
+       |> String.concat "\n  ");
+    exit 0);
+  Array.iter
+    (fun (module P : Transform.Pass) ->
+      match sess.options.skip_passes with
+      | Some [||] -> P.is_enabled := false
+      | Some arr -> P.is_enabled := not @@ Array.mem P.name arr
+      | None -> ())
+    Transform.passes;
   let tcx = new tcx sess in
   let time, res =
     Timer.time (fun () ->

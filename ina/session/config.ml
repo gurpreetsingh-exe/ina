@@ -21,6 +21,8 @@ type t = {
   ; mutable dot_cfg: bool
   ; mutable build_stdlib: bool
   ; mutable skip_codegen: bool
+  ; mutable skip_passes: string array option
+  ; mutable list_passes: bool
 }
 
 and opt_level =
@@ -70,5 +72,7 @@ let config () : t =
   ; dot_cfg = false
   ; build_stdlib = false
   ; skip_codegen = false
+  ; skip_passes = None
+  ; list_passes = false
   }
 ;;

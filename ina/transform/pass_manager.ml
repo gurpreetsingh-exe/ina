@@ -4,7 +4,7 @@ open Structures.Vec
 
 module type Pass = sig
   val name : string
-  val is_enabled : tcx -> bool
+  val is_enabled : bool ref
   val run_pass : tcx -> Func.blocks -> unit
 end
 
@@ -23,7 +23,7 @@ let create tcx passes blocks =
 let run_passes passmgr =
   let tcx = passmgr.tcx in
   passmgr.passes#iter (fun (module P : Pass) ->
-      if P.is_enabled tcx then P.run_pass tcx passmgr.blocks);
+      if !P.is_enabled then P.run_pass tcx passmgr.blocks);
   Func.gen_id passmgr.blocks
 ;;
 

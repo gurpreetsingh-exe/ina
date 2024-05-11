@@ -2,7 +2,7 @@ open Ir
 open Lowering
 
 let name = "phi_elimination"
-let is_enabled _ = true
+let is_enabled = ref true
 
 let run_pass (tcx : Middle.Ctx.tcx) (blocks : Func.blocks) =
   let remove_phis bb =

@@ -4,21 +4,28 @@ open Config
 let usage arg0 =
   printf "Usage: %s [command] [options] input...\n" arg0;
   printf "\nCommands:\n";
-  printf "    build                compile the file\n";
-  printf "    check                analyze the file and report errors\n";
-  printf "    fmt                  format the file\n";
+  printf "    build                Compile the file\n";
+  printf "    check                Analyze the file and report errors\n";
+  printf "    fmt                  Format the file\n";
   printf "\nOptions:\n";
   printf "        --emit=asm|exe|obj|extmod\n";
-  printf "                         output type to emit\n";
-  printf "        --opt=0|3        optimization level\n";
-  printf "        --skip-codegen   run every pass except codegen\n";
-  printf "        --print-ast      print AST of the file\n";
-  printf "        --print-ir       print IR of the file\n";
+  printf "                         Output type to emit\n";
+  printf "        --opt=0|3        Optimization level\n";
+  printf "        --skip-codegen   Run every pass except codegen\n";
+  printf "        --skip-passes[=PASS]\n";
   printf
-    "        --dot-cfg        emit cfg of function(s) to \".dot\" file(s)\n";
-  printf "        --time           print time info of all compiler passes\n";
-  printf "        --ui-testing     enable ui testing\n";
-  printf "    -h, --help           print help information\n\n";
+    "                         Comma separated list of IR passes to skip;\n";
+  printf "                         Specifying no value skips all passes.\n";
+  printf "                         See `--list-passes` for more info.\n";
+  printf
+    "        --list-passes    List IR transformation/optimization passes\n";
+  printf "        --print-ast      Print AST of the file\n";
+  printf "        --print-ir       Print IR of the file\n";
+  printf
+    "        --dot-cfg        Emit cfg of function(s) to \".dot\" file(s)\n";
+  printf "        --time           Print time info of all compiler passes\n";
+  printf "        --ui-testing     Enable UI testing\n";
+  printf "    -h, --help           Print help information\n\n";
   exit 1
 ;;
 
@@ -31,6 +38,8 @@ let value_map =
   tbl
 ;;
 
+let passes : string array ref = ref [||]
+
 let invalid_option_value option =
   fprintf
     stderr
@@ -41,6 +50,23 @@ let invalid_option_value option =
        (List.map (fun v -> sprintf "`%s`" v) (Hashtbl.find value_map option)));
   flush stderr;
   exit 1
+;;
+
+let get_skip_passes = function
+  | "" -> Some [||]
+  | v ->
+      Some
+        (String.split_on_char ',' v
+         |> List.filter_map (function
+                | "" -> None
+                | name when Array.mem name !passes -> Some name
+                | name ->
+                    fprintf
+                      stderr
+                      "unknown value `%s` for `--skip-passes`\n"
+                      name;
+                    exit 1)
+         |> Array.of_list)
 ;;
 
 let parse_args () =
@@ -66,6 +92,8 @@ let parse_args () =
          | "--dot-cfg" -> config.dot_cfg <- true
          | "--stdlib" -> config.build_stdlib <- true
          | "--skip-codegen" -> config.skip_codegen <- true
+         | "--skip-passes" -> config.skip_passes <- Some [||]
+         | "--list-passes" -> config.list_passes <- true
          | _ ->
              if String.contains arg '='
              then (
@@ -79,6 +107,8 @@ let parse_args () =
                match named_option with
                | "--emit" -> config.output_type <- f get_output_type value
                | "--opt" -> config.opt_level <- f get_opt_level value
+               | "--skip-passes" ->
+                   config.skip_passes <- get_skip_passes value
                | _ ->
                    printf "Unknown option `%s`\n" named_option;
                    usage arg0)

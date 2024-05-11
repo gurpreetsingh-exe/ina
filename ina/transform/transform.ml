@@ -1,4 +1,6 @@
-type passes = (module Pass_manager.Pass) array
+module type Pass = Pass_manager.Pass
+
+type passes = (module Pass) array
 
 let passes : passes = [|(module Phi_elimination)|]
 
