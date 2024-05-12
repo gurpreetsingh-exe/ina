@@ -1,4 +1,8 @@
 (library
+ (name import)
+ (modules import))
+
+(library
  (name token)
  (modules token)
  (libraries source))

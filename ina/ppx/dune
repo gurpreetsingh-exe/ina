@@ -1,0 +1,5 @@
+(library
+ (name ppx)
+ (kind ppx_rewriter)
+ (modules ice)
+ (libraries ppxlib))
