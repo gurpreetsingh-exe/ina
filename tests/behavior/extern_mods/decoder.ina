@@ -5,6 +5,11 @@ extern mod ty;
 extern mod struct;
 // REQUIRES: impls
 extern mod impls;
+// REQUIRES: generics
+extern mod generics;
+
+using generics::Foo;
+using generics::Unit;
 
 fn var(_: *i8, ...) {}
 
@@ -60,4 +65,18 @@ fn main() {
     let a: usize = struct::StrBuf::len(a);
 
     let a: i32 = 0;
+
+    let a: i64 = generics::id(50);
+    let b: Foo[i64, Unit] = generics::id(generics::a(a));
+    match b {
+        Foo::A(_) => {},
+        Foo::B(Unit::U) => {},
+    }
+
+    let c: Foo[Unit, Foo[i64, Unit]] = generics::id(generics::b(b));
+    match c {
+        Foo::A(Unit::U) => {},
+        Foo::B(Foo::A(_) | Foo::B(_)) => {}
+    }
+    generics::chk();
 }

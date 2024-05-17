@@ -165,7 +165,10 @@ class parser pcx file lx =
            prev_token <- Some token;
            token <- t;
            lx <- lx'
-       | _ -> ());
+       | lx', None ->
+           prev_token <- Some token;
+           token <- { kind = Eof; span = Span.dummy };
+           lx <- lx');
       expected_tokens#clear
 
     method mk_span start =

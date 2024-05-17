@@ -128,8 +128,9 @@ module Module = struct
 
   let rec encode enc mdl =
     (match mdl.mkind with
-     | Def (_, id, name) ->
+     | Def (kind, id, name) ->
          enc#emit_with 0L (fun e ->
+             e#emit_usize (Middle.Def_id.def_kind_to_enum kind);
              Middle.Def_id.encode e id;
              e#emit_str name)
      | Block -> assert false);
@@ -148,9 +149,12 @@ module Module = struct
     let mkind =
       match dec#read_usize with
       | 0 ->
+          let kind =
+            Middle.Def_id.def_kind_of_enum dec#read_usize |> Option.get
+          in
           let def_id = Middle.Def_id.decode dec in
           let name = dec#read_str in
-          Def (Mod, def_id, name)
+          Def (kind, def_id, name)
       | i ->
           printf "%i\n" i;
           assert false
@@ -160,7 +164,7 @@ module Module = struct
       { mkind; parent; resolutions = new hashmap; imports = new vec }
     in
     (match mkind with
-     | Def (Mod, id, _) -> resolver#modules#insert' id mdl
+     | Def ((Mod | Adt), id, _) -> resolver#modules#insert' id mdl
      | _ -> assert false);
     for _ = 0 to nmdl - 1 do
       let ident = dec#read_str in

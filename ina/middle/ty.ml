@@ -303,8 +303,7 @@ let rec encode enc ty =
       enc#emit_with disc (fun e -> float_ty_to_enum f |> e#emit_usize)
   | Bool | Str | Unit -> enc#emit_with disc (fun _ -> ())
   | Ptr (m, ty) | Ref (m, ty) -> enc#emit_with disc (fun e -> encode e ty)
-  | Adt (id, _) -> enc#emit_with disc (fun e -> Def_id.encode e id)
-  | Fn (id, subst) ->
+  | Adt (id, subst) | Fn (id, subst) ->
       enc#emit_with disc (fun e ->
           Def_id.encode e id;
           encode_subst e subst)
@@ -337,7 +336,10 @@ let rec decode tcx dec =
    | 4 -> Str
    | 5 -> Ptr (Imm, decode tcx dec)
    | 6 -> Ref (Imm, decode tcx dec)
-   | 7 -> Adt (Def_id.decode dec, Subst (new vec))
+   | 7 ->
+       let did = Def_id.decode dec in
+       let subst = decode_subst tcx dec in
+       Adt (did, subst)
    | 8 ->
        let args = new vec in
        let nargs = dec#read_usize in
@@ -391,16 +393,18 @@ let decode_field tcx dec =
   Field { ty; name }
 ;;
 
-let encode_variant enc (Variant { def_id; fields; _ }) =
+let encode_variant enc (Variant { def_id; fields; index }) =
   Def_id.encode enc def_id;
-  encode_vec enc fields encode_field
+  encode_vec enc fields encode_field;
+  enc#emit_usize index
 ;;
 
 let decode_variant tcx dec =
   let def_id = Def_id.decode dec in
   let fields = new vec in
   decode_vec dec fields (tcx |> decode_field);
-  Variant { def_id; fields; index = 0 }
+  let index = dec#read_usize in
+  tcx#variant def_id fields index
 ;;
 
 let rec hash hasher ty =

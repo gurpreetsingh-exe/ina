@@ -235,8 +235,9 @@ let gen cx =
          | Fn id ->
              let name = Mangle.mangle cx.tcx instance in
              let ty = cx.tcx#fn id instance.subst in
+             let generics = cx.tcx#generics_of (instance_def_id instance) in
              (match cx.gen'd_fns#get instance with
-              | None when id.mod_id <> 0 ->
+              | None when id.mod_id <> 0 && Generics.count generics = 0 ->
                   cx.gen'd_fns#insert' instance ();
                   prelude ^ sprintf "// %s\n" (cx.tcx#render_ty ty);
                   prelude ^ sprintf "extern %s;\n" (render_fn_header name ty)

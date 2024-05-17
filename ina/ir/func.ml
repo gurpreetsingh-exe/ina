@@ -14,11 +14,13 @@ let encode_blocks enc { locals; bbs } =
     encode_vec enc bbs Basicblock.encode)
 ;;
 
-let decode_blocks dec =
+let decode_blocks tcx dec =
   Metadata.Decoder.(
     let locals, bbs = new vec, new vec in
-    decode_vec dec locals Inst.decode;
-    decode_vec dec bbs Basicblock.decode;
+    Inst._insts := new vec;
+    Inst._bbs := bbs;
+    decode_vec dec locals (Inst.decode tcx);
+    decode_vec dec bbs (Basicblock.decode tcx);
     { locals; bbs })
 ;;
 
@@ -67,8 +69,8 @@ let decode tcx dec =
   let ty = Ty.decode tcx dec in
   let instance = Inst.decode_instance tcx dec in
   let args = new vec in
-  Metadata.Decoder.decode_vec dec args Inst.decode_value;
-  let basic_blocks = decode_blocks dec in
+  Metadata.Decoder.decode_vec dec args (Inst.decode_value tcx);
+  let basic_blocks = decode_blocks tcx dec in
   let decl = dec#read_bool in
   { ty; instance; args; basic_blocks; decl }
 ;;

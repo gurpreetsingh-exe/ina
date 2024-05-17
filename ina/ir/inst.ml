@@ -55,14 +55,7 @@ let render_instance (tcx : Middle.Ctx.tcx) instance =
              (subst#join ", " (function Ty ty -> tcx#render_ty ty)))
 ;;
 
-type t = {
-    mutable kind: inst_kind
-  ; ty: ty ref
-  ; mutable id: int
-  ; span: Span.t
-}
-
-and binary_kind =
+type binary_kind =
   | Add
   | Sub
   | Mul
@@ -77,6 +70,14 @@ and binary_kind =
   | BitOr
   | And
   | Or
+[@@deriving enum]
+
+type t = {
+    mutable kind: inst_kind
+  ; ty: ty ref
+  ; mutable id: int
+  ; span: Span.t
+}
 
 and inst_kind =
   | Alloca of ty ref
@@ -139,6 +140,28 @@ and basic_block = {
   ; mutable is_entry: bool
 }
 (* [@@deriving show] *)
+
+let inst_kind_to_enum = function
+  | Alloca _ -> 0L
+  | Binary _ -> 1L
+  | Phi _ -> 2L
+  | Aggregate _ -> 3L
+  | Discriminant _ -> 4L
+  | Payload _ -> 5L
+  | Store _ -> 6L
+  | Copy _ -> 7L
+  | Move _ -> 8L
+  | Gep _ -> 9L
+  | Call _ -> 10L
+  | Intrinsic _ -> 11L
+  | Trap _ -> 12L
+  | BitCast _ -> 13L
+  | Zext _ -> 14L
+  | Trunc _ -> 15L
+  | PtrToInt _ -> 16L
+  | IntToPtr _ -> 17L
+  | Nop -> 18L
+;;
 
 let binary_kind_to_inst = function
   | Ast.Add -> Add
@@ -319,7 +342,234 @@ let render_inst tcx inst : string =
   | Nop -> "nop"
 ;;
 
-let encode enc = function _ -> assert false
-let encode_value enc = function _ -> assert false
-let decode dec = assert false
-let decode_value dec = assert false
+open Metadata.Encoder
+open Metadata.Decoder
+
+let rec encode enc { kind; ty; id; _ } =
+  ignore (encode_inst_kind enc kind);
+  Ty.encode enc ty;
+  enc#emit_usize id
+
+and encode_inst_kind enc kind =
+  let disc = inst_kind_to_enum kind in
+  kind |> function
+  | Alloca ty -> enc#emit_with disc (fun _ -> Ty.encode enc ty)
+  | Binary (kind, left, right) ->
+      enc#emit_with disc (fun _ ->
+          enc#emit_usize (binary_kind_to_enum kind);
+          encode_value enc left;
+          encode_value enc right)
+  | Phi (ty, values) ->
+      enc#emit_with disc (fun _ ->
+          Ty.encode enc ty;
+          encode_vec enc values (fun _ (v1, v2) ->
+              encode_value enc v1;
+              encode_value enc v2))
+  | Aggregate (Adt (def_id, i, subst), values) ->
+      enc#emit_with disc (fun _ ->
+          Def_id.encode enc def_id;
+          enc#emit_usize i;
+          encode_subst enc subst;
+          encode_vec enc values encode_value)
+  | Discriminant value | Copy value | Move value ->
+      enc#emit_with disc (fun _ -> encode_value enc value)
+  | Payload (value, i) ->
+      enc#emit_with disc (fun _ ->
+          encode_value enc value;
+          enc#emit_usize i)
+  | Store (src, dst) ->
+      enc#emit_with disc (fun _ ->
+          encode_value enc src;
+          encode_value enc dst)
+  | Gep (ty, value, i) ->
+      enc#emit_with disc (fun _ ->
+          Ty.encode enc ty;
+          encode_value enc value;
+          enc#emit_usize i)
+  | Call (ty, value, args) ->
+      enc#emit_with disc (fun _ ->
+          Ty.encode enc ty;
+          encode_value enc value;
+          encode_vec enc args encode_value)
+  | Intrinsic (name, args) ->
+      enc#emit_with disc (fun _ ->
+          enc#emit_str name;
+          encode_vec enc args encode_value)
+  | Trap msg -> enc#emit_with disc (fun _ -> enc#emit_str msg)
+  | BitCast (v, ty)
+  | Zext (v, ty)
+  | Trunc (v, ty)
+  | PtrToInt (v, ty)
+  | IntToPtr (v, ty) ->
+      enc#emit_with disc (fun _ ->
+          encode_value enc v;
+          Ty.encode enc ty)
+  | Nop -> enc#emit_usize (Int64.to_int disc)
+
+and encode_terminator enc = function
+  | Switch (d, br, default) ->
+      enc#emit_with 0L (fun _ ->
+          encode_value enc d;
+          encode_vec enc br (fun _ (v1, v2) ->
+              encode_value enc v1;
+              encode_value enc v2);
+          encode_option enc default encode_value)
+  | Br (cond, tb, fb) ->
+      enc#emit_with 1L (fun _ ->
+          encode_value enc cond;
+          encode_value enc tb;
+          encode_value enc fb)
+  | Jmp value -> enc#emit_with 2L (fun _ -> encode_value enc value)
+  | Ret value -> enc#emit_with 3L (fun _ -> encode_value enc value)
+  | RetUnit -> enc#emit_usize 4
+
+and encode_value enc : value -> unit = function
+  | Const { kind; ty } ->
+      enc#emit_with 0L (fun _ ->
+          encode_const_kind enc kind;
+          Ty.encode enc ty)
+  | VReg { id; _ } -> enc#emit_with 1L (fun _ -> enc#emit_usize id)
+  | Label { bid; _ } -> enc#emit_with 2L (fun _ -> enc#emit_usize bid)
+  | Param (ty, name, id) ->
+      enc#emit_with 3L (fun e ->
+          Ty.encode e ty;
+          e#emit_str name;
+          e#emit_usize id)
+  | Global (Fn instance) ->
+      enc#emit_with 4L (fun _ -> encode_instance enc instance)
+
+and encode_const_kind enc = function
+  | Int i -> enc#emit_with 0L (fun _ -> enc#emit_usize i)
+  | Float _ -> enc#emit_with 1L (fun _ -> assert false)
+  | Str s -> enc#emit_with 2L (fun _ -> enc#emit_str s)
+  | Bool b -> enc#emit_with 3L (fun _ -> enc#emit_bool b)
+  | Struct values ->
+      enc#emit_with 4L (fun _ -> encode_vec enc values encode_value)
+  | Unit -> enc#emit_usize 5
+;;
+
+let _insts = ref (new vec)
+let _bbs = ref (new vec)
+
+let rec decode tcx dec =
+  let kind = decode_inst_kind tcx dec in
+  let ty = Ty.decode tcx dec in
+  let id = dec#read_usize in
+  let inst = { kind; ty; id; span = Span.dummy } in
+  if has_value inst then !_insts#push inst;
+  inst
+
+and decode_inst_kind tcx dec =
+  match dec#read_usize with
+  | 0 -> Alloca (Ty.decode tcx dec)
+  | 1 ->
+      let kind = binary_kind_of_enum dec#read_usize |> Option.get in
+      let left = decode_value tcx dec in
+      let right = decode_value tcx dec in
+      Binary (kind, left, right)
+  | 2 ->
+      let ty = Ty.decode tcx dec in
+      let values = new vec in
+      decode_vec dec values (fun dec ->
+          let v1 = decode_value tcx dec in
+          let v2 = decode_value tcx dec in
+          v1, v2);
+      Phi (ty, values)
+  | 3 ->
+      let def_id = Def_id.decode dec in
+      let i = dec#read_usize in
+      let subst = decode_subst tcx dec in
+      let values = new vec in
+      decode_vec dec values (decode_value tcx);
+      Aggregate (Adt (def_id, i, subst), values)
+  | 4 -> Discriminant (decode_value tcx dec)
+  | 5 ->
+      let v = decode_value tcx dec in
+      let i = dec#read_usize in
+      Payload (v, i)
+  | 6 ->
+      let src = decode_value tcx dec in
+      let dst = decode_value tcx dec in
+      Store (src, dst)
+  | 7 -> Copy (decode_value tcx dec)
+  | 8 -> Move (decode_value tcx dec)
+  | 9 ->
+      let ty = Ty.decode tcx dec in
+      let value = decode_value tcx dec in
+      let i = dec#read_usize in
+      Gep (ty, value, i)
+  | 10 ->
+      let ty = Ty.decode tcx dec in
+      let value = decode_value tcx dec in
+      let args = new vec in
+      decode_vec dec args (decode_value tcx);
+      Call (ty, value, args)
+  | 11 ->
+      let name = dec#read_str in
+      let args = new vec in
+      decode_vec dec args (decode_value tcx);
+      Intrinsic (name, args)
+  | 12 -> Trap dec#read_str
+  | 13 ->
+      let v = decode_value tcx dec in
+      let ty = Ty.decode tcx dec in
+      BitCast (v, ty)
+  | 14 ->
+      let v = decode_value tcx dec in
+      let ty = Ty.decode tcx dec in
+      Zext (v, ty)
+  | 15 ->
+      let v = decode_value tcx dec in
+      let ty = Ty.decode tcx dec in
+      Trunc (v, ty)
+  | 16 ->
+      let v = decode_value tcx dec in
+      let ty = Ty.decode tcx dec in
+      PtrToInt (v, ty)
+  | 17 ->
+      let v = decode_value tcx dec in
+      let ty = Ty.decode tcx dec in
+      IntToPtr (v, ty)
+  | 18 -> Nop
+  | _ -> assert false
+
+and decode_terminator tcx dec =
+  match dec#read_usize with
+  | 0 ->
+      let v = decode_value tcx dec in
+      let br = new vec in
+      decode_vec dec br (fun _ ->
+          let v1 = decode_value tcx dec in
+          let v2 = decode_value tcx dec in
+          v1, v2);
+      let default = decode_option dec (decode_value tcx) in
+      Switch (v, br, default)
+  | 1 ->
+      let cond = decode_value tcx dec in
+      let tb = decode_value tcx dec in
+      let fb = decode_value tcx dec in
+      Br (cond, tb, fb)
+  | 2 -> Jmp (decode_value tcx dec)
+  | 3 -> Ret (decode_value tcx dec)
+  | 4 -> RetUnit
+  | _ -> assert false
+
+and decode_value tcx dec =
+  match dec#read_usize with
+  | 0 -> Const { ty = assert false; kind = assert false }
+  | 1 ->
+      let i = dec#read_usize in
+      let i = !_insts#get i in
+      VReg i
+  | 2 ->
+      let i = dec#read_usize in
+      let bb = !_bbs#get i in
+      Label bb
+  | 3 ->
+      let ty = Ty.decode tcx dec in
+      let name = dec#read_str in
+      let id = dec#read_usize in
+      Param (ty, name, id)
+  | 4 -> Global (Fn (decode_instance tcx dec))
+  | _ -> assert false
+;;

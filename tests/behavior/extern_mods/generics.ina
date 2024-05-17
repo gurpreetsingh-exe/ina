@@ -1,0 +1,23 @@
+// DUMMY
+
+type Foo[T, U] = A(T) | B(U)
+type Unit = U
+
+fn a[T](v: T) -> Foo[T, Unit] {
+    Foo::A(v)
+}
+
+fn b[U](v: U) -> Foo[Unit, U] {
+    Foo::B(v)
+}
+
+fn chk() {
+    match Foo::A(20) {
+        Foo::A(v) => v,
+        Foo[i32, f32]::B(_) => 0,
+    };
+}
+
+fn id[T](x: T) -> T {
+    x
+}

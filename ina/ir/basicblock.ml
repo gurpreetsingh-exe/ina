@@ -1,6 +1,7 @@
 open Printf
 open Structures.Vec
 open Inst
+open Metadata
 
 let create () : basic_block =
   Inst.
@@ -35,8 +36,19 @@ let append_succs bb succs =
   succs#iter (fun bb0 -> bb0.pred#push bb)
 ;;
 
-let encode enc bb = assert false
-let decode dec = assert false
+let encode enc bb =
+  Encoder.encode_vec enc bb.insts encode;
+  encode_terminator enc bb.terminator;
+  enc#emit_usize bb.bid
+;;
+
+let decode tcx dec =
+  let bb = create () in
+  Decoder.decode_vec dec bb.insts (decode tcx);
+  bb.terminator <- decode_terminator tcx dec;
+  bb.bid <- dec#read_usize;
+  bb
+;;
 
 let render tcx bb : string =
   let preds =
