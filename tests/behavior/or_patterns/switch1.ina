@@ -1,5 +1,6 @@
-using Option::*;
-type Option[T] = Some(T) | None
+extern mod core;
+using core::prelude::*;
+
 type Test =
     | Foo
     | Bar

@@ -1,12 +1,9 @@
 // EXIT_CODE: 0
 
 extern mod core;
-using Option::*;
-using Result::*;
+using core::prelude::*;
 
-type Option[T] =
-    | Some(T)
-    | None
+using Result::*;
 
 type Result[T, E] =
     | Ok(T)

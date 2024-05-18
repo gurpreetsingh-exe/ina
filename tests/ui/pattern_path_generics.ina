@@ -1,7 +1,7 @@
 // COMPILE_FAIL
 
-using Option::*;
-type Option[T] = Some(T) | None
+extern mod core;
+using core::prelude::*;
 
 fn main() {
     match Some("foo") {

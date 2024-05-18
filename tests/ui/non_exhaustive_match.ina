@@ -1,8 +1,9 @@
 // COMPILE_FAIL
 
+extern mod core;
+using core::prelude::*;
+
 type T = A | B
-using Option::*;
-type Option[T] = Some(T) | None
 type T2 = A(T, T)
 
 fn main() {

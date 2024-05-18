@@ -1,7 +1,7 @@
 // EXIT_CODE: 0
 
-using Option::*;
-type Option[T] = Some(T) | None
+extern mod core;
+using core::prelude::*;
 
 fn main() {
     let mut opt: Option[i64] = None;
