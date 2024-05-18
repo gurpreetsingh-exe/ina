@@ -428,6 +428,9 @@ let rec lower_block (lcx : lcx) block =
         let ty = expr_ty e in
         let exprs = map arms (fun arm -> arm.expr) in
         lower_match ty v decision exprs e.expr_span
+    | Slice exprs ->
+        let values = map exprs lower in
+        lcx#bx#aggregate (Slice ty) values e.expr_span
   in
   lower_block' ()
 ;;

@@ -26,10 +26,16 @@ type cx = {
     infcx: infer_ctx
   ; mutable generics: typaram array
   ; tyvar_origin: (ty ref, tyvar_origin) Hashtbl.t
+  ; slice_tyvars: (ty ref, Span.t) Hashtbl.t
 }
 
 let create infcx =
-  { infcx; generics = [||]; tyvar_origin = Hashtbl.create 0 }
+  {
+    infcx
+  ; generics = [||]
+  ; tyvar_origin = Hashtbl.create 0
+  ; slice_tyvars = Hashtbl.create 0
+  }
 ;;
 
 type 'a expected_found = {
@@ -348,6 +354,9 @@ let tychk_fn cx fn =
       | Ptr (Imm, t0), Ptr (_, t1) ->
           let* ty = equate t0 t1 in
           Ok (tcx#ptr Imm ty)
+      | Slice t0, Slice t1 ->
+          let* ty = equate t0 t1 in
+          Ok (tcx#slice ty)
       | FnPtr t0', Fn (def_id, _) | Fn (def_id, _), FnPtr t0' ->
           let t1' = tcx#get_fn def_id in
           if fnhash t0' = fnhash t1'
@@ -399,6 +408,7 @@ let tychk_fn cx fn =
     | Infer (FloatVar f) -> fold_float_ty f ty
     | Ptr (m, ty) -> tcx#ptr m (fold_ty ty)
     | Ref (m, ty) -> tcx#ref m (fold_ty ty)
+    | Slice ty -> tcx#slice (fold_ty ty)
     | Adt (did, Subst subst) ->
         let subst =
           map subst (fun (Ty ty : generic_arg) : generic_arg ->
@@ -1033,6 +1043,36 @@ let tychk_fn cx fn =
                  | Error e -> ty_err_emit tcx e expr.expr_span)
             | None -> first := Some ty);
         !first |> Option.get
+    | Slice exprs ->
+        let ty =
+          match exprs#len with
+          | 0 ->
+              let ty = infcx_new_ty_var cx.infcx in
+              Hashtbl.replace cx.slice_tyvars ty expr.expr_span;
+              ty
+          | 1 -> check_expr (exprs#get 0) NoExpectation
+          | n ->
+              let ty = check_expr (exprs#get 0) NoExpectation in
+              for i = 1 to n - 1 do
+                let expr = exprs#get i in
+                let found = check_expr expr NoExpectation in
+                match equate ty found with
+                | Ok _ -> ()
+                | Error e -> ty_err_emit tcx e expr.expr_span
+              done;
+              ty
+        in
+        let ty' = tcx#slice ty in
+        let origin = { did; param = ty; span = expr.expr_span } in
+        Hashtbl.replace cx.tyvar_origin ty' origin;
+        (match expected with
+         | NoExpectation -> ty'
+         | ExpectTy ty ->
+             (match equate ty ty' with
+              | Ok ty -> ty
+              | Error e ->
+                  ty_err_emit tcx e expr.expr_span;
+                  ty))
   in
   let ty = tcx#get_def did in
   let ret = Fn.ret tcx ty in
@@ -1059,7 +1099,14 @@ let tychk_fn cx fn =
       let v = ref (Infer (TyVar var.parent)) in
       match TyUt.probe_value cx.infcx.ty_ut var.parent with
       | Some ty -> tcx#invalidate !v (fold_ty ty)
-      | None -> ())
+      | None ->
+          (match Hashtbl.find_opt cx.slice_tyvars v with
+           | Some span ->
+               Diagnostic.create
+                 "type annotation required"
+                 ~labels:[Label.primary "cannot infer type for this" span]
+               |> tcx#emit
+           | None -> ()))
     cx.infcx.ty_ut.values;
   tcx#iter_infer_vars (function
       | v, IntVar i -> ignore @@ fold_int_ty i v

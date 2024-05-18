@@ -103,6 +103,21 @@ let rec backend_ty cx ty =
            ^ sprintf "typedef struct %s { %s } %s;\n\n" name body name;
            TypeMap.add cx.types ty' name;
            name)
+  | Slice ty as ty' ->
+      (match TypeMap.find_opt cx.types ty' with
+       | Some ty -> ty
+       | None ->
+           let ty = backend_ty cx ty in
+           let name = sprintf "__slice_%d" (TypeMap.length cx.types) in
+           prelude ^ sprintf "// %s\n" (cx.tcx#render_ty (ref ty'));
+           prelude
+           ^ sprintf
+               "typedef struct %s { %s* ptr; size_t length; } %s;\n\n"
+               name
+               ty
+               name;
+           TypeMap.add cx.types ty' name;
+           name)
   | _ ->
       print_endline @@ Middle.Ty.render_ty2 ty;
       assert false
@@ -308,6 +323,21 @@ let gen cx =
           else "{}"
         in
         out ^ sprintf "{ .discriminant = %d, .data = %s };\n" vidx data
+    | Aggregate (Slice ty, args) ->
+        let ty = cx.tcx#inner_ty ty |> Option.get in
+        let length = args#len in
+        let data =
+          if args#empty
+          then "{}"
+          else
+            let args = args#join ", " get_value in
+            sprintf
+              "{ .ptr = (%s[]){ %s }, .length = %d }"
+              (backend_ty cx ty)
+              args
+              length
+        in
+        out ^ sprintf "%s;\n" data
     | Binary (kind, left, right) ->
         let op =
           match kind with

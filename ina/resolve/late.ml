@@ -43,6 +43,7 @@ class type_lowering resolver modd =
           arms#iter (fun { pat; expr; _ } ->
               self#visit_pat pat;
               self#visit_expr expr)
+      | Slice exprs -> exprs#iter self#visit_expr
 
     method visit_path path =
       let tcx = resolver#tcx in

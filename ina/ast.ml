@@ -28,6 +28,7 @@ type ty_kind =
   | Str
   | Ptr of (mutability * ty)
   | Ref of (mutability * ty)
+  | Slice of ty
   | FnPtr of ty vec * ty * bool
   | Path of path
   | ImplicitSelf
@@ -259,6 +260,7 @@ and expr_kind =
   | Cast of expr * ty
   | MethodCall of expr * path_segment * expr vec
   | Match of expr * arm vec
+  | Slice of expr vec
 
 and arm = {
     pat: pat

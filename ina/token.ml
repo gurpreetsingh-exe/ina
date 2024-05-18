@@ -132,7 +132,10 @@ type token = {
 
 let display_token t s =
   let { kind; span = { lo; hi } } = t in
-  Printf.printf "%10s: %10s\n" (display_token_kind kind) (String.sub s lo (hi - lo))
+  Printf.printf
+    "%10s: %10s\n"
+    (display_token_kind kind)
+    (String.sub s lo (hi - lo))
 ;;
 
 (* let { kind; span = { start = _, st, l, c; ending = _, e, _, _ } } = t in *)

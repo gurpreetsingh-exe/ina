@@ -24,7 +24,7 @@ let rec mangle_ty (tcx : tcx) ty =
             ; "$RB"
             ]
       in
-      String.concat "" segments ^ args
+      String.concat "_" segments ^ args
   | Int i ->
       i |> ( function
       | I8 -> "a"
@@ -41,6 +41,7 @@ let rec mangle_ty (tcx : tcx) ty =
   | Float F64 -> "F"
   | Bool -> "g"
   | Str -> "s"
+  | Slice ty -> "S" ^ mangle_ty tcx ty
   | Unit -> "u"
   | Ptr (m, ty) -> "p" ^ mangle_mut m ^ mangle_ty tcx ty
   | Ref (m, ty) -> "r" ^ mangle_mut m ^ mangle_ty tcx ty

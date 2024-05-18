@@ -125,6 +125,7 @@ and ty =
   | Str
   | Ptr of (mutability * ty ref)
   | Ref of (mutability * ty ref)
+  | Slice of ty ref
   | Adt of (def_id * subst)
   | Tuple of ty ref vec
   | Fn of (def_id * subst)
@@ -151,6 +152,7 @@ let discriminator = function
   | Fn _ -> 12L
   | Err -> 13L
   | Tuple _ -> 14L
+  | Slice _ -> 15L
 ;;
 
 type fxhasher = { mutable hash: int }
@@ -303,6 +305,7 @@ let rec encode enc ty =
       enc#emit_with disc (fun e -> float_ty_to_enum f |> e#emit_usize)
   | Bool | Str | Unit -> enc#emit_with disc (fun _ -> ())
   | Ptr (m, ty) | Ref (m, ty) -> enc#emit_with disc (fun e -> encode e ty)
+  | Slice ty -> enc#emit_with disc (fun e -> encode e ty)
   | Adt (id, subst) | Fn (id, subst) ->
       enc#emit_with disc (fun e ->
           Def_id.encode e id;
@@ -359,6 +362,7 @@ let rec decode tcx dec =
        let did = Def_id.decode dec in
        let subst = decode_subst tcx dec in
        Fn (did, subst)
+   | 15 -> Slice (decode tcx dec)
    | i ->
        printf "%d\n" i;
        assert false)
@@ -418,6 +422,7 @@ let rec hash hasher ty =
   | Ptr (m, ty) | Ref (m, ty) ->
       g (m |> function Mut -> 1 | Imm -> 2);
       f !ty
+  | Slice ty -> f !ty
   | Adt ({ inner; mod_id }, Subst subst) ->
       g inner;
       g mod_id;
@@ -489,6 +494,7 @@ let rec render_ty2 ty =
   | Err -> "err"
   | Ptr (m, ty) -> "*" ^ mut m ^ render_ty2 ty
   | Ref (m, ty) -> "&" ^ mut m ^ render_ty2 ty
+  | Slice ty -> sprintf "[%s]" (render_ty2 ty)
   | Adt (def_id, _) -> sprintf "adt(%s)" (print_def_id def_id)
   | Tuple tys -> tys#join ", " render_ty2
   | Fn (def_id, _) -> sprintf "fn(%s)" (print_def_id def_id)

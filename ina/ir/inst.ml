@@ -111,7 +111,9 @@ and terminator =
   | Ret of value
   | RetUnit
 
-and aggregate = Adt of (def_id * int * subst)
+and aggregate =
+  | Adt of (def_id * int * subst)
+  | Slice of ty ref
 
 and value =
   | Const of {
@@ -277,6 +279,9 @@ let render_inst tcx inst : string =
       let path, _ = tcx#into_segments variant.def_id in
       let name = String.concat "::" path in
       sprintf "%s { %s }" name (values#join ", " (render_value tcx))
+  | Aggregate (Slice ty, values) ->
+      let name = tcx#render_ty ty in
+      sprintf "%s { %s }" name (values#join ", " (render_value tcx))
   | Discriminant value -> sprintf "discriminant %s" (render_value tcx value)
   | Payload (value, idx) ->
       let (Variant v) =
@@ -367,9 +372,15 @@ and encode_inst_kind enc kind =
               encode_value enc v2))
   | Aggregate (Adt (def_id, i, subst), values) ->
       enc#emit_with disc (fun _ ->
+          enc#emit_usize 0;
           Def_id.encode enc def_id;
           enc#emit_usize i;
           encode_subst enc subst;
+          encode_vec enc values encode_value)
+  | Aggregate (Slice ty, values) ->
+      enc#emit_with disc (fun _ ->
+          enc#emit_usize 1;
+          Ty.encode enc ty;
           encode_vec enc values encode_value)
   | Discriminant value | Copy value | Move value ->
       enc#emit_with disc (fun _ -> encode_value enc value)
@@ -476,12 +487,19 @@ and decode_inst_kind tcx dec =
           v1, v2);
       Phi (ty, values)
   | 3 ->
-      let def_id = Def_id.decode dec in
-      let i = dec#read_usize in
-      let subst = decode_subst tcx dec in
+      let agg =
+        match dec#read_usize with
+        | 0 ->
+            let def_id = Def_id.decode dec in
+            let i = dec#read_usize in
+            let subst = decode_subst tcx dec in
+            Adt (def_id, i, subst)
+        | 1 -> Slice (Ty.decode tcx dec)
+        | _ -> assert false
+      in
       let values = new vec in
       decode_vec dec values (decode_value tcx);
-      Aggregate (Adt (def_id, i, subst), values)
+      Aggregate (agg, values)
   | 4 -> Discriminant (decode_value tcx dec)
   | 5 ->
       let v = decode_value tcx dec in

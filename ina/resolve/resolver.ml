@@ -608,7 +608,7 @@ class resolver tcx modd =
             args#iter (fun ty -> resolve_ty ty);
             resolve_ty ty
         | Path path -> visit_path path mdl (Some Type)
-        | Ref (_, ty) | Ptr (_, ty) -> resolve_ty ty
+        | Ref (_, ty) | Ptr (_, ty) | Slice ty -> resolve_ty ty
         | Int _ | Float _ | Bool | Str | Unit | CVarArgs -> ()
         | ImplicitSelf ->
             (match current_impl with
@@ -681,6 +681,7 @@ class resolver tcx modd =
                     visit_pat pat mdl';
                     visit_expr expr mdl
                 | _ -> assert false)
+        | Slice exprs -> exprs#iter (fun expr -> visit_expr expr mdl)
       and visit_pat ?(env = new hashmap) pat mdl =
         match pat with
         | PIdent (m, name, id) when not @@ env#has name ->

@@ -339,6 +339,11 @@ class parser pcx file lx =
       | Dot3 ->
           self#bump;
           Ok (mk_ty CVarArgs (self#mk_span s) self#id)
+      | LBracket ->
+          self#bump;
+          let* ty = self#parse_ty in
+          let* _ = self#expect RBracket in
+          Ok (mk_ty (Slice ty) (self#mk_span s) self#id)
       | t ->
           self#unexpected_token t ~line:__LINE__;
           exit 1
@@ -634,6 +639,12 @@ class parser pcx file lx =
               parse_spanned_with_sep self LBrace RBrace Comma parse_match_arm
             in
             Ok (Ast.Match (e, arms))
+        | LBracket ->
+            let* exprs =
+              parse_spanned_with_sep self LBracket RBracket Comma (fun _ ->
+                  self#parse_expr)
+            in
+            Ok (Slice exprs)
         | _ -> self#parse_path_or_call
       in
       Ok { expr_kind; expr_span = self#mk_span s; expr_id = self#id }

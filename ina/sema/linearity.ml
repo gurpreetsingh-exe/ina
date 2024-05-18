@@ -210,6 +210,9 @@ let analyze (tcx : tcx) fn =
             | Ok () -> ()
             | Error (_, e) -> tcx#emit e);
         Ok ()
+    | Slice exprs ->
+        exprs#iter (fun expr -> ignore (visit_expr expr));
+        Ok ()
   and visit_stmt ?(e = `None) = function
     | Assign (left, right) ->
         (match visit_expr left ~e:`Assign with

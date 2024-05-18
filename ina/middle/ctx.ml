@@ -112,6 +112,7 @@ module SubstFolder = struct
         else ty
     | Ptr (m, ty) -> tcx#ptr m (fold_ty tcx ty subst)
     | Ref (m, ty) -> tcx#ref m (fold_ty tcx ty subst)
+    | Slice ty -> tcx#slice (fold_ty tcx ty subst)
     | FnPtr fnsig ->
         let { args; ret; is_variadic; abi } = fold_fnsig tcx fnsig subst in
         tcx#fn_ptr args ret is_variadic abi
@@ -568,6 +569,7 @@ class tcx sess =
     method ptr mut ty = self#intern (Ptr (mut, ty))
     method ref mut ty = self#intern (Ref (mut, ty))
     method tuple tys = self#intern (Tuple tys)
+    method slice ty = self#intern (Slice ty)
 
     method is_mut_ptr ty =
       match !ty with
@@ -653,14 +655,14 @@ class tcx sess =
       match !ty with
       | Ty.Adt (_, Subst subst) | Fn (_, Subst subst) -> not subst#empty
       | Param _ -> true
-      | Ptr (_, ty) | Ref (_, ty) -> self#is_generic ty
+      | Ptr (_, ty) | Ref (_, ty) | Slice ty -> self#is_generic ty
       | _ -> false
 
     method get_ty_params ty =
       (* TODO: check if there are multiple parameters *)
       match !ty with
       | Param param -> [param]
-      | Ref (_, ty) | Ptr (_, ty) -> self#get_ty_params ty
+      | Ref (_, ty) | Ptr (_, ty) | Slice ty -> self#get_ty_params ty
       | Fn (_, Subst subst) | Adt (_, Subst subst) ->
           fold_left
             (fun params (Ty ty : generic_arg) ->
@@ -672,8 +674,10 @@ class tcx sess =
     method unfold_ty_param typaram ty =
       assert (self#get_ty_params typaram <> []);
       match !typaram, !ty with
-      | Ptr (_, ty), Ptr (_, ty') -> self#unfold_ty_param ty ty'
-      | Ref (_, ty), Ref (_, ty') -> self#unfold_ty_param ty ty'
+      | Ptr (_, ty), Ptr (_, ty')
+      | Ref (_, ty), Ref (_, ty')
+      | Slice ty, Slice ty' ->
+          self#unfold_ty_param ty ty'
       | Adt (did, _), Adt (did', _) when did <> did' -> Error self#types.err
       | Adt (_, Subst subst), Adt (_, Subst subst') ->
           map2 subst subst' (fun (Ty ty) (Ty ty') -> ty, ty')
@@ -701,7 +705,7 @@ class tcx sess =
       | Int i -> self#sizeof_int_ty i
       | Float f -> self#sizeof_float_ty f
       | Ptr _ | Ref _ | FnPtr _ | Fn _ -> 8
-      | Str -> 16
+      | Str | Slice _ -> 16
       | Unit -> 0
       | Bool -> 1
       | _ -> assert false
@@ -778,6 +782,7 @@ class tcx sess =
           self#ptr (self#ast_mut_to_mut m) (self#ast_ty_to_ty ty)
       | Ref (m, ty) ->
           self#ref (self#ast_mut_to_mut m) (self#ast_ty_to_ty ty)
+      | Slice ty -> self#slice (self#ast_ty_to_ty ty)
       | Str -> _types.str
       | Bool -> _types.bool
       | Unit -> _types.unit
@@ -833,7 +838,8 @@ class tcx sess =
 
     method inner_ty ty : ty ref option =
       match !ty with
-      | Ptr (_, ty) | Ref (_, ty) | FnPtr { ret = ty; _ } -> Some ty
+      | Ptr (_, ty) | Ref (_, ty) | FnPtr { ret = ty; _ } | Slice ty ->
+          Some ty
       | _ -> None
 
     method render_ty_segments ty =
@@ -872,6 +878,7 @@ class tcx sess =
       | FnPtr fnsig -> Fn.render self fnsig
       | Ptr (m, ty) -> "*" ^ mut m ^ self#render_ty ty
       | Ref (m, ty) -> "&" ^ mut m ^ self#render_ty ty
+      | Slice ty -> sprintf "[%s]" (self#render_ty ty)
       | Err -> "err"
       | Fn (def_id, Subst subst) ->
           let { args; ret; is_variadic; abi } = self#get_fn def_id in

@@ -56,6 +56,8 @@ let collect tcx mdl =
         | Aggregate (Adt (did, i, Subst subst'), values) ->
             let subst = SubstFolder.fold_subst tcx subst' subst in
             Aggregate (Adt (did, i, subst), map values fold_value)
+        | Aggregate (Slice ty, values) ->
+            Aggregate (Slice (fold_ty ty), map values fold_value)
         | Store (src, dst) -> Store (fold_value src, fold_value dst)
         | Copy ptr -> Copy (fold_value ptr)
         | Move ptr -> Move (fold_value ptr)

@@ -67,6 +67,7 @@ let rec render_ty (ty : ty) =
   | Str -> "str"
   | Ptr (m, ty) -> sprintf "*%s%s" (mut m) (render_ty ty)
   | Ref (m, ty) -> sprintf "&%s%s" (mut m) (render_ty ty)
+  | Slice ty -> sprintf "[%s]" (render_ty ty)
   | Unit -> "()"
   | FnPtr (ty_list, ret_ty, _) ->
       sprintf

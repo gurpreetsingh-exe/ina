@@ -58,9 +58,11 @@ class builder tcx blocks block =
       self#add_inst_with_ty (tcx#ptr Mut ty) (Payload (value, idx))
 
     method aggregate adt args =
-      let (Adt (did, _, Subst subst)) = adt in
-      let ty = SubstFolder.fold_ty tcx (tcx#get_def did) subst in
-      self#add_inst_with_ty ty (Aggregate (adt, args))
+      match adt with
+      | Adt (did, _, Subst subst) ->
+          let ty = SubstFolder.fold_ty tcx (tcx#get_def did) subst in
+          self#add_inst_with_ty ty (Aggregate (adt, args))
+      | Slice ty -> self#add_inst_with_ty ty (Aggregate (adt, args))
 
     method copy ptr =
       let ty = get_ty tcx ptr in

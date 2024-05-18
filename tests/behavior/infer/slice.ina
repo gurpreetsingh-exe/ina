@@ -1,0 +1,21 @@
+// COMPILE_PASS
+
+extern mod core;
+using core::prelude::*;
+
+fn f(_: [i32]) {}
+fn id[T](x: [T]) -> [T] { x }
+
+fn main() {
+    let a = [];
+    f(a);
+    f([]);
+    f([20, 40]);
+    id([50., 60.]);
+    let a = [];
+    let _: [str] = id(a);
+    let a = [a];
+    id![[str]](a);
+    id![[i32]]([[]]);
+    let _: [Option[usize]] = id([None, Some(50)]);
+}
