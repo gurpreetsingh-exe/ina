@@ -375,7 +375,7 @@ class tcx sess =
       let key = DefKey.{ parent = Some parent; data } in
       (match definitions#insert id key with
        | Some key' ->
-           printf "%s = %s\n" (DefKey.display key') (DefKey.display key);
+           dbg "%s = %s\n" (DefKey.display key') (DefKey.display key);
            assert (key' = key)
        | None -> ());
       id
@@ -604,7 +604,9 @@ class tcx sess =
 
     method variant def_id fields index =
       let v = Variant { def_id; fields; index } in
-      assert (variant_def#insert def_id v = None);
+      variant_def#insert def_id v
+      |> Option.iter (fun (Variant { def_id = old; _ }) ->
+             assert (old = def_id));
       v
 
     method get_variant def_id = variant_def#unsafe_get def_id
