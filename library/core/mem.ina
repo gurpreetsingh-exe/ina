@@ -1,0 +1,3 @@
+using mod::intrinsics;
+
+fn sizeof[T]() -> usize { intrinsics::sizeof![T]() }

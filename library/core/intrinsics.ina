@@ -1,0 +1,6 @@
+extern "intrinsic" {
+    fn as_ptr(str: str) -> *u8;
+    fn len(str: &str) -> usize;
+    fn offset(ptr: *u8, off: usize) -> *u8;
+    fn sizeof[T]() -> usize;
+}

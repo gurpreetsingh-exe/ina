@@ -1,0 +1,10 @@
+extern mod core;
+
+fn print(string: str) {
+    mod::os::linux::write(1, string.as_ptr(), string.len());
+}
+
+fn println(str: str) {
+    print(str);
+    print("\n");
+}

@@ -1,0 +1,9 @@
+impl str {
+    fn len(&self) -> usize {
+        mod::intrinsics::len(self)
+    }
+
+    fn as_ptr(&self) -> *u8 {
+        *((self as *str) as **u8)
+    }
+}
