@@ -7,7 +7,6 @@
 Makefile
 __pycache__/
 _build/
-library/
 Output/
 *.ll
 test*.ina

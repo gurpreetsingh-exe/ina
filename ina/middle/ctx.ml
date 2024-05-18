@@ -181,7 +181,11 @@ let print_res : res -> string = function
 
 let render_path tcx path =
   let open Ast in
-  let f id = tcx#res_map#unsafe_get id |> print_res in
+  let f id =
+    tcx#res_map#get id
+    |> Option.map print_res
+    |> Option.value ~default:"None"
+  in
   path.segments#join "::" (fun s -> sprintf "%s[%s]" s.ident (f s.id))
   |> print_endline
 ;;

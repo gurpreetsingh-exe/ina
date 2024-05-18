@@ -568,7 +568,7 @@ let tychk_fn cx fn =
                      | None -> ty
                    in
                    ty
-               | _ -> assert false
+               | _ -> adtty
              in
              let ty =
                match last.args with

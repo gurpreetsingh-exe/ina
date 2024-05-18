@@ -137,7 +137,7 @@ class parser pcx file lx =
       self#bump;
       Error e
 
-    method err span msg = mk_err msg span
+    method err span msg = mk_err msg (self#mk_span span.lo)
     method emit_err e = pcx.span_diagnostic#emit_diagnostic e
 
     method expect_one_of edible inedible =

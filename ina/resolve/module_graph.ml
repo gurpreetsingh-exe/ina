@@ -265,7 +265,8 @@ class visitor resolver (modd : Ast.modd) parent dir_ownership =
             | Glob -> Glob
             | Nested _ -> assert false
           in
-          let import = { ikind; path } in
+          let import = { ikind; res = Err } in
+          assert (resolver#imports#insert path.path_id import = None);
           mdl.imports#push import
       | Mod m ->
           let f m o =
