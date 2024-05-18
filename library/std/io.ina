@@ -1,7 +1,22 @@
 extern mod core;
 
+using os::fd::FileDesc;
+
+fn stdin() -> FileDesc {
+    FileDesc::from_fd(0)
+}
+
+fn stdout() -> FileDesc {
+    FileDesc::from_fd(1)
+}
+
+fn stderr() -> FileDesc {
+    FileDesc::from_fd(2)
+}
+
 fn print(string: str) {
-    mod::os::linux::write(1, string.as_ptr(), string.len());
+    let stdout = stdout();
+    stdout.write(string.as_ptr(), string.len());
 }
 
 fn println(str: str) {

@@ -1,0 +1,15 @@
+using os::linux::syscall;
+
+type FileDesc = {
+    fd: i32
+}
+
+impl FileDesc {
+    fn from_fd(fd: i32) -> FileDesc {
+        FileDesc { fd: fd }
+    }
+
+    fn write(&self, buf: *u8, size: usize) {
+        syscall::write(self.fd, buf, size);
+    }
+}
