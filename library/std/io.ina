@@ -16,7 +16,7 @@ fn stderr() -> FileDesc {
 
 fn print(string: str) {
     let stdout = stdout();
-    stdout.write(string.as_ptr(), string.len());
+    stdout.write(string.as_bytes());
 }
 
 fn println(str: str) {

@@ -1,6 +1,11 @@
 impl str {
-    fn len(&self) -> usize {
-        mod::intrinsics::len(self)
+    fn len(self) -> usize {
+        let slice = self.as_bytes();
+        slice.len()
+    }
+
+    fn as_bytes(self) -> [u8] {
+        mem::transmute(self)
     }
 
     fn as_ptr(&self) -> *u8 {

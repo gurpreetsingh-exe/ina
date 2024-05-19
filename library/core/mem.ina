@@ -1,3 +1,4 @@
 using mod::intrinsics;
 
 fn sizeof[T]() -> usize { intrinsics::sizeof![T]() }
+fn transmute[Src, Dst](src: Src) -> Dst { intrinsics::transmute(src) }

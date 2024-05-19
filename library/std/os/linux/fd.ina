@@ -9,7 +9,7 @@ impl FileDesc {
         FileDesc { fd: fd }
     }
 
-    fn write(&self, buf: *u8, size: usize) {
-        syscall::write(self.fd, buf, size);
+    fn write(&self, bytes: [u8]) {
+        syscall::write(self.fd, bytes.as_ptr(), bytes.len());
     }
 }
