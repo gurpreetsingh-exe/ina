@@ -8,7 +8,7 @@ open Ty
 open Structures.Vec
 open Structures.Hashmap
 
-let collect tcx mdl =
+let collect tcx mdl cached =
   let mono_items = new vec in
   let generic_items = new hashmap in
   let instantiated_items = new vec in
@@ -18,8 +18,12 @@ let collect tcx mdl =
     | Fn (def_id, subst) when not (TypeMap.mem cache !ty) ->
         TypeMap.add cache !ty ();
         let fn = generic_items#unsafe_get def_id in
-        let fn = monomorphize fn subst in
-        mono_items#push fn
+        let instance = { fn.instance with subst } in
+        let found = InstanceMap.mem cached instance in
+        if not found
+        then
+          let fn = monomorphize fn subst in
+          mono_items#push fn
     | Fn _ -> ()
     | _ -> assert false
   and monomorphize fn (Subst subst) =

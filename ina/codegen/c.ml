@@ -26,6 +26,7 @@ type cx = {
   ; types: string TypeMap.t
   ; defined_types: (string, unit) hashmap
   ; gen'd_fns: (instance, unit) hashmap
+  ; gen'd_generics: (instance, unit) hashmap
 }
 
 let rec backend_ty cx ty =
@@ -201,6 +202,7 @@ let create tcx irmdl =
   ; types = TypeMap.create 0
   ; defined_types = new hashmap
   ; gen'd_fns = new hashmap
+  ; gen'd_generics = new hashmap
   }
 ;;
 
@@ -470,6 +472,8 @@ let gen cx =
           if not (cx.gen'd_fns#has f.instance)
           then (
             assert (cx.gen'd_fns#insert f.instance () = None);
+            if cx.tcx#is_generic f.ty
+            then cx.gen'd_generics#insert' f.instance ();
             gen_function f));
   (match cx.tcx#main with
    | Some id ->
@@ -477,6 +481,11 @@ let gen cx =
        gen_main instance
    | _ when cx.tcx#sess.options.output_type = Exe -> assert false
    | _ -> ());
+  Metadata.Encoder.encode_hashmap
+    cx.tcx#sess.enc
+    cx.gen'd_generics
+    encode_instance
+    (fun _ _ -> ());
   (match cx.tcx#sess.options.output_type with
    | ExtMod ->
        let data =

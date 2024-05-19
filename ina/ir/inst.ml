@@ -23,6 +23,30 @@ let encode_instance enc { def; subst } =
   Ty.encode_subst enc subst
 ;;
 
+module Instance = struct
+  type t = instance
+
+  let hash hasher { def; subst = Subst subst } =
+    let g = fx_add_to_hash hasher in
+    let { inner; mod_id } =
+      match def with Fn did -> did | Intrinsic did -> did
+    in
+    g inner;
+    g mod_id;
+    subst#iter (function Ty ty -> g @@ Ty.hash !ty)
+  ;;
+
+  let hash i =
+    let hasher = { hash = Int.zero } in
+    hash hasher i;
+    hasher.hash
+  ;;
+
+  let equal a b = hash a = hash b
+end
+
+module InstanceMap = Hashtbl.Make (Instance)
+
 let decode_instance tcx dec =
   let def =
     match dec#read_usize with
