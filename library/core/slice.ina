@@ -1,0 +1,9 @@
+impl[T] [T] {
+    fn as_ptr(&self) -> *T {
+        *((self as *[T]) as **T)
+    }
+
+    fn len(self) -> usize {
+        mod::intrinsics::len(self)
+    }
+}
