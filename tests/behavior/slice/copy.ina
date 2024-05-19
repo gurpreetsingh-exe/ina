@@ -1,0 +1,6 @@
+fn main() {
+    let xs = [1, 2, 3];
+    let ys = xs;
+    assert xs[1] == 2;
+    assert ys[2] == 3;
+}

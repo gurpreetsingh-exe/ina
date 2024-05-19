@@ -1,0 +1,7 @@
+fn main() {
+    let xs = [1, 2, 3, 4];
+    assert xs[0] == 1;
+    let xs = &xs;
+    let ys = *xs;
+    assert ys[0] == 1;
+}

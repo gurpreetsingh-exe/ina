@@ -77,6 +77,12 @@ class builder tcx blocks block =
     method gep ty ty' ptr index =
       self#add_inst_with_ty (tcx#ptr Mut ty') (Gep (ty, ptr, index))
 
+    method index sty slice index =
+      let ty = tcx#slice_inner sty in
+      self#add_inst_with_ty ty (Index (sty, slice, index))
+
+    method length value = self#add_inst_with_ty tcx#types.usize (Len value)
+
     method call ty value args =
       let ret = Fn.ret tcx ty in
       self#add_inst_with_ty ret (Call (ty, value, args))

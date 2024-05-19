@@ -379,6 +379,9 @@ let gen cx =
              out ^ sprintf "&%s->%s;\n" (get_value ptr) name
          | Tuple _ -> out ^ sprintf "&%s->_%d;\n" (get_value ptr) index
          | _ -> assert false)
+    | Index (_, value, index) ->
+        out ^ sprintf "%s.ptr[%s];\n" (get_value value) (get_value index)
+    | Len value -> out ^ sprintf "%s.length;\n" (get_value value)
     | BitCast (value, ty)
     | IntToPtr (value, ty)
     | PtrToInt (value, ty)

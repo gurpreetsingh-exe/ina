@@ -1,0 +1,16 @@
+// COMPILE_FAIL
+
+fn main() {
+    let xs = [1, 2, 3];
+    // error
+    xs[20.];
+    // error
+    xs[xs];
+    let i: i32 = 0;
+    // error
+    xs[i];
+    // ok
+    xs[0];
+    let i: usize = 0;
+    xs[i];
+}

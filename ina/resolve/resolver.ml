@@ -682,6 +682,9 @@ class resolver tcx modd =
                     visit_expr expr mdl
                 | _ -> assert false)
         | Slice exprs -> exprs#iter (fun expr -> visit_expr expr mdl)
+        | Index (expr, idx) ->
+            visit_expr expr mdl;
+            visit_expr idx mdl
       and visit_pat ?(env = new hashmap) pat mdl =
         match pat with
         | PIdent (m, name, id) when not @@ env#has name ->

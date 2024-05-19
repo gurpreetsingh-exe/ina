@@ -91,6 +91,8 @@ and inst_kind =
   | Copy of value
   | Move of value
   | Gep of ty ref * value * int
+  | Index of ty ref * value * value
+  | Len of value
   | Call of ty ref * value * value vec
   | Intrinsic of string * value vec
   | Trap of string
@@ -163,6 +165,8 @@ let inst_kind_to_enum = function
   | PtrToInt _ -> 16L
   | IntToPtr _ -> 17L
   | Nop -> 18L
+  | Index _ -> 19L
+  | Len _ -> 20L
 ;;
 
 let binary_kind_to_inst = function
@@ -324,6 +328,14 @@ let render_inst tcx inst : string =
         (tcx#render_ty ty)
         (render_value tcx value)
         index
+  | Index (ty, value, idx) ->
+      let ty = tcx#slice_inner ty in
+      sprintf
+        "%s, %s[%s]"
+        (tcx#render_ty ty)
+        (render_value tcx value)
+        (render_value tcx idx)
+  | Len value -> sprintf "length %s" (render_value tcx value)
   | Call (ty, fn, args) ->
       let ty = Fn.ret tcx ty in
       sprintf
@@ -382,7 +394,7 @@ and encode_inst_kind enc kind =
           enc#emit_usize 1;
           Ty.encode enc ty;
           encode_vec enc values encode_value)
-  | Discriminant value | Copy value | Move value ->
+  | Discriminant value | Copy value | Move value | Len value ->
       enc#emit_with disc (fun _ -> encode_value enc value)
   | Payload (value, i) ->
       enc#emit_with disc (fun _ ->
@@ -416,6 +428,11 @@ and encode_inst_kind enc kind =
           encode_value enc v;
           Ty.encode enc ty)
   | Nop -> enc#emit_usize (Int64.to_int disc)
+  | Index (ty, v, idx) ->
+      enc#emit_with disc (fun _ ->
+          Ty.encode enc ty;
+          encode_value enc v;
+          encode_value enc idx)
 
 and encode_terminator enc = function
   | Switch (d, br, default) ->
@@ -549,6 +566,12 @@ and decode_inst_kind tcx dec =
       let ty = Ty.decode tcx dec in
       IntToPtr (v, ty)
   | 18 -> Nop
+  | 19 ->
+      let ty = Ty.decode tcx dec in
+      let v = decode_value tcx dec in
+      let idx = decode_value tcx dec in
+      Index (ty, v, idx)
+  | 20 -> Len (decode_value tcx dec)
   | _ -> assert false
 
 and decode_terminator tcx dec =

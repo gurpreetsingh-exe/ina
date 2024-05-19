@@ -62,6 +62,9 @@ let collect tcx mdl =
         | Copy ptr -> Copy (fold_value ptr)
         | Move ptr -> Move (fold_value ptr)
         | Gep (ty, value, i) -> Gep (fold_ty ty, fold_value value, i)
+        | Index (ty, value, idx) ->
+            Index (fold_ty ty, fold_value value, fold_value idx)
+        | Len v -> Len (fold_value v)
         | Call (ty, value, args) ->
             let ty =
               if Fn.is_generic ty

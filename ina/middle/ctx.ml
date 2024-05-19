@@ -571,6 +571,9 @@ class tcx sess =
     method tuple tys = self#intern (Tuple tys)
     method slice ty = self#intern (Slice ty)
 
+    method slice_inner ty =
+      match !ty with Slice ty -> ty | _ -> assert false
+
     method is_mut_ptr ty =
       match !ty with
       | Ptr (Mut, _) | Ref (Mut, _) -> true

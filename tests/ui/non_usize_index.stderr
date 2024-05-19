@@ -1,0 +1,24 @@
+error: mismatch types
+   ╭─[tests/ui/non_usize_index.ina:6:8]
+   │
+ 6 │     xs[20.];
+   │        ─┬─
+   │         ╰── expected `usize`, found `float`
+   ∙
+───╯
+error: mismatch types
+   ╭─[tests/ui/non_usize_index.ina:8:8]
+   │
+ 8 │     xs[xs];
+   │        ╶╮
+   │         ╰── expected `usize`, found `[integer]`
+   ∙
+───╯
+error: mismatch types
+    ╭─[tests/ui/non_usize_index.ina:11:8]
+    │
+ 11 │     xs[i];
+    │        ┬
+    │        ╰─ expected `usize`, found `i32`
+    ∙
+────╯

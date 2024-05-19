@@ -44,6 +44,9 @@ class type_lowering resolver modd =
               self#visit_pat pat;
               self#visit_expr expr)
       | Slice exprs -> exprs#iter self#visit_expr
+      | Index (expr, idx) ->
+          self#visit_expr expr;
+          self#visit_expr idx
 
     method visit_path path =
       let tcx = resolver#tcx in

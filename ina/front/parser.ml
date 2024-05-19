@@ -789,6 +789,18 @@ class parser pcx file lx =
                     ; struct_expr_id = self#id
                     })
            | _ -> Ok (Path path))
+      | LBracket ->
+          self#bump;
+          let* expr = self#parse_expr in
+          let* _ = self#expect RBracket in
+          let path =
+            {
+              expr_kind = Path path
+            ; expr_span = self#mk_span s
+            ; expr_id = self#id
+            }
+          in
+          Ok (Index (path, expr))
       | _ -> Ok (Path path)
 
     method parse_prefix =

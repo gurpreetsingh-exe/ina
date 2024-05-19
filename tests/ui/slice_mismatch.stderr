@@ -1,0 +1,16 @@
+error: mismatch types
+   ╭─[tests/ui/slice_mismatch.ina:4:18]
+   │
+ 4 │     let _: i32 = [1, 2, 3];
+   │                  ────┬────
+   │                      ╰───── expected `i32`, found `[integer]`
+   ∙
+───╯
+error: mismatch types
+   ╭─[tests/ui/slice_mismatch.ina:6:19]
+   │
+ 6 │     let y: &i32 = x;
+   │                   ┬
+   │                   ╰─ expected `&i32`, found `[integer]`
+   ∙
+───╯

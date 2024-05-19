@@ -1,0 +1,7 @@
+// COMPILE_FAIL
+
+fn main() {
+    let _: i32 = [1, 2, 3];
+    let x = [1, 2, 3];
+    let y: &i32 = x;
+}

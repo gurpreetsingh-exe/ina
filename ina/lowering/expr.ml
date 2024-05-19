@@ -140,6 +140,9 @@ let rec lower_block (lcx : lcx) block =
     | Deref expr -> lower expr
     | Field (expr, ident) -> lower_field expr ident
     | MethodCall (expr, seg, args) -> lower_method e expr seg args
+    | Slice exprs ->
+        let values = map exprs lower in
+        lcx#bx#aggregate (Slice ty) values e.expr_span
     | _ ->
         print_endline @@ tcx#sess.parse_sess.sm#span_to_string e.expr_span.lo;
         assert false
@@ -431,6 +434,24 @@ let rec lower_block (lcx : lcx) block =
     | Slice exprs ->
         let values = map exprs lower in
         lcx#bx#aggregate (Slice ty) values e.expr_span
+    | Index (expr, idx) ->
+        let slice_ty = expr_ty expr in
+        let value = lower expr in
+        let ispan = idx.expr_span in
+        let idx = lower idx in
+        let length = lcx#bx#length value e.expr_span in
+        let cond = lcx#bx#binary GtEq idx length e.expr_span in
+        let open Ir in
+        let bt = Basicblock.create () in
+        let bf = Basicblock.create () in
+        lcx#bx#br cond (Label bt) (Label bf);
+        lcx#append_block_with_builder bt;
+        let loc = tcx#sess.parse_sess.sm#span_to_string ispan.lo in
+        let msg = "  index out of bounds at " ^ loc ^ "\n" in
+        lcx#bx#trap msg e.expr_span;
+        lcx#bx#jmp (Label bf);
+        lcx#append_block_with_builder bf;
+        lcx#bx#index slice_ty value idx e.expr_span
   in
   lower_block' ()
 ;;

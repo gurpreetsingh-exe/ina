@@ -1073,6 +1073,18 @@ let tychk_fn cx fn =
               | Error e ->
                   ty_err_emit tcx e expr.expr_span;
                   ty))
+    | Index (expr, index) ->
+        let ty = check_expr index (ExpectTy tcx#types.usize) in
+        Result.iter_error
+          (fun e -> ty_err_emit tcx e index.expr_span)
+          (equate tcx#types.usize ty);
+        (match expected with
+         | ExpectTy ty ->
+             let ty = check_expr expr (ExpectTy (tcx#slice ty)) in
+             tcx#slice_inner ty
+         | NoExpectation ->
+             let ty = check_expr expr NoExpectation in
+             tcx#slice_inner ty)
   in
   let ty = tcx#get_def did in
   let ret = Fn.ret tcx ty in
