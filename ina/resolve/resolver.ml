@@ -755,6 +755,12 @@ class resolver tcx modd =
             adt.variants#iter visit_variant)
       in
       let visit_impl { ty; generics; items; _ } =
+        generics.params#iteri (fun index param ->
+            match param.kind with
+            | Ident name ->
+                let def_id = local_def_id param.id in
+                let ty = tcx#ty_param index name in
+                tcx#create_def def_id ty);
         with_generics_params self generics (fun () ->
             resolve_ty ty;
             match tcx#ast_ty_to_res ty with

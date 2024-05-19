@@ -104,14 +104,12 @@ class type_lowering resolver modd =
             Generics.count generics)
           parent
       in
-      let param_def_id_to_index = new hashmap in
       let params =
         mapi generics.params (fun i param ->
             match param.kind with
             | Ident name ->
                 let def_id = local_def_id param.id in
                 let index = parent_count + i in
-                assert (param_def_id_to_index#insert def_id index = None);
                 let ty = resolver#tcx#ty_param index name in
                 resolver#tcx#create_def def_id ty;
                 Generics.{ name; def_id; index })

@@ -258,6 +258,7 @@ class tcx sess =
     val prim_ty_assoc_fn : (ty ref, (string, def_id) hashmap) hashmap =
       new hashmap
 
+    val slice_assoc_fn : (string, def_id) hashmap = new hashmap
     val extmods : (string, int) hashmap = new hashmap
 
     initializer
@@ -485,6 +486,8 @@ class tcx sess =
       | Def (id, (Struct | Impl | Adt)) ->
           assoc_fn#insert' id (new hashmap);
           (assoc_fn#unsafe_get id)#insert' name fn
+      | Ty { contents = Slice ty } when self#is_generic ty ->
+          slice_assoc_fn#insert' name fn
       | Ty ty ->
           prim_ty_assoc_fn#insert' ty (new hashmap);
           (prim_ty_assoc_fn#unsafe_get ty)#insert' name fn
@@ -498,8 +501,8 @@ class tcx sess =
 
     method lookup_method ty name =
       match self#lookup_method_def_id ty name with
-      | Some did -> self#get_def did
-      | None -> self#types.err
+      | Some (did, t) -> self#get_def did, t
+      | None -> self#types.err, false
 
     method lookup_method_def_id ty name =
       match !ty with
@@ -507,11 +510,20 @@ class tcx sess =
           assoc_fn#get did
           |> Option.map (fun map -> map#get name)
           |> Option.join
+          |> Option.map (fun a -> a, true)
+      | Slice _ ->
+          prim_ty_assoc_fn#get ty
+          |> Option.map (fun map -> map#get name)
+          |> Option.join
+          |> ( function
+          | Some did -> Some (did, false)
+          | None -> slice_assoc_fn#get name |> Option.map (fun a -> a, true) )
       | Err -> None
       | _ ->
           prim_ty_assoc_fn#get ty
           |> Option.map (fun map -> map#get name)
           |> Option.join
+          |> Option.map (fun a -> a, true)
 
     method print_assoc_fns =
       let open Utils.Printer in
@@ -622,8 +634,13 @@ class tcx sess =
       SubstFolder.fold_fnsig self fnsig subst
 
     method get_subst ty =
+      let open Ty in
       match !ty with
-      | Ty.Adt (_, Subst subst) | Fn (_, Subst subst) -> Some subst
+      | Adt (_, Subst subst) | Fn (_, Subst subst) -> Some subst
+      | Slice ty ->
+          let subst = new vec in
+          subst#push (Ty ty);
+          Some subst
       | _ -> None
 
     method ty_with_subst ty =

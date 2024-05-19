@@ -930,6 +930,9 @@ class parser pcx file lx =
         Ok { kind = Ident name; span = self#mk_span s; id = self#id }
       in
       match token.kind with
+      | Bang ->
+          self#bump;
+          Ok { params = new vec; span = self#mk_span s; id = self#id }
       | LBracket ->
           let* params =
             parse_spanned_with_sep

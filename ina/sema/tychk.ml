@@ -995,10 +995,10 @@ let tychk_fn cx fn =
              cty)
     | MethodCall (expr', seg, args) ->
         let name = seg.ident in
-        let ty = check_expr expr' NoExpectation in
-        let ty = tcx#autoderef ty in
+        let ty' = check_expr expr' NoExpectation in
+        let ty = tcx#autoderef ty' in
         (match tcx#lookup_method ty name with
-         | { contents = Err } as m ->
+         | ({ contents = Err } as m), _ ->
              Diagnostic.create
                (sprintf "method `%s` not found" name)
                ~labels:
@@ -1006,21 +1006,25 @@ let tychk_fn cx fn =
                    Label.primary
                      (sprintf
                         "`%s` has no method `%s`"
-                        (tcx#render_ty ty)
+                        (tcx#render_ty ty')
                         name)
                      expr.expr_span
                  ]
              |> tcx#emit;
              m
-         | method' ->
+         | method', generic ->
+             let subst = if generic then tcx#get_subst ty else None in
              let method' =
                Option.fold
                  ~none:method'
                  ~some:(fun subst -> SubstFolder.fold_ty tcx method' subst)
-                 (tcx#get_subst ty)
+                 subst
              in
              let method' =
-               check_generic_args method' seg.args seg.span tcx#fn
+               match seg.args with
+               | Some args ->
+                   check_generic_args method' (Some args) seg.span tcx#fn
+               | None -> infer_generic_args method' tcx#fn seg.span
              in
              (match !method' with
               | Fn (did, subst) ->
@@ -1028,7 +1032,7 @@ let tychk_fn cx fn =
                   tcx#subst fnsig subst |> check_method ty name expr args
               | FnPtr fnsig -> check_method ty name expr args fnsig
               | _ ->
-                  ty_err_emit tcx (InvalidCall ty) expr.expr_span;
+                  ty_err_emit tcx (InvalidCall ty') expr.expr_span;
                   tcx#types.err))
     | Match (expr, arms) ->
         let ty = check_expr expr NoExpectation in

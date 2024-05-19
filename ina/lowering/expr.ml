@@ -87,7 +87,7 @@ let rec lower_block (lcx : lcx) block =
       | _ -> new vec
     in
     let first, ty = lower_autoderef expr in
-    let method' = tcx#lookup_method ty name in
+    let method', _ = tcx#lookup_method ty name in
     let method' = SubstFolder.fold_ty tcx method' subst in
     let method' =
       Option.fold
@@ -104,7 +104,7 @@ let rec lower_block (lcx : lcx) block =
            | Ref (_, ty) -> first, ty
            | _ -> lcx#bx#move first expr.expr_span, ty)
     in
-    let id = tcx#lookup_method_def_id ty name |> Option.get in
+    let id, _ = tcx#lookup_method_def_id ty name |> Option.get in
     let subst = Subst (tcx#get_subst method' |> Option.get) in
     let instance = { def = Fn id; subst } in
     let fn = Global (Fn instance) in
