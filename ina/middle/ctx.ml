@@ -316,15 +316,16 @@ class tcx sess =
 
     method encode_metadata =
       let enc = sess.enc in
-      encode_vec enc extern_mods (fun e s -> e#emit_str s);
+      encode_vec enc extern_mods (fun e -> e#emit_str);
       encode_hashmap enc def_id_to_ty Def_id.encode Ty.encode;
       encode_hashmap enc adt_def Def_id.encode (fun e adt ->
           encode_vec e adt.variants Ty.encode_variant);
       encode_hashmap enc fn_def Def_id.encode Fn.encode;
       encode_hashmap enc assoc_fn Def_id.encode (fun e methods ->
-          encode_hashmap e methods (fun e s -> e#emit_str s) Def_id.encode);
+          encode_hashmap e methods (fun e -> e#emit_str) Def_id.encode);
       encode_hashmap enc prim_ty_assoc_fn Ty.encode (fun e methods ->
-          encode_hashmap e methods (fun e s -> e#emit_str s) Def_id.encode);
+          encode_hashmap e methods (fun e -> e#emit_str) Def_id.encode);
+      encode_hashmap enc slice_assoc_fn (fun e -> e#emit_str) Def_id.encode;
       encode_hashmap enc definitions Def_id.encode DefKey.encode;
       encode_hashmap enc impls Def_id.encode Ty.encode;
       encode_hashmap enc generics Def_id.encode Generics.encode
@@ -346,6 +347,7 @@ class tcx sess =
           let methods = new hashmap in
           decode_hashmap dec methods (fun dec -> dec#read_str) Def_id.decode;
           methods);
+      decode_hashmap dec slice_assoc_fn (fun d -> d#read_str) Def_id.decode;
       decode_hashmap dec definitions Def_id.decode DefKey.decode;
       decode_hashmap dec impls Def_id.decode (self |> Ty.decode);
       decode_hashmap dec generics Def_id.decode Generics.decode
