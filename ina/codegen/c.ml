@@ -274,6 +274,22 @@ let gen cx =
     gen_terminator bb.terminator
   and gen_intrinsic value args =
     match get_value value with
+    | "transmute" ->
+        let open Errors in
+        let src = args#get 0 in
+        let ty = get_ty cx.tcx src in
+        let fn = get_ty cx.tcx value in
+        let dst = Middle.Ty.Fn.ret cx.tcx fn in
+        (if cx.tcx#sizeof ty <> cx.tcx#sizeof dst
+         then
+           let msg =
+             sprintf
+               "invalid transmute between types `%s` and `%s`"
+               (cx.tcx#render_ty ty)
+               (cx.tcx#render_ty dst)
+           in
+           Diagnostic.create msg |> cx.tcx#emit);
+        out ^ sprintf "*(%s*)(&%s);\n" (backend_ty cx dst) (get_value src)
     | "len" ->
         let first = args#get 0 in
         let ty = get_ty cx.tcx first in
@@ -391,7 +407,7 @@ let gen cx =
     | Zext (value, ty) ->
         out ^ sprintf "(%s)%s;\n" (backend_ty cx ty) (get_value value)
     | Trap value ->
-        out ^ sprintf "  __builtin_printf(\"%s\");\n" (String.escaped value);
+        out ^ sprintf "__builtin_printf(\"%s\");\n" (String.escaped value);
         out ^ "  __builtin_abort();\n"
     | Discriminant value ->
         out ^ sprintf "(%s).discriminant;\n" (get_value value)

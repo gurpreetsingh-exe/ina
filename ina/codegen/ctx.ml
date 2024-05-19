@@ -49,6 +49,7 @@ let codegen (tcx : tcx) (mdl : Module.t) =
       let output = tcx#sess.options.output in
       let input = output ^ ".c" in
       Backend.emit cx input;
+      if tcx#has_errors then exit 1;
       let open Printf in
       let command =
         sprintf

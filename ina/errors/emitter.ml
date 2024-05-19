@@ -178,97 +178,101 @@ class emitter sm ui_testing =
           let nest_msg = Hashtbl.create 0 in
           let nesting = repeat ~c:(" " ^ chars.vbar ^ " ") in
           let nlabels = List.length labels in
-          ([Header (diagnostic.level, diagnostic.message)]
-           :: (Diagnostic.primary diagnostic.labels |> function
-               | Some primary ->
-                   [LineNumber primary.span.lo; Blank (0, true)]
-               | None -> [])
-           :: List.mapi
-                (fun i label ->
-                  let last = i = nlabels - 1 in
-                  let line, _ = sm#lookup_line_pos label.span.lo in
-                  let i = !nest in
-                  match sm#is_same_line label.span with
-                  | true when List.mem line nest_begin ->
-                      [
-                        Annotation (i, [label])
-                      ; Message (i, false, label)
-                      ; Blank (i, false)
-                      ]
-                  | true ->
-                      (match Hashtbl.find_opt multispans line with
-                       | Some [] -> assert false
-                       | Some [label] ->
-                           Hashtbl.remove multispans line;
-                           [
-                             SourceLine (i, [label])
-                           ; Annotation (i, [label])
-                           ; Message (i, false, label)
-                           ; Blank (i, false)
-                           ]
-                       | Some labels ->
-                           let rec f = function
-                             | [] -> []
-                             | labels ->
-                                 let label = List.hd labels in
-                                 let labels = List.tl labels in
-                                 [
-                                   MultispanMessage
-                                     (i, List.rev labels, label)
-                                 ; AnnotationAnchor (i, List.rev labels)
-                                 ]
-                                 @ f labels
-                           in
-                           let anchors = f (labels |> List.rev) in
-                           Hashtbl.remove multispans line;
-                           [SourceLine (i, labels); Annotation (i, labels)]
-                           @ anchors
-                           @ [Blank (i, false)]
-                       | None -> [])
-                      @
-                      (match !nest_end with
-                       | x :: rest when x < label.span.hi || last ->
-                           decr nest;
-                           let col = sm#lookup_line_src x |> String.length in
-                           nest_end := rest;
-                           let label = Hashtbl.find nest_msg x in
-                           let label' =
-                             Label.{ label with span = Span.make 0 col }
-                           in
-                           [
-                             NestingEnd
-                               ( i - 1
-                               , { label' with span = Span.make x (x + col) }
-                               )
-                           ; Blank (i, true)
-                           ; Message (i - 1, true, label')
-                           ; Blank (i - 1, false)
-                           ]
-                       | _ -> [])
-                  | false ->
-                      incr nest;
-                      Hashtbl.add nest_msg label.span.hi label;
-                      nest_end := label.span.hi :: !nest_end;
-                      let x = label.span.hi in
-                      let col = sm#lookup_line_src x |> String.length in
-                      [NestingBegin (i, label)]
-                      @
-                      if last
-                      then
-                        let label' =
-                          Label.{ label with span = Span.make 0 col }
-                        in
-                        [
-                          Blank (i + 1, false)
-                        ; NestingEnd
-                            (i, { label' with span = Span.make x (x + col) })
-                        ; Blank (i + 1, true)
-                        ; Message (i - 1, true, label')
-                        ; Blank (i - 1, false)
-                        ]
-                      else [Blank (i + 1, false)])
-                labels)
-          @ [[Footer]]
+          (([Header (diagnostic.level, diagnostic.message)]
+            :: (Diagnostic.primary diagnostic.labels |> function
+                | Some primary ->
+                    [LineNumber primary.span.lo; Blank (0, true)]
+                | None -> [])
+            :: List.mapi
+                 (fun i label ->
+                   let last = i = nlabels - 1 in
+                   let line, _ = sm#lookup_line_pos label.span.lo in
+                   let i = !nest in
+                   match sm#is_same_line label.span with
+                   | true when List.mem line nest_begin ->
+                       [
+                         Annotation (i, [label])
+                       ; Message (i, false, label)
+                       ; Blank (i, false)
+                       ]
+                   | true ->
+                       (match Hashtbl.find_opt multispans line with
+                        | Some [] -> assert false
+                        | Some [label] ->
+                            Hashtbl.remove multispans line;
+                            [
+                              SourceLine (i, [label])
+                            ; Annotation (i, [label])
+                            ; Message (i, false, label)
+                            ; Blank (i, false)
+                            ]
+                        | Some labels ->
+                            let rec f = function
+                              | [] -> []
+                              | labels ->
+                                  let label = List.hd labels in
+                                  let labels = List.tl labels in
+                                  [
+                                    MultispanMessage
+                                      (i, List.rev labels, label)
+                                  ; AnnotationAnchor (i, List.rev labels)
+                                  ]
+                                  @ f labels
+                            in
+                            let anchors = f (labels |> List.rev) in
+                            Hashtbl.remove multispans line;
+                            [SourceLine (i, labels); Annotation (i, labels)]
+                            @ anchors
+                            @ [Blank (i, false)]
+                        | None -> [])
+                       @
+                       (match !nest_end with
+                        | x :: rest when x < label.span.hi || last ->
+                            decr nest;
+                            let col =
+                              sm#lookup_line_src x |> String.length
+                            in
+                            nest_end := rest;
+                            let label = Hashtbl.find nest_msg x in
+                            let label' =
+                              Label.{ label with span = Span.make 0 col }
+                            in
+                            [
+                              NestingEnd
+                                ( i - 1
+                                , {
+                                    label' with
+                                    span = Span.make x (x + col)
+                                  } )
+                            ; Blank (i, true)
+                            ; Message (i - 1, true, label')
+                            ; Blank (i - 1, false)
+                            ]
+                        | _ -> [])
+                   | false ->
+                       incr nest;
+                       Hashtbl.add nest_msg label.span.hi label;
+                       nest_end := label.span.hi :: !nest_end;
+                       let x = label.span.hi in
+                       let col = sm#lookup_line_src x |> String.length in
+                       [NestingBegin (i, label)]
+                       @
+                       if last
+                       then
+                         let label' =
+                           Label.{ label with span = Span.make 0 col }
+                         in
+                         [
+                           Blank (i + 1, false)
+                         ; NestingEnd
+                             (i, { label' with span = Span.make x (x + col) })
+                         ; Blank (i + 1, true)
+                         ; Message (i - 1, true, label')
+                         ; Blank (i - 1, false)
+                         ]
+                       else [Blank (i + 1, false)])
+                 labels)
+           @ if List.length labels = 0 then [] else [[Footer]])
           |> List.fold_left ( @ ) []
           |> List.map (fun line ->
                  (match line with

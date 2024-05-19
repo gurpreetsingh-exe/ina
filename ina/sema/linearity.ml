@@ -246,6 +246,8 @@ let analyze (tcx : tcx) fn =
         Ok ()
     | Assert (expr, _) -> visit_expr expr
   in
+  fn.fn_sig.args#iter (fun arg ->
+      Hashtbl.add locals arg.arg_id fn.fn_sig.fn_span);
   match fn.body with
   | Some block ->
       (match visit_block block with Ok _ -> () | Error (_, e) -> tcx#emit e)
