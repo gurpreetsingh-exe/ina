@@ -1,0 +1,17 @@
+// COMPILE_FAIL
+
+extern mod core;
+using core::prelude::*;
+
+fn id[T](v: T) -> T { v }
+
+fn main() {
+    let xs = [None, Some(_)];
+    let _: [Option[i64]] = id(xs);
+    let x = xs[0];
+    let _ = [x, _];
+    match Some![i8](20) {
+        Some(v) => v,
+        None => _,
+    };
+}

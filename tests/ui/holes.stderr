@@ -1,0 +1,24 @@
+error: type hole found
+   ╭─[tests/ui/holes.ina:9:26]
+   │
+ 9 │     let xs = [None, Some(_)];
+   │                          ┬
+   │                          ╰─ expected expression of type `i64`
+   ∙
+───╯
+error: type hole found
+    ╭─[tests/ui/holes.ina:15:17]
+    │
+ 15 │         None => _,
+    │                 ┬
+    │                 ╰─ expected expression of type `i8`
+    ∙
+────╯
+error: type hole found
+    ╭─[tests/ui/holes.ina:12:17]
+    │
+ 12 │     let _ = [x, _];
+    │                 ┬
+    │                 ╰─ expected expression of type `Option[i64]`
+    ∙
+────╯
