@@ -183,7 +183,8 @@ class parser pcx file lx =
       i
 
     method parse_ident =
-      if token.kind = Ident
+      (* TODO: temporary workaround until patterns are supported in arguments *)
+      if token.kind = Ident || token.kind = Underscore
       then (
         let ident = get_token_str token file#src in
         self#bump;
@@ -374,7 +375,8 @@ class parser pcx file lx =
                    ; arg_id = self#id
                    }
              | _ -> assert false)
-        | Ident ->
+        | Ident | Underscore ->
+            (* TODO: temporary workaround until patterns are supported in arguments *)
             let s = token.span.lo in
             let* arg = self#parse_ident in
             if arg = "self"
@@ -461,9 +463,7 @@ class parser pcx file lx =
              | (Colon2 | LParen | LBracket) :: _ -> maybe_parse_cons ()
              | _ ->
                  let* ident = self#parse_ident in
-                 if ident = "_"
-                 then Ok PWild
-                 else Ok (PIdent (Imm, ident, ref self#id)))
+                 Ok (PIdent (Imm, ident, ref self#id)))
         | Lit (Int | Bool) ->
             let* start = self#parse_literal in
             if token.kind = DotDot
@@ -485,6 +485,9 @@ class parser pcx file lx =
                    ~labels:[Label.primary "remove the `mut` prefix" mutspan]
                  |> self#emit_err;
                  Ok pat)
+        | Underscore ->
+            self#bump;
+            Ok PWild
         | t ->
             self#unexpected_token t ~line:__LINE__;
             exit 1
@@ -645,6 +648,9 @@ class parser pcx file lx =
                   self#parse_expr)
             in
             Ok (Slice exprs)
+        | Underscore ->
+            self#bump;
+            Ok Hole
         | _ -> self#parse_path_or_call
       in
       Ok { expr_kind; expr_span = self#mk_span s; expr_id = self#id }

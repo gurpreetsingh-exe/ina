@@ -452,6 +452,7 @@ let rec lower_block (lcx : lcx) block =
         lcx#bx#jmp (Label bf);
         lcx#append_block_with_builder bf;
         lcx#bx#index slice_ty value idx e.expr_span
+    | Hole -> lcx#bx#nop
   in
   lower_block' ()
 ;;

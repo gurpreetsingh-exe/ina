@@ -217,6 +217,7 @@ let analyze (tcx : tcx) fn =
         let* _ = visit_expr expr ~e in
         let* _ = visit_expr idx ~e in
         Ok ()
+    | Hole -> Ok ()
   and visit_stmt ?(e = `None) = function
     | Assign (left, right) ->
         (match visit_expr left ~e:`Assign with

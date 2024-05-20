@@ -47,6 +47,7 @@ class type_lowering resolver modd =
       | Index (expr, idx) ->
           self#visit_expr expr;
           self#visit_expr idx
+      | Hole -> ()
 
     method visit_path path =
       let tcx = resolver#tcx in

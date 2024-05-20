@@ -24,6 +24,7 @@ let keywords =
    ; "match", Match
    ; "true", Lit Bool
    ; "false", Lit Bool
+   ; "_", Underscore
   |]
   |> Array.to_seq
   |> Hashtbl.of_seq
@@ -61,6 +62,7 @@ let of_char = function
   | '&' -> Ampersand
   | '|' -> Pipe
   | '.' -> Dot
+  | '_' -> Underscore
   | '\000' -> Eof
   | c ->
       Format.printf "invalid char `%c`\n" c;

@@ -68,6 +68,7 @@ type token_kind =
   | DotDot
   | Dot3
   | At
+  | Underscore
   | Eof
 
 let display_token_kind = function
@@ -118,12 +119,9 @@ let display_token_kind = function
   | DotDot -> ".."
   | Dot3 -> "..."
   | At -> "@"
+  | Underscore -> "_"
   | Eof -> "eof"
 ;;
-
-(* let display_span span = *)
-(*   let { start = file, _, l, c; _ } = span in *)
-(*   Printf.sprintf "%s:%d:%d" file l c *)
 
 type token = {
     kind: token_kind
@@ -138,16 +136,7 @@ let display_token t s =
     (String.sub s lo (hi - lo))
 ;;
 
-(* let { kind; span = { start = _, st, l, c; ending = _, e, _, _ } } = t in *)
-(* Printf.printf "[%3d: %3d] [%3d: %3d] %10s: %10s\n" st e l c *)
-(*   (display_token_kind kind) *)
-(*   (String.sub s st (e - st)) *)
-
 let get_token_str t s =
   let { span = { lo; hi }; _ } = t in
   String.sub s lo (hi - lo)
 ;;
-
-(* let get_token_str t s : string = *)
-(*   let { span = { start = _, st, _, _; ending = _, e, _, _ }; _ } = t in *)
-(*   String.sub s st (e - st) *)

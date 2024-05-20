@@ -685,6 +685,7 @@ class resolver tcx modd =
         | Index (expr, idx) ->
             visit_expr expr mdl;
             visit_expr idx mdl
+        | Hole -> ()
       and visit_pat ?(env = new hashmap) pat mdl =
         match pat with
         | PIdent (m, name, id) when not @@ env#has name ->

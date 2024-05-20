@@ -262,6 +262,7 @@ and expr_kind =
   | Match of expr * arm vec
   | Slice of expr vec
   | Index of (expr * expr)
+  | Hole
 
 and arm = {
     pat: pat

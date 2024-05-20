@@ -134,6 +134,7 @@ class visitor resolver (modd : Ast.modd) parent dir_ownership =
       | Index (expr, idx) ->
           self#visit_expr expr;
           self#visit_expr idx
+      | Hole -> ()
 
     method visit_pat _ = ()
 

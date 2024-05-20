@@ -170,6 +170,16 @@ let invalid_literal_pattern span =
     ~labels:[Label.primary "not an integer" span]
 ;;
 
+let type_hole_found tcx ty span =
+  let msg =
+    if ty = tcx#types.err
+    then "cannot infer this"
+    else sprintf "expected expression of type `%s`" (tcx#render_ty ty)
+  in
+  Diagnostic.create "type hole found" ~labels:[Label.primary msg span]
+  |> tcx#emit
+;;
+
 let ty_err_emit (tcx : tcx) err span =
   match err with
   | MismatchTy (expected, ty) ->
@@ -254,6 +264,7 @@ let tychk_fn cx fn =
     (Generics.to_subst (tcx#generics_of did) tcx)#inner
     |> Array.map (function Middle.Ty.Ty ty ->
            !ty |> ( function Param p -> p | _ -> assert false ));
+  let holes = Hashtbl.create 0 in
   let define id ty =
     let did = local_def_id id in
     tcx#create_def did ty;
@@ -1089,6 +1100,21 @@ let tychk_fn cx fn =
          | NoExpectation ->
              let ty = check_expr expr NoExpectation in
              tcx#slice_inner ty)
+    | Hole ->
+        let ty = infcx_new_ty_var cx.infcx in
+        (match expected with
+         | ExpectTy expected ->
+             (match equate expected ty with
+              | Ok ({ contents = Infer _ } as ty) ->
+                  Hashtbl.add holes ty expr.expr_span;
+                  ty
+              | Ok ty ->
+                  type_hole_found tcx ty expr.expr_span;
+                  ty
+              | Error _ -> assert false)
+         | NoExpectation ->
+             Hashtbl.add holes ty expr.expr_span;
+             ty)
   in
   let ty = tcx#get_def did in
   let ret = Fn.ret tcx ty in
@@ -1149,7 +1175,8 @@ let tychk_fn cx fn =
                  | _ -> ());
                 tcx#types.err
           in
-          tcx#invalidate !v ty)
+          tcx#invalidate !v ty);
+  Hashtbl.iter (fun ty span -> type_hole_found tcx ty span) holes
 ;;
 
 let rec tychk cx (modd : modd) =
