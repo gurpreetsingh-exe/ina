@@ -579,6 +579,7 @@ class resolver tcx modd =
         let main = self#resolve_main in
         match main with
         | Def (id, _) -> tcx#set_main id
+        | _ when tcx#sess.options.command = Test -> ()
         | _ -> print_endline "main not found"
 
     method not_found path =

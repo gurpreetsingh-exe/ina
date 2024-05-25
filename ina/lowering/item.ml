@@ -7,10 +7,10 @@ open Structures.Vec
 let rec lower (lcx : Context.lcx) mdl =
   let tcx = lcx#tcx in
   let lower_fn fn =
-    let ty = tcx#get_def (local_def_id fn.func_id) in
+    let def_id = local_def_id fn.func_id in
+    let ty = tcx#get_def def_id in
     let subst = Middle.Ty.Fn.subst ty in
     let arg_tys = Fn.args tcx ty in
-    let def_id = tcx#node_id_to_def_id#unsafe_get fn.func_id in
     let def : Inst.instance_def =
       if Fn.abi tcx ty = Intrinsic then Intrinsic def_id else Fn def_id
     in
@@ -54,6 +54,26 @@ let rec lower (lcx : Context.lcx) mdl =
     lcx#define ifn
   in
   let f : Ast.item -> unit = function
+    | Fn (fn, attrs) when is_test attrs && tcx#sess.options.command = Test ->
+        let def_id = local_def_id fn.func_id in
+        let ty = tcx#get_def def_id in
+        let instance = Inst.{ def = Test def_id; subst = Subst (new vec) } in
+        let ifn =
+          Func.
+            {
+              ty
+            ; instance
+            ; args = new vec
+            ; basic_blocks = { locals = new vec; bbs = new vec }
+            ; decl = false
+            }
+        in
+        lcx#set_active_fn ifn;
+        let bb = lcx#entry_block in
+        lcx#builder_at_end bb;
+        let _ = Expr.lower_block lcx (fn.body |> Option.get) in
+        lcx#define ifn
+    | Fn (_, attrs) when is_test attrs -> ()
     | Fn (fn, _) -> lower_fn fn
     | Mod { resolved_mod = Some mdl; _ } -> lower lcx mdl
     | Impl { items; _ } -> items#iter (function AssocFn fn -> lower_fn fn)

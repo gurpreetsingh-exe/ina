@@ -8,6 +8,7 @@ open Source
 type instance_def =
   | Fn of def_id
   | Intrinsic of def_id
+  | Test of def_id
 
 and instance = {
     def: instance_def
@@ -19,7 +20,8 @@ and item = Fn of instance
 let encode_instance enc { def; subst } =
   (match def with
    | Fn did -> enc#emit_with 0L (fun e -> Def_id.encode e did)
-   | Intrinsic did -> enc#emit_with 1L (fun e -> Def_id.encode e did));
+   | Intrinsic did -> enc#emit_with 1L (fun e -> Def_id.encode e did)
+   | Test did -> enc#emit_with 2L (fun e -> Def_id.encode e did));
   Ty.encode_subst enc subst
 ;;
 
@@ -29,7 +31,7 @@ module Instance = struct
   let hash hasher { def; subst = Subst subst } =
     let g = fx_add_to_hash hasher in
     let { inner; mod_id } =
-      match def with Fn did -> did | Intrinsic did -> did
+      match def with Fn did | Intrinsic did | Test did -> did
     in
     g inner;
     g mod_id;
@@ -52,6 +54,7 @@ let decode_instance tcx dec =
     match dec#read_usize with
     | 0 -> Fn (Def_id.decode dec)
     | 1 -> Intrinsic (Def_id.decode dec)
+    | 2 -> Test (Def_id.decode dec)
     | _ -> assert false
   in
   let subst = Ty.decode_subst tcx dec in
@@ -59,16 +62,19 @@ let decode_instance tcx dec =
 ;;
 
 let instance_def_id instance =
-  instance.def |> function Fn id | Intrinsic id -> id
+  instance.def |> function Fn id | Intrinsic id | Test id -> id
 ;;
 
 let render_instance (tcx : Middle.Ctx.tcx) instance =
   match instance.def with
-  | Fn id | Intrinsic id ->
+  | Fn id | Intrinsic id | Test id ->
       let (Subst subst) = instance.subst in
       sprintf
         "%s@%s%s"
-        (match instance.def with Intrinsic _ -> "i" | _ -> "")
+        (match instance.def with
+         | Intrinsic _ -> "i"
+         | Test _ -> "t"
+         | _ -> "")
         (tcx#into_segments id |> function
          | segments, _ -> segments |> String.concat "::")
         (if subst#empty
@@ -252,7 +258,7 @@ let get_ty tcx = function
   | Global (Fn { def; subst = Subst subst }) ->
       Middle.Ctx.SubstFolder.fold_ty
         tcx
-        (match def with Fn id | Intrinsic id -> tcx#get_def id)
+        (match def with Fn id | Intrinsic id | Test id -> tcx#get_def id)
         subst
   | _ -> assert false
 ;;

@@ -445,9 +445,9 @@ class tcx sess =
       | Ty.Adt (did, _) -> self#into_last_segment did
       | _ -> assert false
 
-    method qpath did =
+    method qpath ?(full = false) did =
       let segments, _ = self#into_segments did in
-      segments |> List.tl |> String.concat "::"
+      segments |> (if full then Fun.id else List.tl) |> String.concat "::"
 
     method link_impl id ty = assert (impls#insert id ty = None)
 

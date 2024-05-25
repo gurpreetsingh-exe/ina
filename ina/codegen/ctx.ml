@@ -53,7 +53,7 @@ let codegen (tcx : tcx) (mdl : Module.t) =
       let open Printf in
       let command =
         sprintf
-          "%s -ggdb -std=c17 -w %s"
+          "%s -ggdb -w %s"
           compiler
           (match tcx#sess.options.opt_level with
            | Default -> "-O0"
@@ -79,7 +79,9 @@ let codegen (tcx : tcx) (mdl : Module.t) =
               input
               (add_suffix output "lib")
       in
-      if Sys.command command <> 0 then eprintf "command failed\n"
+      if Sys.command command <> 0 then eprintf "command failed\n";
+      if tcx#sess.options.command = Test
+      then exit (Sys.command (sprintf "./%s" output))
       (* assert (Sys.command (sprintf "rm -f %s" input) = 0) *)
   | Llvm -> assert false
 ;;

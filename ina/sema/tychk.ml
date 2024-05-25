@@ -1078,8 +1078,6 @@ let tychk_fn cx fn =
               ty
         in
         let ty' = tcx#slice ty in
-        let origin = { did; param = ty; span = expr.expr_span } in
-        Hashtbl.replace cx.tyvar_origin ty' origin;
         (match expected with
          | NoExpectation -> ty'
          | ExpectTy ty ->

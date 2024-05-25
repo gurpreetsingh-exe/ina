@@ -104,7 +104,7 @@ let () =
         print_endline !Front.Ast_printer.out;
         exit 0);
       (match sess.options.command with
-       | Build ->
+       | Build | Test ->
            resolve_and_sema mdl;
            let time, mdl =
              Timer.time (fun () ->

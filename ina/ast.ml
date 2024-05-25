@@ -81,6 +81,15 @@ and attr_style =
   | Outer
   | Inner
 
+let is_test attrs =
+  find
+    (function
+     | { kind = NormalAttr { name = "test" }; _ } as attr -> Some attr
+     | _ -> None)
+    attrs
+  |> Option.is_some
+;;
+
 type modd = {
     mutable items: item vec
   ; mutable attrs: attr vec

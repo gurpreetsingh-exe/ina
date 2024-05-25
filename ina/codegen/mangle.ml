@@ -66,7 +66,9 @@ let mangle_def_path (tcx : tcx) did =
 ;;
 
 let mangle (tcx : tcx) instance =
-  let { def = Fn did | Intrinsic did; subst = Subst subst } = instance in
+  let { def = Fn did | Intrinsic did | Test did; subst = Subst subst } =
+    instance
+  in
   let segments, extern =
     tcx#into_segments ~f:(fun ty -> mangle_ty tcx ty) did
   in

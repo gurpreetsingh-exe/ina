@@ -18,6 +18,8 @@ let ( ^ ) s rest =
   ()
 ;;
 
+let jmpbuf = "__ina_jmpbuf"
+let define_jmpbuf () = prelude ^ sprintf "static jmp_buf %s;\n" jmpbuf
 let newline () = out ^ "\n"
 
 type cx = {
@@ -27,6 +29,7 @@ type cx = {
   ; defined_types: (string, unit) hashmap
   ; gen'd_fns: (instance, unit) hashmap
   ; gen'd_generics: (instance, unit) hashmap
+  ; tests: instance vec
 }
 
 let rec backend_ty cx ty =
@@ -203,10 +206,12 @@ let create tcx irmdl =
   ; defined_types = new hashmap
   ; gen'd_fns = new hashmap
   ; gen'd_generics = new hashmap
+  ; tests = new vec
   }
 ;;
 
 let gen cx =
+  let is_test = ref false in
   let render_fn_header name ty =
     let ty = cx.tcx#ty_with_subst ty in
     let { args; ret; is_variadic; _ } = Fn.get cx.tcx ty in
@@ -249,7 +254,7 @@ let gen cx =
     | Global (Fn instance) ->
         (match instance.def with
          | Intrinsic _ -> Mangle.mangle cx.tcx instance
-         | Fn id ->
+         | Fn id | Test id ->
              let name = Mangle.mangle cx.tcx instance in
              let ty = cx.tcx#fn id instance.subst in
              let generics = cx.tcx#generics_of (instance_def_id instance) in
@@ -406,6 +411,9 @@ let gen cx =
     | Trunc (value, ty)
     | Zext (value, ty) ->
         out ^ sprintf "(%s)%s;\n" (backend_ty cx ty) (get_value value)
+    | Trap value when !is_test ->
+        out ^ sprintf "__builtin_printf(\"%s\");\n" (String.escaped value);
+        out ^ sprintf "  longjmp(%s, 1);\n" jmpbuf
     | Trap value ->
         out ^ sprintf "__builtin_printf(\"%s\");\n" (String.escaped value);
         out ^ "  __builtin_abort();\n"
@@ -472,6 +480,16 @@ let gen cx =
       func.basic_blocks.locals#iter gen_inst;
       func.basic_blocks.bbs#iter gen_bb;
       out ^ "}\n\n")
+  and gen_test func =
+    let open Ir.Func in
+    let name = Mangle.mangle cx.tcx func.instance in
+    cx.tests#push func.instance;
+    let header = sprintf "void %s()" name in
+    out ^ header;
+    out ^ " {\n";
+    func.basic_blocks.locals#iter gen_inst;
+    func.basic_blocks.bbs#iter gen_bb;
+    out ^ "}\n\n"
   in
   let gen_main main =
     let name = Mangle.mangle cx.tcx main in
@@ -484,6 +502,10 @@ let gen cx =
   cx.irmdl.items#iter (fun f ->
       match f.instance.def with
       | Intrinsic _ -> ()
+      | Test _ ->
+          is_test := true;
+          gen_test f;
+          is_test := false
       | _ ->
           if not (cx.gen'd_fns#has f.instance)
           then (
@@ -492,6 +514,58 @@ let gen cx =
             then cx.gen'd_generics#insert' f.instance ();
             gen_function f));
   (match cx.tcx#main with
+   | _ when cx.tcx#sess.options.command = Test ->
+       prelude ^ sprintf "#include <setjmp.h>\n";
+       define_jmpbuf ();
+       let total = cx.tests#len in
+       let g = sprintf "\\x1b[32m%s\\x1b[0m" in
+       let r = sprintf "\\x1b[31m%s\\x1b[0m" in
+       let ok_str = g "[     OK ]" in
+       let failed_str = r "[ FAILED ]" in
+       let info = g "[ INFO   ]" in
+       let sep = g "[========]" in
+       let run instance =
+         let name = Mangle.mangle cx.tcx instance in
+         let qpath = cx.tcx#qpath ~full:true (instance_def_id instance) in
+         sprintf
+           "if (setjmp(%s) == 0) {\n\
+           \    %s();\n\
+           \    __builtin_printf(\"%s %s\\n\");\n\
+           \    passed++;\n\
+           \  } else {\n\
+           \    __builtin_printf(\"%s %s\\n\");\n\
+           \    failed++;\n\
+           \  }"
+           jmpbuf
+           name
+           ok_str
+           qpath
+           failed_str
+           qpath
+       in
+       let tests = cx.tests#join "\n  " run in
+       let result = "\" %zu passed, %zu failed\\n\\n\", passed, failed" in
+       out ^ "int main() {\n";
+       out ^ "  size_t passed = 0; size_t failed = 0;\n";
+       out
+       ^ sprintf
+           "  __builtin_printf(\"%s running %d test%s\\n\");\n"
+           info
+           total
+           (if total = 1 then "" else "s");
+       out ^ "  ";
+       out ^ tests;
+       newline ();
+       out ^ sprintf "  __builtin_printf(\"%s\\n\");\n" sep;
+       out
+       ^ sprintf
+           "  __builtin_printf(passed == %d ? \"%s\" : \"%s\");\n"
+           total
+           ok_str
+           failed_str;
+       out ^ sprintf "  __builtin_printf(%s);\n" result;
+       out ^ "  return failed != 0;\n";
+       out ^ "}\n"
    | Some id ->
        let instance = { def = Fn id; subst = Subst (new vec) } in
        gen_main instance

@@ -20,6 +20,9 @@ class lcx tcx =
     method bx = builder
     method set_active_fn f = fn <- Some f
 
+    method is_test_func =
+      match (Option.get fn).instance.def with Test _ -> true | _ -> false
+
     method builder_at_end bb =
       builder <- new Builder.builder tcx (Option.get fn).basic_blocks bb
 
