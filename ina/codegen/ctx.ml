@@ -40,13 +40,16 @@ let codegen (tcx : tcx) (mdl : Module.t) =
   mdl.items#append items;
   let items = Collect.collect tcx mdl cached in
   let mdl = Ir.Module.{ items } in
-  match tcx#sess.options.backend with
+  let opt = tcx#sess.options in
+  match opt.backend with
   | C ->
       let module Backend = MakeCodegenBackend (C) in
       let compiler = "clang" in
       let cx = Backend.create tcx mdl in
       Backend.gen cx;
-      let output = tcx#sess.options.output in
+      let output =
+        if opt.command = Test then opt.output ^ "_test" else opt.output
+      in
       let input = output ^ ".c" in
       Backend.emit cx input;
       if tcx#has_errors then exit 1;
@@ -65,7 +68,7 @@ let codegen (tcx : tcx) (mdl : Module.t) =
       extmods#iter (fun u _ -> objs := sprintf "%s %s" !objs u);
       let objs = !objs in
       let command =
-        match tcx#sess.options.output_type with
+        match opt.output_type with
         | Exe ->
             let cmd = sprintf "%s -c %s -o %s.o" command input output in
             assert (Sys.command cmd = 0);
@@ -81,7 +84,7 @@ let codegen (tcx : tcx) (mdl : Module.t) =
       in
       if Sys.command command <> 0 then eprintf "command failed\n";
       assert (Sys.command (sprintf "rm -f %s %s.o" input output) = 0);
-      if tcx#sess.options.command = Test
+      if opt.command = Test
       then (
         let code = Sys.command (sprintf "./%s" output) in
         assert (Sys.command (sprintf "rm -f %s" output) = 0);
