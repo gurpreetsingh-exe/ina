@@ -8,7 +8,8 @@ fn test(v: Option[usize]) -> bool {
     }
 }
 
-fn main() {
+[test]
+fn wild() {
     assert test(Some(42));
     assert test(None) == false;
 }

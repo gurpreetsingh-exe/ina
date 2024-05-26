@@ -1,4 +1,5 @@
-fn main() {
+[test]
+fn test() {
     let xs = [1, 2, 3, 4];
     assert xs[0] == 1;
     let xs = &xs;

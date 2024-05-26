@@ -1,5 +1,3 @@
-// EXIT_CODE: 0
-
 fn id2[T](i: T) -> T {
     i
 }
@@ -13,8 +11,8 @@ fn identity[T](i: &T, _: i32) -> T {
     id![T](*i, 0)
 }
 
-fn main() -> i32 {
+[test]
+fn test() {
     assert identity![i32](&69, 0) == 69;
     assert identity![i64](&420, 0) == 420;
-    0
 }

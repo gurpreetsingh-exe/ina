@@ -11,7 +11,8 @@ fn test(v: Bar) -> i32 {
     x
 }
 
-fn main() {
+[test]
+fn bindings() {
     let x = match Foo::A(20) {
         Foo::A(x) | Foo::B(x) => x
     };

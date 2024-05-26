@@ -1,5 +1,3 @@
-// EXIT_CODE: 54
-
 fn test(a: i32, b: i32) -> i32 {
     let c = {
         let a = 50;
@@ -8,7 +6,10 @@ fn test(a: i32, b: i32) -> i32 {
     c
 }
 
-fn main() -> i32 {
-    { test(2, 4) }
+[test]
+fn ret() {
+    let a = { 50 };
+    assert a == 50;
+    assert { 1 + 1 } == { 2 };
+    assert { test(2, 4) } == 54;
 }
-

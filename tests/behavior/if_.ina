@@ -1,9 +1,8 @@
-// EXIT_CODE: 1
-
-fn main() -> i32 {
+[test]
+fn simple_if() {
     let mut a = 2;
     if 20 != 50 {
         a = 1;
     }
-    a
+    assert a == 1;
 }

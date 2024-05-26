@@ -1,9 +1,6 @@
-// EXIT_CODE: 0
+using behavior::modules::foo::foo::@test;
 
-mod foo;
-using foo::foo::@test;
-
-fn main() {
+[test]
+fn use_path_value() {
     assert test(34) == 69;
 }
-

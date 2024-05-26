@@ -1,9 +1,6 @@
-// EXIT_CODE: 0
+using behavior::modules::foo::foo::*;
 
-mod foo;
-using foo::foo::*;
-
-fn main() {
+[test]
+fn glob_import() {
     assert test(34) == 69;
 }
-

@@ -24,7 +24,8 @@ fn test2(v: Bar) -> i32 {
     }
 }
 
-fn main() {
+[test]
+fn bindings() {
     assert test(Foo::B(Some(20))) == 20;
     assert test(Foo::A(21)) == 21;
     assert test(Foo::B(None)) == 50;

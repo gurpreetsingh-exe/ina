@@ -1,9 +1,16 @@
-// EXIT_CODE: 97
-
 extern mod core;
 
-fn main() -> u8 {
+[test]
+fn check_str_deref() {
     let str = "a";
-    *(str.as_ptr())
+    assert *(str.as_ptr()) == 97;
 }
 
+[test]
+fn read_write() {
+    let mut a = 20;
+    let b = &mut a as *mut i32;
+    assert *b == 20;
+    *b = 58;
+    assert *b == 58;
+}

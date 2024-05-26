@@ -1,4 +1,5 @@
-fn main() {
+[test]
+fn copy() {
     let xs = [1, 2, 3];
     let ys = xs;
     assert xs[1] == 2;

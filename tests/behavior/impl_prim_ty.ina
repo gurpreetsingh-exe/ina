@@ -1,5 +1,3 @@
-// EXIT_CODE: 1
-
 mod _ {
     impl i32 {
         fn type_of(self) -> isize { 0 }
@@ -14,13 +12,13 @@ impl f32 {
     fn type_of(self) -> isize { 2 }
 }
 
-fn main() -> bool {
+[test]
+fn impl_prim_tys() {
     let a: i32 = 20;
     let b: i64 = 50;
     let c: f32 = 20.0;
 
-    a.type_of() == 0 &&
-    b.type_of() == 1 &&
-    c.type_of() == 2
+    assert a.type_of() == 0;
+    assert b.type_of() == 1;
+    assert c.type_of() == 2;
 }
-

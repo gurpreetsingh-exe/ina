@@ -1,5 +1,3 @@
-// EXIT_CODE: 1
-
 type T = { inner: i32 }
 
 impl T {
@@ -33,16 +31,16 @@ impl T2 {
     }
 }
 
-fn main() -> bool {
+[test]
+fn test_impl_methods() {
     let t1 = T::new(69);
     let t2 = T::new2();
     let t3 = T2::new();
-    t1.inner == 69
-    && t2.value() == 420
-    && t3.value() == 5
-    && {
+    assert t1.inner == 69;
+    assert t2.value() == 420;
+    assert t3.value() == 5;
+    assert {
         t2.incr();
         t2.value() == 421
-    }
+    };
 }
-

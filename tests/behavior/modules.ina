@@ -1,0 +1,9 @@
+mod fn_as_local;
+mod fn_in_mod;
+mod foo;
+mod rec;
+mod struct;
+mod using_;
+mod using_glob;
+mod using_path;
+mod using_value;

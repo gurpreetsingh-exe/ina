@@ -14,7 +14,8 @@ fn test(x: Option[Test]) -> usize {
     }
 }
 
-fn main() {
+[test]
+fn switch() {
     assert test(Some(Test::Foo)) == 1;
     assert test(Some(Test::Bar)) == 0;
     assert test(Some(Test::Baz)) == 1;

@@ -1,5 +1,3 @@
-// EXIT_CODE: 0
-
 type T = A | B
 
 fn f(v1: T, v2: T) -> i32 {
@@ -15,7 +13,8 @@ fn f(v1: T, v2: T) -> i32 {
     }
 }
 
-fn main() {
+[test]
+fn test() {
     assert f(T::A, T::A) == 1;
     assert f(T::A, T::B) == 2;
     assert f(T::B, T::A) == 3;

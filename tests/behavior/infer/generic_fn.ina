@@ -1,8 +1,7 @@
-// EXIT_CODE: 0
-
 fn id[T](x: T) -> T { x }
 
-fn main() {
+[test]
+fn infer_from_binding_annotation() {
     let x: isize = 42;
     let y: isize = id(x);
     assert x == y;

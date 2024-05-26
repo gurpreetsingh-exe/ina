@@ -80,8 +80,11 @@ let codegen (tcx : tcx) (mdl : Module.t) =
               (add_suffix output "lib")
       in
       if Sys.command command <> 0 then eprintf "command failed\n";
+      assert (Sys.command (sprintf "rm -f %s %s.o" input output) = 0);
       if tcx#sess.options.command = Test
-      then exit (Sys.command (sprintf "./%s" output))
-      (* assert (Sys.command (sprintf "rm -f %s" input) = 0) *)
+      then (
+        let code = Sys.command (sprintf "./%s" output) in
+        assert (Sys.command (sprintf "rm -f %s" output) = 0);
+        exit code)
   | Llvm -> assert false
 ;;

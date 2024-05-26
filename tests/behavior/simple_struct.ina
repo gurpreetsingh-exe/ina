@@ -1,12 +1,10 @@
-// EXIT_CODE: 1
-
 type Foo = {
     a: i32,
     b: i32
 }
 
-fn main() -> bool {
+[test]
+fn constructor() {
     let a = Foo { a: 34, b: 35 };
-    a.a + a.b == 69
+    assert a.a + a.b == 69;
 }
-

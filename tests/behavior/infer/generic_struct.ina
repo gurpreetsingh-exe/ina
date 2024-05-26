@@ -1,7 +1,4 @@
-// EXIT_CODE: 0
-// STDOUT: Hello World
-
-extern mod std;
+extern mod core;
 
 type pair[T, V] = {
     a: T,
@@ -20,10 +17,13 @@ fn second[T, V](t: pair[T, V]) -> V {
     t.b
 }
 
-fn main() -> i32 {
+[test]
+fn test_pair() {
     let pair = pair("Hello World", 69);
-    std::io::println(first(pair));
+    let fst = first(pair);
+    let buf = fst.as_bytes();
+    assert buf.len() == 11;
+    assert buf[0] == 72;
     let chk: i64 = 69;
     assert second(pair) == chk;
-    0
 }

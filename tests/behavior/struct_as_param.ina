@@ -1,5 +1,3 @@
-// EXIT_CODE: 1
-
 type Foo = {
     a: &i32,
     b: i32
@@ -9,8 +7,20 @@ fn some(foo: Foo) -> i32 {
     *(foo.a) + foo.b
 }
 
-fn main() -> bool {
+fn other(foo: &Foo) -> i32 {
+    *(foo.a) + foo.b
+}
+
+[test]
+fn value() {
     let a = 34;
     let foo = Foo { a: &a, b: 35 };
-    some(foo) == 69
+    assert some(foo) == 69;
+}
+
+[test]
+fn ref() {
+    let a = 34;
+    let foo = Foo { a: &a, b: 35 };
+    assert other(&foo) == 69;
 }

@@ -1,18 +1,12 @@
-// EXIT_CODE: 1
-// STDOUT: it works
-
-extern mod std;
-
 fn f(g: fn(i32) -> i32, a: i32) -> i32 {
     g(a)
 }
 
 fn some_function(a: i32) -> i32 {
-    std::io::print("it works\n");
     a
 }
 
-fn main() -> bool {
-    f(some_function, 69) == 69
+[test]
+fn test() {
+    assert f(some_function, 69) == 69;
 }
-

@@ -1,5 +1,3 @@
-// EXIT_CODE: 0
-
 type Test = {}
 
 impl Test {
@@ -12,11 +10,10 @@ impl Test {
     }
 }
 
-fn main() -> i32 {
+[test]
+fn with_type_param() {
     let test = Test {};
     assert test.id![i32](1) == 1;
     assert Test::id![i32](test, 2) == 2;
     assert Test::id2![i64](3) == 3;
-    0
 }
-

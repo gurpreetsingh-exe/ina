@@ -1,5 +1,3 @@
-// DUMMY
-
 mod bar;
 
 mod foo {
@@ -8,7 +6,7 @@ mod foo {
     }
 }
 
-fn main() -> bool {
-    foo::test(34) == bar::test()
+[test]
+fn import() {
+    assert foo::test(34) == bar::test();
 }
-

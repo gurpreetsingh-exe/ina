@@ -1,12 +1,10 @@
-// EXIT_CODE: 0
-
-mod struct;
+using behavior::modules::struct;
 using struct::Foo;
 
-fn main() {
+[test]
+fn using_struct() {
     let a = 20;
     let foo = struct::foo::Foo { a: &a, b: 50 };
     let a = Foo { a: foo };
     assert a.a.b == 50;
 }
-

@@ -1,7 +1,6 @@
-// EXIT_CODE: 1
-
-fn main() -> bool {
+[test]
+fn test() {
     let a = 20;
     let b = 50;
-    b / a == 2
+    assert b / a == 2;
 }

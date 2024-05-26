@@ -1,10 +1,9 @@
-// EXIT_CODE: 0
-
 fn id[T](v: T) -> T {
     v
 }
 
-fn main() {
+[test]
+fn infer_prims() {
     let a = id(20);
     let b = id(50.);
     let c = id(true);

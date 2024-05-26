@@ -1,0 +1,9 @@
+mod generic_fn;
+mod generic_fn_infer;
+mod generic_fn_twice;
+mod generic_fn_unique;
+mod generic_impl;
+mod generic_struct;
+mod indirect;
+mod ref;
+mod reference;

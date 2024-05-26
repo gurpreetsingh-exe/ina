@@ -1,11 +1,10 @@
-// EXIT_CODE: 1
-
-fn main() -> bool {
+[test]
+fn test() {
     let a = if false {
         50
     } else {
         30
     };
     let a = a == 30 && true;
-    a
+    assert a;
 }

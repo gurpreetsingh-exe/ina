@@ -1,4 +1,5 @@
-fn main() {
+[test]
+fn binding_in_last_arm() {
     let x = match 20 {
         1 => 1,
         x => x,

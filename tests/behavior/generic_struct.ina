@@ -1,18 +1,14 @@
-// EXIT_CODE: 0
+extern mod core;
 
 type Test[T] = {
     inner: T
 }
 
-extern "intrinsic" {
-    fn len(str: &str) -> usize;
-}
-
-fn main() -> i32 {
+[test]
+fn with_type_param() {
     let a = Test![i32] { inner: 1 };
     let b: i32 = 1;
     assert a.inner == b;
     let b = Test![str] { inner: "Hello World" };
-    assert len(&(b.inner)) == 11;
-    0
+    assert (&(b.inner)).len() == 11;
 }

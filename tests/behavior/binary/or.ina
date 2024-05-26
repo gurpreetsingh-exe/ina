@@ -1,9 +1,7 @@
-// EXIT_CODE: 1
-
-fn main() -> bool {
+[test]
+fn test() {
     let a = true;
     let b = false;
-    (true || b || true == true)
-    && (b || false || false == false)
+    assert (true || b || true == true)
+    && (b || false || false == false);
 }
-

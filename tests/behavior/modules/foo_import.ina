@@ -1,8 +1,0 @@
-// EXIT_CODE: 1
-
-mod foo;
-
-fn main() -> bool {
-    foo::main()
-}
-

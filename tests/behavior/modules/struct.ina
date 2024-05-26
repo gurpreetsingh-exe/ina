@@ -1,5 +1,3 @@
-// EXIT_CODE: 1
-
 mod foo {
     type Foo = {
         a: &i32,
@@ -11,9 +9,10 @@ type Foo = {
     a: foo::Foo,
 }
 
-fn main() -> bool {
+[test]
+fn struct_import() {
     let a = 34;
     let foo = foo::Foo { a: &a, b: 35 };
     let bar = Foo { a: foo };
-    *(bar.a.a) + bar.a.b == 69
+    assert *(bar.a.a) + bar.a.b == 69;
 }

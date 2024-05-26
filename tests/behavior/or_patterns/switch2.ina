@@ -13,7 +13,8 @@ fn test(x: Foo) -> usize {
     }
 }
 
-fn main() {
+[test]
+fn switch() {
     assert test(Foo::One(0)) == 0;
     assert test(Foo::One(42)) == 1;
     assert test(Foo::One(43)) == 10;
