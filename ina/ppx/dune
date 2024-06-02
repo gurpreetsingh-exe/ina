@@ -1,5 +1,6 @@
+(include_subdirs no)
 (library
  (name ppx)
  (kind ppx_rewriter)
- (modules ice)
+ (modules ice dbg)
  (libraries ppxlib))

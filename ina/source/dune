@@ -1,4 +1,0 @@
-(library
- (name source)
- (libraries structures)
- (modules span source_map))

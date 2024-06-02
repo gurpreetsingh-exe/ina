@@ -1,0 +1,5 @@
+(executable
+ (public_name ina)
+ (name driver)
+ (modules driver)
+ (libraries ina))

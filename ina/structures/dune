@@ -1,4 +1,0 @@
-(library
- (name structures)
- (modules vec hashmap)
- (libraries metadata))

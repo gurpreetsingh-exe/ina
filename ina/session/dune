@@ -1,4 +1,0 @@
-(library
- (name session)
- (modules args sess config)
- (libraries front metadata source errors))

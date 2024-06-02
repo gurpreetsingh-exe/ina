@@ -1,13 +1,9 @@
-(library
- (name import)
- (modules import))
+(include_subdirs qualified)
 
 (library
- (name token)
- (modules token)
- (libraries source))
-
-(library
- (name ast)
- (modules ast)
- (libraries token))
+ (public_name ina)
+ (name ina)
+ (preprocess
+  (pps ppx_deriving.show ppx_deriving.enum ppx))
+ (instrumentation (backend landmarks --auto))
+ (libraries uutf str))

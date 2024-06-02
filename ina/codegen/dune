@@ -1,4 +1,0 @@
-(library
- (name codegen)
- (libraries ir ast resolve session monomorphize)
- (modules c ctx mangle))

@@ -1,6 +1,0 @@
-(library
- (name ir)
- (libraries ast front middle)
- (preprocess
-  (pps ppx_deriving.enum))
- (modules inst basicblock func module))

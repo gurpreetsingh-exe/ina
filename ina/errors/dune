@@ -1,4 +1,0 @@
-(library
- (name errors)
- (modules diagnostic emitter handler color)
- (libraries token source uutf))
