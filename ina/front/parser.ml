@@ -16,20 +16,20 @@ let ( let* ) res f = match res with Ok v -> f v | Error e -> Error e
 
 let builtin_types =
   [|
-     "i8", Ast.Int I8
-   ; "i16", Int I16
-   ; "i32", Int I32
-   ; "i64", Int I64
-   ; "isize", Int Isize
-   ; "u8", Int U8
-   ; "u16", Int U16
-   ; "u32", Int U32
-   ; "u64", Int U64
-   ; "usize", Int Usize
-   ; "f32", Float F32
-   ; "f64", Float F64
-   ; "bool", Bool
-   ; "str", Str
+     "i8", Pty_int Pty_i8
+   ; "i16", Pty_int Pty_i16
+   ; "i32", Pty_int Pty_i32
+   ; "i64", Pty_int Pty_i64
+   ; "isize", Pty_int Pty_isize
+   ; "u8", Pty_int Pty_u8
+   ; "u16", Pty_int Pty_u16
+   ; "u32", Pty_int Pty_u32
+   ; "u64", Pty_int Pty_u64
+   ; "usize", Pty_int Pty_usize
+   ; "f32", Pty_float Pty_f32
+   ; "f64", Pty_float Pty_f64
+   ; "bool", Pty_bool
+   ; "str", Pty_str
   |]
   |> Array.to_seq
   |> Hashtbl.of_seq
@@ -312,11 +312,14 @@ class parser pcx file lx =
                 self#parse_ty)
           in
           if !var_arg then ignore args#pop;
-          let unit_ty : ty = mk_ty Unit (make 0 0) self#id in
+          let unit_ty : ty = mk_ty Pty_unit (make 0 0) self#id in
           let* ret_ty = self#parse_ret_ty in
           let ret_ty = Option.value ~default:unit_ty ret_ty in
           Ok
-            (mk_ty (FnPtr (args, ret_ty, !var_arg)) (self#mk_span s) self#id)
+            (mk_ty
+               (Pty_fnptr (args, ret_ty, !var_arg))
+               (self#mk_span s)
+               self#id)
       | Ident ->
           let name = get_token_str token file#src in
           (match Hashtbl.find_opt builtin_types name with
@@ -325,26 +328,26 @@ class parser pcx file lx =
                Ok (mk_ty ty (self#mk_span s) self#id)
            | None ->
                let* path = self#parse_path Type in
-               let ty : ty_kind = Path path in
+               let ty : ty_kind = Pty_path path in
                Ok (mk_ty ty (self#mk_span s) self#id))
       | Star ->
           self#bump;
           let m = self#parse_mutability in
           let* ty = self#parse_ty in
-          Ok (mk_ty (Ptr (m, ty)) (self#mk_span s) self#id)
+          Ok (mk_ty (Pty_ptr (m, ty)) (self#mk_span s) self#id)
       | Ampersand ->
           self#bump;
           let m = self#parse_mutability in
           let* ty = self#parse_ty in
-          Ok (mk_ty (Ref (m, ty)) (self#mk_span s) self#id)
+          Ok (mk_ty (Pty_ref (m, ty)) (self#mk_span s) self#id)
       | Dot3 ->
           self#bump;
-          Ok (mk_ty CVarArgs (self#mk_span s) self#id)
+          Ok (mk_ty Pty_cvarargs (self#mk_span s) self#id)
       | LBracket ->
           self#bump;
           let* ty = self#parse_ty in
           let* _ = self#expect RBracket in
-          Ok (mk_ty (Slice ty) (self#mk_span s) self#id)
+          Ok (mk_ty (Pty_slice ty) (self#mk_span s) self#id)
       | t ->
           self#unexpected_token t ~line:__LINE__;
           exit 1
@@ -367,7 +370,7 @@ class parser pcx file lx =
             (match self_ with
              | { ty; arg = "self"; _ } when is_self ty ->
                  (* TODO *)
-                 let ty : ty_kind = Ref (Imm, ty) in
+                 let ty = Pty_ref (Imm, ty) in
                  Ok
                    {
                      ty = mk_ty ty (self#mk_span s) self#id
@@ -383,7 +386,7 @@ class parser pcx file lx =
             then
               Ok
                 {
-                  ty = mk_ty ImplicitSelf (self#mk_span s) self#id
+                  ty = mk_ty Pty_implicitself (self#mk_span s) self#id
                 ; arg
                 ; arg_id = self#id
                 }
@@ -406,7 +409,7 @@ class parser pcx file lx =
           var_arg := true;
           Ok
             {
-              ty = mk_ty CVarArgs (self#mk_span s) self#id
+              ty = mk_ty Pty_cvarargs (self#mk_span s) self#id
             ; arg = ""
             ; arg_id = self#id
             })
@@ -1186,7 +1189,8 @@ class parser pcx file lx =
           self#bump;
           let* name = self#parse_ident in
           let* modd, inline =
-            token.kind |> function
+            token.kind
+            |> function
             | Semi ->
                 self#bump;
                 Ok (None, false)

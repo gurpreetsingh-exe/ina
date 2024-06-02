@@ -605,13 +605,15 @@ class resolver tcx modd =
       dbg "resolve_paths(module = %s)\n" (print_mkind mdl.mkind);
       let rec resolve_ty (ty : Ast.ty) =
         match ty.kind with
-        | FnPtr (args, ty, _) ->
+        | Pty_fnptr (args, ty, _) ->
             args#iter (fun ty -> resolve_ty ty);
             resolve_ty ty
-        | Path path -> visit_path path mdl (Some Type)
-        | Ref (_, ty) | Ptr (_, ty) | Slice ty -> resolve_ty ty
-        | Int _ | Float _ | Bool | Str | Unit | CVarArgs -> ()
-        | ImplicitSelf ->
+        | Pty_path path -> visit_path path mdl (Some Type)
+        | Pty_ref (_, ty) | Pty_ptr (_, ty) | Pty_slice ty -> resolve_ty ty
+        | Pty_int _ | Pty_float _ | Pty_bool | Pty_str | Pty_unit
+        | Pty_cvarargs ->
+            ()
+        | Pty_implicitself ->
             (match current_impl with
              | Some res -> assert (tcx#res_map#insert ty.ty_id res = None)
              | None -> assert false)

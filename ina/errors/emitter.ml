@@ -179,7 +179,8 @@ class emitter sm ui_testing =
           let nesting = repeat ~c:(" " ^ chars.vbar ^ " ") in
           let nlabels = List.length labels in
           (([Header (diagnostic.level, diagnostic.message)]
-            :: (Diagnostic.primary diagnostic.labels |> function
+            :: (Diagnostic.primary diagnostic.labels
+                |> function
                 | Some primary ->
                     [LineNumber primary.span.lo; Blank (0, true)]
                 | None -> [])
@@ -295,7 +296,8 @@ class emitter sm ui_testing =
                       sprintf " %s%s" padding (format [margin, chars.dot])
                   | _ ->
                       sprintf " %s%s" padding (format [margin, chars.vbar]))
-                 ^ (line |> function
+                 ^ (line
+                    |> function
                     | Header (level, msg) ->
                         format
                           [

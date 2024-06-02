@@ -75,8 +75,8 @@ let render_instance (tcx : Middle.Ctx.tcx) instance =
          | Intrinsic _ -> "i"
          | Test _ -> "t"
          | _ -> "")
-        (tcx#into_segments id |> function
-         | segments, _ -> segments |> String.concat "::")
+        (tcx#into_segments id
+         |> function segments, _ -> segments |> String.concat "::")
         (if subst#empty
          then ""
          else
@@ -399,7 +399,8 @@ let rec encode enc { kind; ty; id; _ } =
 
 and encode_inst_kind enc kind =
   let disc = inst_kind_to_enum kind in
-  kind |> function
+  kind
+  |> function
   | Alloca ty -> enc#emit_with disc (fun _ -> Ty.encode enc ty)
   | Binary (kind, left, right) ->
       enc#emit_with disc (fun _ ->

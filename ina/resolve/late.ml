@@ -159,7 +159,8 @@ class type_lowering resolver modd =
       let did = local_def_id impl.id in
       resolver#tcx#define_generics did generics;
       self#with_parent did (fun () ->
-          resolver#tcx#def_key did |> function
+          resolver#tcx#def_key did
+          |> function
           | { data = Impl id; _ } ->
               let ty = resolver#tcx#ast_ty_to_ty impl.ty in
               resolver#tcx#link_impl id ty;

@@ -33,7 +33,8 @@ type cx = {
 }
 
 let rec backend_ty cx ty =
-  !ty |> function
+  !ty
+  |> function
   | Middle.Ty.Int intty ->
       (match intty with
        | I8 -> "int8_t"

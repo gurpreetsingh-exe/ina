@@ -20,3 +20,4 @@ cases-exp-indent = 4
 assignment-operator = end-line
 max-indent = 4
 break-infix = fit-or-vertical
+break-infix-before-func = true

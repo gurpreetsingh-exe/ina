@@ -43,41 +43,41 @@ let render_child ?(prefix = "") last item f =
 ;;
 
 let display_int_ty = function
-  | I8 -> "i8"
-  | I16 -> "i16"
-  | I32 -> "i32"
-  | I64 -> "i64"
-  | Isize -> "isize"
-  | U8 -> "u8"
-  | U16 -> "u16"
-  | U32 -> "u32"
-  | U64 -> "u64"
-  | Usize -> "usize"
+  | Pty_i8 -> "i8"
+  | Pty_i16 -> "i16"
+  | Pty_i32 -> "i32"
+  | Pty_i64 -> "i64"
+  | Pty_isize -> "isize"
+  | Pty_u8 -> "u8"
+  | Pty_u16 -> "u16"
+  | Pty_u32 -> "u32"
+  | Pty_u64 -> "u64"
+  | Pty_usize -> "usize"
 ;;
 
-let display_float_ty = function F32 -> "f32" | F64 -> "f64"
+let display_float_ty = function Pty_f32 -> "f32" | Pty_f64 -> "f64"
 let render_path path = path.segments#join "::" (fun seg -> seg.ident)
 let mut = function Mut -> "mut " | Imm -> ""
 
 let rec render_ty (ty : ty) =
   match ty.kind with
-  | Int ty -> display_int_ty ty
-  | Float ty -> display_float_ty ty
-  | Bool -> "bool"
-  | Str -> "str"
-  | Ptr (m, ty) -> sprintf "*%s%s" (mut m) (render_ty ty)
-  | Ref (m, ty) -> sprintf "&%s%s" (mut m) (render_ty ty)
-  | Slice ty -> sprintf "[%s]" (render_ty ty)
-  | Unit -> "()"
-  | FnPtr (ty_list, ret_ty, _) ->
+  | Pty_int ty -> display_int_ty ty
+  | Pty_float ty -> display_float_ty ty
+  | Pty_bool -> "bool"
+  | Pty_str -> "str"
+  | Pty_ptr (m, ty) -> sprintf "*%s%s" (mut m) (render_ty ty)
+  | Pty_ref (m, ty) -> sprintf "&%s%s" (mut m) (render_ty ty)
+  | Pty_slice ty -> sprintf "[%s]" (render_ty ty)
+  | Pty_unit -> "()"
+  | Pty_fnptr (ty_list, ret_ty, _) ->
       sprintf
         "fn(%s) -> %s"
         (ty_list#join ", " (fun ty -> render_ty ty))
         (render_ty ret_ty)
-  | Path path -> render_path path
-  | ImplicitSelf -> "self"
-  | CVarArgs -> "..."
-  | Err -> "error"
+  | Pty_path path -> render_path path
+  | Pty_implicitself -> "self"
+  | Pty_cvarargs -> "..."
+  | Pty_err -> "error"
 
 and render_fn_sig fnsig =
   let nargs = fnsig.args#len in
@@ -85,7 +85,7 @@ and render_fn_sig fnsig =
     let last = i = nargs - 1 in
     let arg =
       match ty.kind with
-      | CVarArgs -> "..."
+      | Pty_cvarargs -> "..."
       | _ when name = "self" -> render_ty ty
       | _ -> sprintf "%s: %s" name (render_ty ty)
     in

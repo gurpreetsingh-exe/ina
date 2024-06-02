@@ -71,9 +71,8 @@ let () =
             match mdl'.mkind with
             | Def (_, _, name) when mdl.mod_name <> name ->
                 let mdl =
-                  (Array.of_seq mdl'.resolutions#values).(0) |> function
-                  | Module m -> m
-                  | _ -> assert false
+                  (Array.of_seq mdl'.resolutions#values).(0)
+                  |> function Module m -> m | _ -> assert false
                 in
                 mdl
             | _ -> mdl'

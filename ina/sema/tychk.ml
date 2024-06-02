@@ -263,7 +263,7 @@ let tychk_fn cx fn =
   cx.generics <-
     (Generics.to_subst (tcx#generics_of did) tcx)#inner
     |> Array.map (function Middle.Ty.Ty ty ->
-           !ty |> ( function Param p -> p | _ -> assert false ));
+           !ty |> (function Param p -> p | _ -> assert false));
   let holes = Hashtbl.create 0 in
   let define id ty =
     let did = local_def_id id in
@@ -551,7 +551,8 @@ let tychk_fn cx fn =
           infer_generic_args ty tcx#fn span
       | None -> tcx#fn_ptr args ty false Default
   and check_path path =
-    tcx#res_map#unsafe_get path.path_id |> function
+    tcx#res_map#unsafe_get path.path_id
+    |> function
     | Def (id, (Adt | Struct)) ->
         let ty = tcx#get_def id in
         let last = Option.get path.segments#last in
@@ -579,7 +580,8 @@ let tychk_fn cx fn =
              let last = path.segments#get (-1) in
              let second_last = path.segments#get (-2) in
              let adtty =
-               tcx#res_map#unsafe_get second_last.id |> function
+               tcx#res_map#unsafe_get second_last.id
+               |> function
                | Def (id, Adt) ->
                    let ty = tcx#get_def id in
                    let ty =
@@ -609,7 +611,8 @@ let tychk_fn cx fn =
         let last = Option.get path.segments#last in
         let second_last = path.segments#get (-2) in
         let adtty =
-          tcx#res_map#unsafe_get second_last.id |> function
+          tcx#res_map#unsafe_get second_last.id
+          |> function
           | Def (id, (Struct | Adt)) ->
               let ty = tcx#get_def id in
               let ty =
@@ -968,17 +971,16 @@ let tychk_fn cx fn =
                     (fun (Field { name; ty }) ->
                       if name = ident then Some ty else None)
                     variant.fields
-                  |> ( function
+                  |> (function
                   | Some ty -> ty
                   | None ->
                       let name =
-                        (tcx#def_key variant.def_id).data |> function
-                        | TypeNs name -> name
-                        | _ -> assert false
+                        (tcx#def_key variant.def_id).data
+                        |> function TypeNs name -> name | _ -> assert false
                       in
                       let err = UnknownField (name, ident) in
                       ty_err_emit tcx err expr.expr_span;
-                      tcx#types.err )
+                      tcx#types.err)
               | None ->
                   Diagnostic.create
                     "invalid field access on primitive type"

@@ -35,7 +35,8 @@ let rec lower (lcx : Context.lcx) mdl =
          let bb = lcx#entry_block in
          lcx#builder_at_end bb;
          fn.fn_sig.args#iteri (fun i { arg_id; _ } ->
-             args#get i |> function
+             args#get i
+             |> function
              | Param (ty, _, _) as inst ->
                  let ptr = lcx#bx#alloca ty (Source.Span.make 0 0) in
                  assert (lcx#locals#insert arg_id ptr = None);

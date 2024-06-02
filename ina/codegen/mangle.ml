@@ -26,7 +26,8 @@ let rec mangle_ty (tcx : tcx) ty =
       in
       String.concat "_" segments ^ args
   | Int i ->
-      i |> ( function
+      i
+      |> (function
       | I8 -> "a"
       | I16 -> "b"
       | I32 -> "c"
@@ -36,7 +37,7 @@ let rec mangle_ty (tcx : tcx) ty =
       | U16 -> "B"
       | U32 -> "C"
       | U64 -> "D"
-      | Usize -> "E" )
+      | Usize -> "E")
   | Float F32 -> "f"
   | Float F64 -> "F"
   | Bool -> "g"

@@ -8,9 +8,8 @@ let trace () =
   | Some slots ->
       Array.iter
         (fun slot ->
-          Printexc.Slot.format 0 slot |> function
-          | Some fmt -> printf "  %s\n" fmt
-          | _ -> ())
+          Printexc.Slot.format 0 slot
+          |> function Some fmt -> printf "  %s\n" fmt | _ -> ())
         slots
   | None -> ()
 ;;

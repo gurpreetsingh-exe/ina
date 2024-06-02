@@ -1,3 +1,4 @@
+open Ast
 open Ty
 open Session
 open Structures.Vec
@@ -517,9 +518,9 @@ class tcx sess =
           prim_ty_assoc_fn#get ty
           |> Option.map (fun map -> map#get name)
           |> Option.join
-          |> ( function
+          |> (function
           | Some did -> Some (did, false)
-          | None -> slice_assoc_fn#get name |> Option.map (fun a -> a, true) )
+          | None -> slice_assoc_fn#get name |> Option.map (fun a -> a, true))
       | Err -> None
       | _ ->
           prim_ty_assoc_fn#get ty
@@ -559,8 +560,8 @@ class tcx sess =
 
     method ast_ty_to_res (ty : Ast.ty) =
       match ty.kind with
-      | Path path -> Some (res_map#unsafe_get path.path_id)
-      | Err -> None
+      | Pty_path path -> Some (res_map#unsafe_get path.path_id)
+      | Pty_err -> None
       | _ -> Some (Ty (self#ast_ty_to_ty ty))
 
     method invalidate old_ty new_ty =
@@ -778,37 +779,37 @@ class tcx sess =
 
     method float_ty_to_ty = function F32 -> _types.f32 | F64 -> _types.f64
 
-    method ast_int_ty_to_ty : Ast.int_ty -> ty ref =
+    method ast_int_ty_to_ty =
       function
-      | I8 -> _types.i8
-      | I16 -> _types.i16
-      | I32 -> _types.i32
-      | I64 -> _types.i64
-      | Isize -> _types.isize
-      | U8 -> _types.u8
-      | U16 -> _types.u16
-      | U32 -> _types.u32
-      | U64 -> _types.u64
-      | Usize -> _types.usize
+      | Pty_i8 -> _types.i8
+      | Pty_i16 -> _types.i16
+      | Pty_i32 -> _types.i32
+      | Pty_i64 -> _types.i64
+      | Pty_isize -> _types.isize
+      | Pty_u8 -> _types.u8
+      | Pty_u16 -> _types.u16
+      | Pty_u32 -> _types.u32
+      | Pty_u64 -> _types.u64
+      | Pty_usize -> _types.usize
 
-    method ast_float_ty_to_ty : Ast.float_ty -> ty ref =
-      function F32 -> _types.f32 | F64 -> _types.f64
+    method ast_float_ty_to_ty =
+      function Pty_f32 -> _types.f32 | Pty_f64 -> _types.f64
 
     method ast_mut_to_mut = function Ast.Mut -> Mut | Imm -> Imm
 
-    method ast_ty_to_ty (ty : Ast.ty) : ty ref =
+    method ast_ty_to_ty ty =
       match ty.kind with
-      | Int i -> self#ast_int_ty_to_ty i
-      | Float f -> self#ast_float_ty_to_ty f
-      | Ptr (m, ty) ->
+      | Pty_int i -> self#ast_int_ty_to_ty i
+      | Pty_float f -> self#ast_float_ty_to_ty f
+      | Pty_ptr (m, ty) ->
           self#ptr (self#ast_mut_to_mut m) (self#ast_ty_to_ty ty)
-      | Ref (m, ty) ->
+      | Pty_ref (m, ty) ->
           self#ref (self#ast_mut_to_mut m) (self#ast_ty_to_ty ty)
-      | Slice ty -> self#slice (self#ast_ty_to_ty ty)
-      | Str -> _types.str
-      | Bool -> _types.bool
-      | Unit -> _types.unit
-      | FnPtr (args, ret, is_variadic) ->
+      | Pty_slice ty -> self#slice (self#ast_ty_to_ty ty)
+      | Pty_str -> _types.str
+      | Pty_bool -> _types.bool
+      | Pty_unit -> _types.unit
+      | Pty_fnptr (args, ret, is_variadic) ->
           self#intern
             (FnPtr
                {
@@ -817,8 +818,8 @@ class tcx sess =
                ; is_variadic
                ; abi = Default
                })
-      | Err -> assert false
-      | Path path ->
+      | Pty_err -> assert false
+      | Pty_path path ->
           let args = (path.segments#last |> Option.get).args in
           let subst =
             match args with
@@ -828,7 +829,8 @@ class tcx sess =
             | None -> new vec
           in
           let res = res_map#unsafe_get path.path_id in
-          res |> ( function
+          res
+          |> (function
           | Def (def_id, (Struct | Adt)) ->
               let generics = self#generics_of def_id in
               let substorig = Generics.to_subst generics self in
@@ -846,17 +848,18 @@ class tcx sess =
                 |> self#emit;
               self#adt def_id (Subst subst)
           | Def (def_id, TyParam) -> self#ty_param_from_def_id def_id
-          | _ -> assert false )
-      | ImplicitSelf ->
+          | _ -> assert false)
+      | Pty_implicitself ->
           let res = res_map#unsafe_get ty.ty_id in
-          res |> ( function
+          res
+          |> (function
           | Def (def_id, _) ->
               let generics = self#generics_of def_id in
               let subst = Generics.to_subst generics self in
               self#adt def_id (Subst subst)
           | Ty ty -> ty
-          | _ -> assert false )
-      | CVarArgs -> assert false
+          | _ -> assert false)
+      | Pty_cvarargs -> assert false
 
     method inner_ty ty : ty ref option =
       match !ty with
@@ -874,9 +877,10 @@ class tcx sess =
            segments#push "r";
            segments#append (self#render_ty_segments ty)
        | Adt (def_id, _) ->
-           self#def_key def_id |> ( function
+           self#def_key def_id
+           |> (function
            | { data = TypeNs name; _ } -> segments#push name
-           | _ -> assert false )
+           | _ -> assert false)
        | Err -> assert false
        | _ -> segments#push (render_ty ty));
       segments
@@ -910,18 +914,18 @@ class tcx sess =
           let ret = SubstFolder.fold_ty self ret subst in
           sprintf
             "%sfn%s(%s) -> %s"
-            (abi |> function
-             | Default -> ""
-             | Intrinsic -> "\"intrinsic\" "
-             | C -> "\"C\" ")
+            (abi
+             |> function
+             | Default -> "" | Intrinsic -> "\"intrinsic\" " | C -> "\"C\" "
+            )
             (self#render_subst subst)
             (args#join ", " (fun ty -> self#render_ty ty)
              ^ if is_variadic then ", ..." else String.empty)
             (self#render_ty ret)
       | Adt (def_id, Subst subst) ->
-          (self#def_key def_id).data |> ( function
-          | TypeNs name -> name ^ self#render_subst subst
-          | _ -> assert false )
+          (self#def_key def_id).data
+          |> (function
+          | TypeNs name -> name ^ self#render_subst subst | _ -> assert false)
       | Tuple tys ->
           sprintf "(%s,)" (tys#join ", " (fun ty -> self#render_ty ty))
       | Param { name; _ } -> name

@@ -249,10 +249,9 @@ module Fn = struct
   let render tcx { args; ret; is_variadic; abi } =
     sprintf
       "%sfn(%s) -> %s"
-      (abi |> function
-       | Default -> ""
-       | Intrinsic -> "\"intrinsic\" "
-       | C -> "\"C\" ")
+      (abi
+       |> function
+       | Default -> "" | Intrinsic -> "\"intrinsic\" " | C -> "\"C\" ")
       (args#join ", " (fun ty -> tcx#render_ty ty)
        ^ if is_variadic then ", ..." else String.empty)
       (tcx#render_ty ret)
@@ -484,10 +483,9 @@ let rec render_ty2 ty =
   | FnPtr { args; ret; is_variadic; abi } ->
       sprintf
         "%sfn(%s) -> %s"
-        (abi |> function
-         | Default -> ""
-         | Intrinsic -> "\"intrinsic\" "
-         | C -> "\"C\" ")
+        (abi
+         |> function
+         | Default -> "" | Intrinsic -> "\"intrinsic\" " | C -> "\"C\" ")
         (args#join ", " (fun ty -> render_ty2 ty)
          ^ if is_variadic then ", ..." else String.empty)
         (render_ty2 ret)

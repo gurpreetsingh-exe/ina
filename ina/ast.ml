@@ -6,35 +6,35 @@ type node_id = int
 type ident = string
 
 type int_ty =
-  | I8
-  | I16
-  | I32
-  | I64
-  | Isize
-  | U8
-  | U16
-  | U32
-  | U64
-  | Usize
+  | Pty_i8
+  | Pty_i16
+  | Pty_i32
+  | Pty_i64
+  | Pty_isize
+  | Pty_u8
+  | Pty_u16
+  | Pty_u32
+  | Pty_u64
+  | Pty_usize
 
 type float_ty =
-  | F64
-  | F32
+  | Pty_f64
+  | Pty_f32
 
 type ty_kind =
-  | Int of int_ty
-  | Float of float_ty
-  | Bool
-  | Str
-  | Ptr of (mutability * ty)
-  | Ref of (mutability * ty)
-  | Slice of ty
-  | FnPtr of ty vec * ty * bool
-  | Path of path
-  | ImplicitSelf
-  | Unit
-  | CVarArgs
-  | Err
+  | Pty_int of int_ty
+  | Pty_float of float_ty
+  | Pty_bool
+  | Pty_str
+  | Pty_ptr of (mutability * ty)
+  | Pty_ref of (mutability * ty)
+  | Pty_slice of ty
+  | Pty_fnptr of ty vec * ty * bool
+  | Pty_path of path
+  | Pty_implicitself
+  | Pty_unit
+  | Pty_cvarargs
+  | Pty_err
 
 and mutability =
   | Mut
@@ -60,7 +60,7 @@ and ty = {
 }
 
 let mk_ty kind span ty_id = { kind; span; ty_id }
-let is_self ty = match ty.kind with ImplicitSelf -> true | _ -> false
+let is_self ty = match ty.kind with Pty_implicitself -> true | _ -> false
 
 type attr = {
     kind: attr_kind
