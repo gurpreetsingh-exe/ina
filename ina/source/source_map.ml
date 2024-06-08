@@ -3,15 +3,42 @@ open Structures.Vec
 
 type file_id = SourceFileId of int
 
+module Array = struct
+  include Array
+
+  let partition_point f arr =
+    let left = ref 0 in
+    let size = ref @@ Array.length arr in
+    let right = ref @@ Array.length arr in
+    while !left < !right do
+      let half = !size / 2 in
+      let middle = !left + half in
+      if f arr.(middle) then left := middle + 1 else right := middle;
+      size := !right - !left
+    done;
+    !left
+  ;;
+end
+
 class file (name : string) (src : string) =
   let get_lines =
-    let lines = new vec in
+    let line_len = ref 0 in
+    let lines = ref @@ Array.make 8 0 in
     let i = ref 0 in
-    while !i < String.length src do
-      (match src.[!i] with '\n' -> lines#push (!i + 1) | _ -> ());
+    let len = String.length src in
+    while !i < len do
+      if src.[!i] = '\n'
+      then (
+        if !line_len >= Array.length !lines
+        then (
+          let tmp = !lines in
+          lines := Array.make (!line_len * 2) 0;
+          Array.blit tmp 0 !lines 0 !line_len);
+        Array.unsafe_set !lines !line_len (!i + 1);
+        incr line_len);
       incr i
     done;
-    lines
+    Array.sub !lines 0 !line_len
   in
   object (self)
     val name = name
@@ -29,17 +56,17 @@ class file (name : string) (src : string) =
       let s, e =
         if line = 0
         then
-          let e = lines#get line in
+          let e = lines.(line) in
           0, e
         else
-          let s = lines#get (line - 1) in
-          let e = lines#get line in
+          let s = lines.(line - 1) in
+          let e = lines.(line) in
           s, e
       in
       String.sub src s (e - s - 1)
 
     method lookup_line pos =
-      match lines#partition_point (fun x -> x <= pos) with
+      match Array.partition_point (fun x -> x <= pos) lines with
       | 0 -> None
       | x -> Some (x - 1)
 
@@ -47,7 +74,7 @@ class file (name : string) (src : string) =
       let pos = self#relative_pos pos in
       match self#lookup_line pos with
       | Some l ->
-          let linepos = lines#get l in
+          let linepos = lines.(l) in
           l + 1, pos - linepos
       | None -> 0, pos
   end

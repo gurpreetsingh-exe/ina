@@ -366,21 +366,21 @@ class tcx sess =
       | Some ty -> ty
       | None ->
           let rty = ref ty in
-          dbg "intern(type = %s)\n" @@ render_ty2 rty;
+          [%dbg "intern(type = %s)\n", render_ty2 rty];
           ignore (TypeMap.add types ty rty);
           rty
 
     method define parent id data =
       assert (data <> ModRoot);
-      dbg
+      [%dbg
         "define(parent = %s, id = %s, def_data = %s)\n"
-        (print_def_id parent)
-        (print_def_id id)
-        (DefKey.print_def_data data);
+        , print_def_id parent
+        , print_def_id id
+        , DefKey.print_def_data data];
       let key = DefKey.{ parent = Some parent; data } in
       (match definitions#insert id key with
        | Some key' ->
-           dbg "%s = %s\n" (DefKey.display key') (DefKey.display key);
+           [%dbg "%s = %s\n", DefKey.display key', DefKey.display key];
            assert (key' = key)
        | None -> ());
       id
@@ -455,11 +455,11 @@ class tcx sess =
     method create_def id ty =
       match def_id_to_ty#insert id ty with
       | Some ty' ->
-          dbg
+          [%dbg
             "create_def(did = %s, ty = %s)\n  overriding %s\n"
-            (print_def_id id)
-            (self#render_ty ty)
-            (self#render_ty ty')
+            , print_def_id id
+            , self#render_ty ty
+            , self#render_ty ty']
       | None -> ()
 
     method define_local id ty = ignore @@ locals#insert id ty
@@ -568,17 +568,18 @@ class tcx sess =
       let ty = self#intern old_ty in
       if ty <> new_ty
       then (
-        dbg
+        [%dbg
           "invalidate(old = %s, new = %s)\n"
-          (render_ty2 ty)
-          (render_ty2 new_ty);
+          , render_ty2 ty
+          , render_ty2 new_ty];
         ty := !new_ty)
 
     method emit err = Sess.emit_err sess.parse_sess err
     method has_errors = sess.parse_sess.span_diagnostic#err_count > 0
 
     method insert_span id span =
-      dbg "tcx.insert_span(id = %d, span = %s)\n" id (Span.display_span span);
+      [%dbg
+        "tcx.insert_span(id = %d, span = %s)\n", id, Span.display_span span];
       assert (spans#insert id span = None)
 
     method ptr mut ty = self#intern (Ptr (mut, ty))

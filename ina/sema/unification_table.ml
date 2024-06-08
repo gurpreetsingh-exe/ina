@@ -60,8 +60,8 @@ module Unification_table (K : UnifyKey) = struct
     let key = K.from_index len in
     let v = VarValue.create key value in
     ut.values <- Array.append ut.values [|v|];
-    dbg "%s: created new key: %s\n%!" (K.tag ()) (K.display_key key);
-    dbg "  %s\n%!" (VarValue.display v);
+    [%dbg "%s: created new key: %s\n%!", K.tag (), K.display_key key];
+    [%dbg "  %s\n%!", VarValue.display v];
     key
   ;;
 
@@ -83,10 +83,10 @@ module Unification_table (K : UnifyKey) = struct
   let update_value ut key f =
     let v = value ut key in
     f v;
-    dbg
+    [%dbg
       "updated variable %s to %s\n%!"
-      (K.display_key key)
-      (VarValue.display (value ut key))
+      , K.display_key key
+      , VarValue.display (value ut key)]
   ;;
 
   let redirect_root ut new_rank old_root_key new_root_key new_value =
@@ -96,11 +96,11 @@ module Unification_table (K : UnifyKey) = struct
   ;;
 
   let unify_roots ut key0 key1 new_value =
-    dbg
+    [%dbg
       "unify_roots(key0 = %s, key1 = %s, value = %s)\n%!"
-      (K.display_key key0)
-      (K.display_key key1)
-      (K.display_value new_value);
+      , K.display_key key0
+      , K.display_key key1
+      , K.display_value new_value];
     let rank0 = (value ut key0).rank in
     let rank1 = (value ut key1).rank in
     match
@@ -124,10 +124,10 @@ module Unification_table (K : UnifyKey) = struct
   ;;
 
   let unify_var_var ut t0 t1 =
-    dbg
+    [%dbg
       "unify_var_var(key0 = %s, key1 = %s)\n%!"
-      (K.display_key t0)
-      (K.display_key t1);
+      , K.display_key t0
+      , K.display_key t1];
     let root_t0 = find ut t0 in
     let root_t1 = find ut t1 in
     if root_t0 = root_t1
@@ -140,10 +140,10 @@ module Unification_table (K : UnifyKey) = struct
   ;;
 
   let unify_var_value ut t0 v =
-    dbg
+    [%dbg
       "unify_var_value(key = %s, value = %s)\n%!"
-      (K.display_key t0)
-      (K.display_value v);
+      , K.display_key t0
+      , K.display_value v];
     let root_t0 = find ut t0 in
     let* value = K.unify_values (value ut root_t0).value v in
     update_value ut root_t0 (fun k -> k.value <- value);

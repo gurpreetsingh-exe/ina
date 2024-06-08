@@ -275,7 +275,7 @@ let tychk_fn cx fn =
     | ExpectTy ty -> Some (Infer.resolve_vars cx.infcx ty)
   in
   let write_ty id ty =
-    dbg "write_ty(id = %d, ty = %s)\n" id (tcx#render_ty ty);
+    [%dbg "write_ty(id = %d, ty = %s)\n", id, tcx#render_ty ty];
     tcx#create_def (local_def_id id) ty
   in
   let int_unification_error (v : IntVid.e) =

@@ -34,6 +34,12 @@ let expand ~ctxt args =
   eapply fn args ~loc
 ;;
 
+let expand ~ctxt _ =
+  let open Ast_builder.Default in
+  let loc = Expansion_context.Extension.extension_point_loc ctxt in
+  eunit ~loc
+;;
+
 let ext =
   let e = Ast_pattern.pexp_tuple Ast_pattern.__ in
   Extension.V3.declare

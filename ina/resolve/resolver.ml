@@ -363,7 +363,7 @@ class resolver tcx modd =
     method get_root_mod mdl : Module.t =
       match mdl.mkind with
       | Def (kind, _, _) ->
-          dbg "get_root_mod(module = %s)\n" (Module.print_mkind mdl.mkind);
+          [%dbg "get_root_mod(module = %s)\n", Module.print_mkind mdl.mkind];
           assert (kind = Mod);
           mdl
       | Block ->
@@ -372,10 +372,10 @@ class resolver tcx modd =
            | _ -> assert false)
 
     method resolve_path_in_imports mdl (segments : path_segment vec) : res =
-      dbg
+      [%dbg
         "resolve_path_in_imports(module = %s, path = %s)\n%!"
-        (print_mkind mdl.mkind)
-        (segments#join "::" (fun seg -> seg.ident));
+        , print_mkind mdl.mkind
+        , segments#join "::" (fun seg -> seg.ident)];
       let len = mdl.imports#len in
       let rec f i : res =
         if i >= len
@@ -416,12 +416,12 @@ class resolver tcx modd =
     method resolve_ident_in_lexical_scope mdl (segment : path_segment) ns =
       let ident = segment.ident in
       let key = { ident; ns; disambiguator = 0 } in
-      dbg
+      [%dbg
         "resolve_ident_in_lexical_scope(module = %s, ident = %s, ns = %s)\n\
          %!"
-        (print_mkind mdl.mkind)
-        ident
-        (render_ns ns);
+        , print_mkind mdl.mkind
+        , ident
+        , render_ns ns];
       let res =
         match mdl.resolutions#get key with
         | Some r ->
@@ -451,21 +451,21 @@ class resolver tcx modd =
       res
 
     method resolve_path_in_modul mdl (segs : path_segment vec) ns : res =
-      dbg
+      [%dbg
         "resolve_path_in_module(module = %s, path = %s, ns = %s)\n%!"
-        (print_mkind mdl.mkind)
-        (segs#join "::" (fun seg -> seg.ident))
-        (render_ns ns);
+        , print_mkind mdl.mkind
+        , segs#join "::" (fun seg -> seg.ident)
+        , render_ns ns];
       let segs_len = segs#len in
       let mod_in_path_report = ref false in
       let rec f i mdl : res =
         let ns = if i = segs_len - 1 then ns else Type in
         let seg = segs#get i in
-        dbg
+        [%dbg
           "  #%d: resolve_segment(module = %s, segment = %s)\n%!"
-          i
-          (print_mkind mdl.mkind)
-          seg.ident;
+          , i
+          , print_mkind mdl.mkind
+          , seg.ident];
         let res =
           if i <> 0 && seg.ident = "mod" && not !mod_in_path_report
           then (Err : res)
@@ -515,11 +515,11 @@ class resolver tcx modd =
       let segs = path.segments in
       let segs_len = segs#len in
       let ns = Option.value ~default:Type ns in
-      dbg
+      [%dbg
         "resolve_path(module = %s, path = %s, ns = %s)\n%!"
-        (print_mkind mdl.mkind)
-        (segs#join "::" (fun seg -> seg.ident))
-        (render_ns ns);
+        , print_mkind mdl.mkind
+        , segs#join "::" (fun seg -> seg.ident)
+        , render_ns ns];
       let res : res =
         match ns, segs_len, (segs#get 0).ident with
         | Value, 1, "mod" -> Err
@@ -557,7 +557,7 @@ class resolver tcx modd =
             let res = self#resolve_path_in_modul mdl' segs ns in
             if res = Err then self#resolve_path_in_imports mdl segs else res
       in
-      dbg " := %s\n%!" (print_res res);
+      [%dbg " := %s\n%!", print_res res];
       res
 
     method resolve_path_extern mdl path ns =
@@ -602,7 +602,7 @@ class resolver tcx modd =
       |> tcx#emit
 
     method resolve_paths (mdl : Module.t) (modd : modd) : unit =
-      dbg "resolve_paths(module = %s)\n" (print_mkind mdl.mkind);
+      [%dbg "resolve_paths(module = %s)\n", print_mkind mdl.mkind];
       let rec resolve_ty (ty : Ast.ty) =
         match ty.kind with
         | Pty_fnptr (args, ty, _) ->
@@ -642,7 +642,7 @@ class resolver tcx modd =
           | res -> res
         in
         path.segments#iter visit_segment;
-        dbg "res_map { %d -> %s }\n" path.path_id (print_res resolved);
+        [%dbg "res_map { %d -> %s }\n", path.path_id, print_res resolved];
         assert (tcx#res_map#insert path.path_id resolved = None)
       and visit_expr expr (mdl : Module.t) =
         match expr.expr_kind with

@@ -14,4 +14,4 @@
     "-unused-var-strict")))
  (release
   (ocamlopt_flags
-   (:standard -O3 -unsafe -inline 100))))
+   (:standard -O2 -unsafe -linscan -inline 100))))

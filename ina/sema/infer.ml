@@ -129,27 +129,27 @@ let fold_infer_ty infcx v =
       IntUt.probe_value infcx.int_ut tyvid
       |> Option.map (fun v ->
              let ty = infcx.tcx#int_ty_to_ty v in
-             dbg
+             [%dbg
                "fold_infer_ty(%s) = %s\n"
-               (display_intvid tyvid)
-               (infcx.tcx#render_ty ty);
+               , display_intvid tyvid
+               , infcx.tcx#render_ty ty];
              ty)
   | FloatVar tyvid ->
       FloatUt.probe_value infcx.float_ut tyvid
       |> Option.map (fun v ->
              let ty = infcx.tcx#float_ty_to_ty v in
-             dbg
+             [%dbg
                "fold_infer_ty(%s) = %s\n"
-               (display_floatvid tyvid)
-               (infcx.tcx#render_ty ty);
+               , display_floatvid tyvid
+               , infcx.tcx#render_ty ty];
              ty)
   | TyVar tyvid ->
       TyUt.probe_value infcx.ty_ut tyvid
       |> Option.map (fun ty ->
-             dbg
+             [%dbg
                "fold_infer_ty(%s) = %s\n"
-               (display_tyvid tyvid)
-               (infcx.tcx#render_ty ty);
+               , display_tyvid tyvid
+               , infcx.tcx#render_ty ty];
              ty)
 ;;
 

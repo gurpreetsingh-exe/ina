@@ -29,7 +29,7 @@ class lcx tcx =
     method with_block bb f =
       let tmp = builder in
       builder <- new Builder.builder tcx (Option.get fn).basic_blocks bb;
-      f ();
+      let () = f () in
       builder <- tmp
 
     method locals = locals

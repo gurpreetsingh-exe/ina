@@ -30,10 +30,10 @@ let keywords =
   |> Hashtbl.of_seq
 ;;
 
-let next lx = { lx with i = lx.i + 1 } [@@inline]
-let check lx = lx.i < lx.size - 1 [@@inline]
-let chr ?(n = 0) lx = lx.src.[lx.i + n] [@@inline]
-let peek lx = if check lx then Some lx.src.[lx.i + 1] else None [@@inline]
+let next lx = { lx with i = lx.i + 1 }
+let check lx = lx.i < lx.size - 1
+let chr ?(n = 0) lx = lx.src.[lx.i + n]
+let peek lx = if check lx then Some lx.src.[lx.i + 1] else None
 
 let maybe_multichar = function
   | '=' | '!' | '|' | '&' | '-' | ':' | '.' | '/' -> true
