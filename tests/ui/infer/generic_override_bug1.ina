@@ -1,0 +1,11 @@
+// COMPILE_FAIL
+
+extern mod core;
+using core::prelude::*;
+
+fn main() {
+    let a = match Some![i64](20) {
+        Some(v) => v,
+        None => {},
+    };
+}

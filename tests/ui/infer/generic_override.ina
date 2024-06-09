@@ -1,0 +1,17 @@
+// COMPILE_PASS
+
+extern mod core;
+using core::prelude::*;
+
+fn main() {
+    // since this is the first time when we allocate a constructor function
+    // the parameter [i64] would fold the function `fn[T](T) -> Option[T]` into
+    // `fn[i64](i64) -> Option[i64]`, and that gets saved into tcx.
+    // so any other uses of `Some` would result in use of this function and
+    // result into expected `i64` found `??` errors.
+    let _ = Some![i64](20);
+
+    // in bug version; `Some` evaluates to fn[i64](i64) -> Option[i64]
+    // and would result in a type error.
+    let _ = Some(50.);
+}

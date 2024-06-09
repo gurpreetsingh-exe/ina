@@ -565,6 +565,13 @@ let tychk_fn cx fn =
         let key = tcx#def_key id in
         let parenid = Option.get key.parent in
         let adtty = tcx#get_def parenid in
+        (if not fargs#empty
+         then
+           (* cache a generic function first
+              more info in `tests/ui/infer/generic_override.ina` *)
+           let subst = Subst (tcx#get_subst adtty |> Option.get) in
+           let _ = tcx#fn_with_sig ~subst id fargs adtty false Default in
+           ());
         (match path.segments#len with
          | 0 -> assert false
          | 1 ->

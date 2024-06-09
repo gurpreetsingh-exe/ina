@@ -1,0 +1,8 @@
+error: mismatch types
+   ╭─[tests/ui/infer/generic_override_bug1.ina:9:17]
+   │
+ 9 │         None => {},
+   │                 ╶╮
+   │                  ╰── expected `i64`, found `()`
+   ∙
+───╯
