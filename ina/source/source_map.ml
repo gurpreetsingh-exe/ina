@@ -82,7 +82,7 @@ class file (name : string) (src : string) =
 class source_map =
   object (self)
     val source_files : file vec = new vec
-    val file_id_to_file : (file_id, file) Hashtbl.t = Hashtbl.create 0
+    val file_id_to_file_index : (file_id, int) Hashtbl.t = Hashtbl.create 0
 
     method add_file name src =
       let fileid = SourceFileId (Hashtbl.hash name) in
@@ -96,9 +96,23 @@ class source_map =
             | None -> 0
           in
           file#set_start_pos pos;
+          let index = source_files#len in
           source_files#push file;
-          Hashtbl.add file_id_to_file fileid file;
+          Hashtbl.add file_id_to_file_index fileid index;
           file
+
+    method replace_file name src =
+      let fileid = SourceFileId (Hashtbl.hash name) in
+      match self#file_index_from_id fileid with
+      | Some idx ->
+          let file = new file name src in
+          let pos =
+            if idx = 0 then 0 else (source_files#get (idx - 1))#end_pos + 1
+          in
+          file#set_start_pos pos;
+          source_files#set idx file;
+          file
+      | None -> self#add_file name src
 
     method load_file name =
       if String.length name = 0
@@ -132,7 +146,11 @@ class source_map =
     method lookup_file_index pos =
       source_files#partition_point (fun x -> x#start_pos <= pos) - 1
 
-    method file_from_id id = Hashtbl.find_opt file_id_to_file id
+    method file_index_from_id id = Hashtbl.find_opt file_id_to_file_index id
+
+    method file_from_id id =
+      Hashtbl.find_opt file_id_to_file_index id
+      |> Option.map (fun i -> source_files#get i)
 
     method lookup_file pos =
       let i = self#lookup_file_index pos in

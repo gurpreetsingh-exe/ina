@@ -635,7 +635,9 @@ let tychk_fn cx fn =
           | None -> ty
         in
         infer_generic_args ty tcx#fn path.span
-    | Local (_, id) -> tcx#get_local (local_def_id id) |> Option.get
+    | Local (_, id) ->
+        tcx#get_local (local_def_id id)
+        |> Option.value ~default:tcx#types.err
     | Err | Def (_, TyParam) -> tcx#types.err
     | _ ->
         print_endline @@ tcx#sess.parse_sess.sm#span_to_string path.span.lo;
@@ -1059,7 +1061,7 @@ let tychk_fn cx fn =
                  | Ok _ -> ()
                  | Error e -> ty_err_emit tcx e expr.expr_span)
             | None -> first := Some ty);
-        !first |> Option.get
+        !first |> Option.value ~default:tcx#types.unit
     | Slice exprs ->
         let ty =
           match exprs#len with

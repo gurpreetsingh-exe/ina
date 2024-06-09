@@ -9,7 +9,7 @@ let trace () =
       Array.iter
         (fun slot ->
           Printexc.Slot.format 0 slot
-          |> function Some fmt -> printf "  %s\n" fmt | _ -> ())
+          |> function Some fmt -> eprintf "  %s\n" fmt | _ -> ())
         slots
   | None -> ()
 ;;

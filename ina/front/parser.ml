@@ -90,7 +90,7 @@ let parse_spanned_with_sep
          | false -> Ok ())
   in
   let* _ = parse' () in
-  assert (parser#eat endd);
+  let (_ : bool) = parser#eat endd in
   Ok items
 ;;
 
@@ -147,7 +147,10 @@ class parser pcx file lx =
         Ok false)
       else if List.mem token.kind inedible
       then Ok false
-      else Error (self#err token.span "unexpected_token")
+      else (
+        self#bump;
+        let e = self#err (Option.get prev_token).span "unexpected_token" in
+        Error e)
 
     method expect kind =
       if expected_tokens#empty
@@ -286,12 +289,11 @@ class parser pcx file lx =
       let* _ = parse_outer_attrs_impl () in
       Ok attrs
 
-    method unexpected_token ?(line = __LINE__) kind : unit =
-      let msg =
-        sprintf "%d: unexpected token `%s`" line @@ display_token_kind kind
-      in
-      self#emit_err (self#err token.span msg);
-      exit 1
+    method unexpected_token kind =
+      let msg = sprintf "unexpected token `%s`" @@ display_token_kind kind in
+      self#bump;
+      let e = self#err (Option.get prev_token).span msg in
+      e
 
     method parse_mutability =
       match token.kind with
@@ -348,9 +350,7 @@ class parser pcx file lx =
           let* ty = self#parse_ty in
           let* _ = self#expect RBracket in
           Ok (mk_ty (Pty_slice ty) (self#mk_span s) self#id)
-      | t ->
-          self#unexpected_token t ~line:__LINE__;
-          exit 1
+      | t -> Error (self#unexpected_token t)
 
     method parse_fn_args =
       let i = ref 0 in
@@ -394,9 +394,7 @@ class parser pcx file lx =
               let* _ = self#expect Colon in
               let* ty = self#parse_ty in
               Ok { ty; arg; arg_id = self#id }
-        | t ->
-            self#unexpected_token t ~line:__LINE__;
-            exit 1
+        | t -> Error (self#unexpected_token t)
       in
       let parse_arg' () =
         if !var_arg
@@ -491,9 +489,7 @@ class parser pcx file lx =
         | Underscore ->
             self#bump;
             Ok PWild
-        | t ->
-            self#unexpected_token t ~line:__LINE__;
-            exit 1
+        | t -> Error (self#unexpected_token t)
       in
       self#eat_if_present Pipe;
       let rec go' () =
@@ -528,9 +524,7 @@ class parser pcx file lx =
           self#bump;
           let* ty = self#parse_ty in
           binding_create pat (Some ty)
-      | t ->
-          self#unexpected_token t ~line:__LINE__;
-          exit 1
+      | t -> Error (self#unexpected_token t)
 
     method parse_stmt =
       let* _ = self#parse_outer_attrs in
@@ -752,9 +746,7 @@ class parser pcx file lx =
                 ; span = self#mk_span s
                 ; id = self#id
                 }
-          | t ->
-              self#unexpected_token t ~line:__LINE__;
-              exit 1
+          | t -> Error (self#unexpected_token t)
         in
         segments#push segment;
         match token.kind, self#npeek 1 with
@@ -857,9 +849,7 @@ class parser pcx file lx =
                        let* _ = self#expect Dot in
                        let* field = self#parse_ident in
                        Ok (Field (!left, field))
-                   | t ->
-                       self#unexpected_token (List.hd t) ~line:__LINE__;
-                       exit 1)
+                   | t -> Error (self#unexpected_token (List.hd t)))
               | _ ->
                   let kind = binary_kind_from_token token.kind in
                   self#bump;
@@ -900,7 +890,7 @@ class parser pcx file lx =
       let last_expr = ref None in
       if self#eat LBrace
       then (
-        while token.kind <> RBrace do
+        while not (token.kind = RBrace || token.kind = Eof) do
           match token.kind with
           | RBrace -> ()
           | _ ->
@@ -954,7 +944,10 @@ class parser pcx file lx =
           if params#empty
           then
             self#emit_err
-              (self#err (self#mk_span s) "no generic parameters provided");
+              (self#err
+                 ((* TODO: this doesn't look right *)
+                  self#mk_span s)
+                 "no generic parameters provided");
           Ok { params; span = self#mk_span s; id = self#id }
       | _ -> Ok { params = new vec; span = self#mk_span s; id = self#id }
 
@@ -1079,9 +1072,7 @@ class parser pcx file lx =
             | Fn ->
                 let* fn = self#parse_fn "default" false in
                 Ok (AssocFn fn)
-            | t ->
-                self#unexpected_token ?line:(Some __LINE__) t;
-                exit 1
+            | t -> Error (self#unexpected_token t)
           in
           items#push item;
           Ok ()
@@ -1210,9 +1201,7 @@ class parser pcx file lx =
           self#bump;
           let* using = self#parse_using in
           Ok (Ast.Using using)
-      | t ->
-          self#unexpected_token t ~line:__LINE__;
-          exit 1
+      | t -> Error (self#unexpected_token t)
 
     method parse_mod =
       let s = token.span.lo in

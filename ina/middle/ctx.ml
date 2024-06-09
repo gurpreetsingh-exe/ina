@@ -254,6 +254,7 @@ class tcx sess =
     val locals : (def_id, ty ref) hashmap = new hashmap
     val decoders : decoder vec = new vec
     val decision_trees : (def_id, Decision.t) hashmap = new hashmap
+    val diagnostics : Errors.Diagnostic.t vec = new vec
     val mutable impl_id = 0
 
     val prim_ty_assoc_fn : (ty ref, (string, def_id) hashmap) hashmap =
@@ -309,6 +310,7 @@ class tcx sess =
     method extmods = extmods
     method extern_mods = extern_mods
     method append_extern_mod name = extern_mods#push name
+    method diagnostics = diagnostics
 
     method impl_id =
       let id = impl_id in
@@ -499,8 +501,8 @@ class tcx sess =
     method lookup_assoc_fn res name =
       match res with
       | Def (id, Struct) -> (assoc_fn#unsafe_get id)#get name
-      | Ty _ -> assert false
-      | Def _ | Local _ | Err -> assert false
+      | Err -> None
+      | Def _ | Local _ | Ty _ -> assert false
 
     method lookup_method ty name =
       match self#lookup_method_def_id ty name with
@@ -574,7 +576,10 @@ class tcx sess =
           , render_ty2 new_ty];
         ty := !new_ty)
 
-    method emit err = Sess.emit_err sess.parse_sess err
+    method emit err =
+      diagnostics#push err;
+      Sess.emit_err sess.parse_sess err
+
     method has_errors = sess.parse_sess.span_diagnostic#err_count > 0
 
     method insert_span id span =
@@ -819,7 +824,7 @@ class tcx sess =
                ; is_variadic
                ; abi = Default
                })
-      | Pty_err -> assert false
+      | Pty_err -> _types.err
       | Pty_path path ->
           let args = (path.segments#last |> Option.get).args in
           let subst =
@@ -849,7 +854,7 @@ class tcx sess =
                 |> self#emit;
               self#adt def_id (Subst subst)
           | Def (def_id, TyParam) -> self#ty_param_from_def_id def_id
-          | _ -> assert false)
+          | _ -> _types.err)
       | Pty_implicitself ->
           let res = res_map#unsafe_get ty.ty_id in
           res
