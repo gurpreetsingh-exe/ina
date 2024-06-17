@@ -500,7 +500,10 @@ class tcx sess =
 
     method lookup_assoc_fn res name =
       match res with
-      | Def (id, Struct) -> (assoc_fn#unsafe_get id)#get name
+      | Def (id, Struct) ->
+          assoc_fn#get id
+          |> Option.map (fun map -> map#get name)
+          |> Option.join
       | Err -> None
       | Def _ | Local _ | Ty _ -> assert false
 

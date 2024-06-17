@@ -205,7 +205,8 @@ let analyze (tcx : tcx) fn =
         let ty = tcx#get_def did in
         let decision = Exhaustiveness.go tcx ty arms expr.expr_span in
         tcx#record_decision_tree did decision;
-        arms#iter (fun { expr; _ } ->
+        arms#iter (fun { expr; pat; patspan; _ } ->
+            visit_pattern patspan pat;
             match visit_expr expr ~e:`Branch with
             | Ok () -> ()
             | Error (_, e) -> tcx#emit e);
@@ -218,6 +219,10 @@ let analyze (tcx : tcx) fn =
         let* _ = visit_expr idx ~e in
         Ok ()
     | Hole -> Ok ()
+  and visit_pattern span = function
+    | PIdent (_, _, id) -> Hashtbl.add locals !id span
+    | POr patns | PCons (_, patns) -> patns#iter @@ visit_pattern span
+    | PWild | PPath _ | PLit _ | PRange _ -> ()
   and visit_stmt ?(e = `None) = function
     | Assign (left, right) ->
         (match visit_expr left ~e:`Assign with
@@ -234,12 +239,7 @@ let analyze (tcx : tcx) fn =
     | Binding { binding_pat; binding_span; binding_expr; binding_id; _ } ->
         let* _ = visit_expr binding_expr in
         let ty = tcx#get_def (local_def_id binding_expr.expr_id) in
-        let rec go span = function
-          | PIdent (_, _, id) -> Hashtbl.add locals !id span
-          | POr patns | PCons (_, patns) -> patns#iter @@ go span
-          | PWild | PPath _ | PLit _ | PRange _ -> ()
-        in
-        go binding_span binding_pat;
+        visit_pattern binding_span binding_pat;
         let decision =
           Exhaustiveness.check_let tcx ty binding_pat binding_span
         in
