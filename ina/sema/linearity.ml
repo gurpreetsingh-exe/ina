@@ -76,6 +76,7 @@ let analyze (tcx : tcx) fn =
          | `Field -> check_path path (ty expr) ~move:false
          | `Method segment ->
              let ty = ty expr in
+             let ty = tcx#autoderef ty in
              let ty, _ = tcx#lookup_method ty segment.ident in
              let self = (Fn.args tcx ty)#get 0 in
              check_path path self
