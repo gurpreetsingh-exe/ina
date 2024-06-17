@@ -1,0 +1,3 @@
+using mod::intrinsics;
+
+fn offset[T](ptr: *T, offset: usize) -> *T { intrinsics::offset(ptr, offset) }

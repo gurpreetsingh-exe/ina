@@ -2,5 +2,6 @@ mod intrinsics;
 mod str;
 mod slice;
 mod mem;
+mod ptr;
 mod option;
 mod prelude;
