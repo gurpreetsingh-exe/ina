@@ -1,4 +1,4 @@
-[test]
+#[test]
 fn deref_if_else_expr() {
     let a: i32 = 34;
     assert (*(if a == 34 { &a } else { let c = 0; &c }) + 35) == 69;

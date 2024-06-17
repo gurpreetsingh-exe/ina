@@ -3,7 +3,7 @@ type Foo = {
     b: i32
 }
 
-[test]
+#[test]
 fn test() {
     let a = 34;
     let a = Foo { a: &a, b: 35 };

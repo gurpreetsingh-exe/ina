@@ -12,7 +12,7 @@ mod foo {
 
 fn f(a: i32) -> i32 { 6 }
 
-[test]
+#[test]
 fn anon_mod() {
     {};
     {};

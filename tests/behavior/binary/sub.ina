@@ -1,4 +1,4 @@
-[test]
+#[test]
 fn test() {
     let a = 256 - 1;
     assert a == 255;

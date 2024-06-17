@@ -11,7 +11,7 @@ fn f(a: fn(*T, *i8) -> i32, b: *i8) -> i32 {
 
 fn h() {}
 
-[test]
+#[test]
 fn test() {
     assert f(g, h as *i8) == 69;
 }

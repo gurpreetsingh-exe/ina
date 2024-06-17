@@ -8,7 +8,7 @@ fn fib(n: i32) -> i32 {
     }
 }
 
-[test]
+#[test]
 fn test_fib() {
     assert fib(0) == 0;
     assert fib(1) == 1;

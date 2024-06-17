@@ -11,7 +11,7 @@ fn test(v: Bar) -> i32 {
     x
 }
 
-[test]
+#[test]
 fn bindings() {
     let x = match Foo::A(20) {
         Foo::A(x) | Foo::B(x) => x

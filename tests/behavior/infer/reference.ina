@@ -1,4 +1,4 @@
-[test]
+#[test]
 fn test() {
     let a = 34;
     let b = 20;

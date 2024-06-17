@@ -9,7 +9,7 @@ type Foo = {
     a: foo::Foo,
 }
 
-[test]
+#[test]
 fn struct_import() {
     let a = 34;
     let foo = foo::Foo { a: &a, b: 35 };

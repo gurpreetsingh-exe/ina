@@ -1,7 +1,7 @@
 type T = A(i32)
 type T2 = B(i32, T)
 
-[test]
+#[test]
 fn let_pat() {
     let v = T::A(50);
     let v1 = T2::B(10, v);

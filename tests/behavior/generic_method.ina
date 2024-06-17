@@ -10,7 +10,7 @@ impl Test {
     }
 }
 
-[test]
+#[test]
 fn with_type_param() {
     let test = Test {};
     assert test.id![i32](1) == 1;

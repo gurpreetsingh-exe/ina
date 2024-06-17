@@ -1,4 +1,4 @@
-[test]
+#[test]
 fn if_else() {
     let mut a = 2;
     if a == 1 {

@@ -1,4 +1,4 @@
-[test]
+#[test]
 fn read_write() {
     let a = 69;
     let b = &a;

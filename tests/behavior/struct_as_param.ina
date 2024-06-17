@@ -11,14 +11,14 @@ fn other(foo: &Foo) -> i32 {
     *(foo.a) + foo.b
 }
 
-[test]
+#[test]
 fn value() {
     let a = 34;
     let foo = Foo { a: &a, b: 35 };
     assert some(foo) == 69;
 }
 
-[test]
+#[test]
 fn ref() {
     let a = 34;
     let foo = Foo { a: &a, b: 35 };

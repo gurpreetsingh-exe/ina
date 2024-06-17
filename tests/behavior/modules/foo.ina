@@ -6,7 +6,7 @@ mod foo {
     }
 }
 
-[test]
+#[test]
 fn import() {
     assert foo::test(34) == bar::test();
 }

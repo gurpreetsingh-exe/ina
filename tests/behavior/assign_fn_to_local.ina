@@ -7,7 +7,7 @@ fn some_function(a: i32) -> i32 {
     a
 }
 
-[test]
+#[test]
 fn assign_function() {
     let f2 = f;
     assert f2(some_function, 69) == 69;

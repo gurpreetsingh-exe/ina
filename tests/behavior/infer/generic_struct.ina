@@ -17,7 +17,7 @@ fn second[T, V](t: pair[T, V]) -> V {
     t.b
 }
 
-[test]
+#[test]
 fn test_pair() {
     let pair = pair("Hello World", 69);
     let fst = first(pair);

@@ -1,4 +1,4 @@
-[test]
+#[test]
 fn infer_scoped() {
     let a = 2;
     if 20 != 50 {

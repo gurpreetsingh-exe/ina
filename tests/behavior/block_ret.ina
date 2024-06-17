@@ -6,7 +6,7 @@ fn test(a: i32, b: i32) -> i32 {
     c
 }
 
-[test]
+#[test]
 fn ret() {
     let a = { 50 };
     assert a == 50;

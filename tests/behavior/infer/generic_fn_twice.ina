@@ -2,7 +2,7 @@ mod foomod {
     fn foo[T]() {}
 }
 
-[test]
+#[test]
 fn call_twice() {
     foomod::foo![isize]();
     foomod::foo![isize]();

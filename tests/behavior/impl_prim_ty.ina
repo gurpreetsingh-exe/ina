@@ -12,7 +12,7 @@ impl f32 {
     fn type_of(self) -> isize { 2 }
 }
 
-[test]
+#[test]
 fn impl_prim_tys() {
     let a: i32 = 20;
     let b: i64 = 50;

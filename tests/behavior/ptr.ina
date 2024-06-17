@@ -1,12 +1,12 @@
 extern mod core;
 
-[test]
+#[test]
 fn check_str_deref() {
     let str = "a";
     assert *(str.as_ptr()) == 97;
 }
 
-[test]
+#[test]
 fn read_write() {
     let mut a = 20;
     let b = &mut a as *mut i32;

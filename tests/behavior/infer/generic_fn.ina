@@ -1,6 +1,6 @@
 fn id[T](x: T) -> T { x }
 
-[test]
+#[test]
 fn infer_from_binding_annotation() {
     let x: isize = 42;
     let y: isize = id(x);

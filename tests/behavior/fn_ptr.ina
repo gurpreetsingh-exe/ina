@@ -6,7 +6,7 @@ fn some_function(a: i32) -> i32 {
     a
 }
 
-[test]
+#[test]
 fn test() {
     assert f(some_function, 69) == 69;
 }

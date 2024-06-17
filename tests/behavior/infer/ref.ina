@@ -1,6 +1,6 @@
 fn foo(i: i64) { i; }
 
-[test]
+#[test]
 fn infer_ref() {
     let mut c = 20;
     let b = &mut c;

@@ -1,7 +1,7 @@
 using behavior::modules::struct;
 using struct::Foo;
 
-[test]
+#[test]
 fn using_struct() {
     let a = 20;
     let foo = struct::foo::Foo { a: &a, b: 50 };

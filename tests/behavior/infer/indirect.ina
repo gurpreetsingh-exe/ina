@@ -1,4 +1,4 @@
-[test]
+#[test]
 fn infer_through_if_else_ref() {
     let a = 34;
     let b = 20;

@@ -16,7 +16,7 @@ impl[T] Type[T] {
     }
 }
 
-[test]
+#[test]
 fn with_type_params() {
     let t = Type![i32]::new(69);
     assert t.get() == 69;

@@ -11,7 +11,7 @@ fn deref[T](ptr: &uniq[T]) -> T {
     *(ptr.inner)
 }
 
-[test]
+#[test]
 fn with_type_params() {
     let a = uniq![i32](&69);
     assert deref![i32](&a) == 69;

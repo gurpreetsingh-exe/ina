@@ -4,7 +4,7 @@ impl[T] [T] {
     }
 }
 
-[test]
+#[test]
 fn impl_slice_method() {
     let a = [1, 2, 3];
     assert a.get(0) == 1;

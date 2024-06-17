@@ -1,4 +1,4 @@
-[test]
+#[test]
 fn test() {
     let xs = [1, 2, 3, 4];
     assert xs[0] == 1;

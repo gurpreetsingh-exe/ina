@@ -3,7 +3,7 @@ type Foo = {
     b: i32
 }
 
-[test]
+#[test]
 fn constructor() {
     let a = Foo { a: 34, b: 35 };
     assert a.a + a.b == 69;

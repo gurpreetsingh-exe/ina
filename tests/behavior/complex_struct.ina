@@ -7,7 +7,7 @@ type Bar = {
     a: Foo,
 }
 
-[test]
+#[test]
 fn struct_ref_in_struct() {
     let a = 34;
     let foo = Foo { a: &a, b: 35 };

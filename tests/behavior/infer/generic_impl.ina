@@ -16,13 +16,13 @@ impl[T] Type[T] {
     }
 }
 
-[test]
+#[test]
 fn inferred() {
     let t = Type::new(69);
     assert t.get() == 69;
 }
 
-[test]
+#[test]
 fn annotated() {
     let t = Type![i32]::id(1);
     assert t.inner == 1;

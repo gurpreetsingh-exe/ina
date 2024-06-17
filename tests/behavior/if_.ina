@@ -1,4 +1,4 @@
-[test]
+#[test]
 fn simple_if() {
     let mut a = 2;
     if 20 != 50 {

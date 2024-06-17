@@ -1,6 +1,6 @@
 using behavior::modules::foo::foo::@test;
 
-[test]
+#[test]
 fn use_path_value() {
     assert test(34) == 69;
 }

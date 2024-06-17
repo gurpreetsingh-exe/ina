@@ -6,7 +6,7 @@ fn f[T](x: Uniq[T]) -> Uniq[T] {
     x
 }
 
-[test]
+#[test]
 fn infer_uniq_ty() {
     let x = f(Uniq { inner: 1 });
     let a: i64 = x.inner;

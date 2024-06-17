@@ -8,7 +8,7 @@ fn f(g: fn(i32) -> i32, a: i32) -> i32 {
     g(a)
 }
 
-[test]
+#[test]
 fn test() {
     assert f(foo::f, 34) == 69;
 }

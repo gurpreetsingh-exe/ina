@@ -2,7 +2,7 @@ fn identity[T](i: T) -> T {
     i
 }
 
-[test]
+#[test]
 fn test() {
     assert identity![i32](69) == 69;
     assert identity![i64](420) == 420;

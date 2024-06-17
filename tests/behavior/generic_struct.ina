@@ -4,7 +4,7 @@ type Test[T] = {
     inner: T
 }
 
-[test]
+#[test]
 fn with_type_param() {
     let a = Test![i32] { inner: 1 };
     let b: i32 = 1;

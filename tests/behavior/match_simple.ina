@@ -7,7 +7,7 @@ fn f(v: T) -> i32 {
     }
 }
 
-[test]
+#[test]
 fn test() {
     assert f(T::A) == 22;
     assert f(T::B) == 43;

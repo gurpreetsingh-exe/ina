@@ -1,7 +1,7 @@
 extern mod core;
 using core::prelude::*;
 
-[test]
+#[test]
 fn test() {
     let mut opt: Option[i32] = None;
     opt = Some(5);

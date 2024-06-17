@@ -1,4 +1,4 @@
-[test]
+#[test]
 fn test() {
     let a = true;
     let b = false;
