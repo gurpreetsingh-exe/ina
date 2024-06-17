@@ -28,7 +28,9 @@ let collect tcx mdl cached =
     | _ -> assert false
   and monomorphize fn (Subst subst) =
     let fold_ty ty = SubstFolder.fold_ty tcx ty subst in
-    let fold_instance instance = { instance with subst = Subst subst } in
+    let fold_instance { def; subst = Subst s } =
+      { def; subst = SubstFolder.fold_subst tcx s subst }
+    in
     let rec fold_value value =
       match value with
       | Const { kind; ty } ->

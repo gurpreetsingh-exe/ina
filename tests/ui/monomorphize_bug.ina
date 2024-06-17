@@ -1,0 +1,12 @@
+extern mod core;
+
+// old monomorphization would fold any non generic call
+// with it's parent substitution. So, @str::as_ptr would
+// become @str::as_ptr[u8].
+fn test[T]() {
+    "some".as_ptr();
+}
+
+fn main() {
+    test![u8]();
+}
