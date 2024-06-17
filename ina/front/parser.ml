@@ -205,12 +205,13 @@ class parser pcx file lx =
       let attrs = new vec in
       let rec parse_inner_attrs_impl () =
         let* kind =
-          match token.kind with
-          | Bang ->
+          match token.kind, self#peek with
+          | Pound, Bang ->
+              self#bump;
               self#bump;
               let* attr = self#parse_attr in
               Ok [NormalAttr attr]
-          | Comment style ->
+          | Comment style, _ ->
               (match style with
                | Some Inner ->
                    let inner = get_token_str token file#src in
@@ -245,15 +246,19 @@ class parser pcx file lx =
       let rec parse_outer_attrs_impl () =
         let* kind =
           match token.kind with
-          | Bang ->
-              pcx.span_diagnostic#emit_diagnostic err;
-              (* recover and parse it as outer attribute *)
+          | Pound ->
               self#bump;
-              let* attr = self#parse_attr in
-              Ok (Some [NormalAttr attr])
-          | LBracket ->
-              let* attr = self#parse_attr in
-              Ok (Some [NormalAttr attr])
+              (match token.kind with
+               | Bang ->
+                   pcx.span_diagnostic#emit_diagnostic err;
+                   (* recover and parse it as outer attribute *)
+                   self#bump;
+                   let* attr = self#parse_attr in
+                   Ok (Some [NormalAttr attr])
+               | LBracket ->
+                   let* attr = self#parse_attr in
+                   Ok (Some [NormalAttr attr])
+               | _ -> Ok None)
           | Comment style ->
               (match style with
                | Some Outer ->

@@ -69,6 +69,7 @@ type token_kind =
   | Dot3
   | At
   | Underscore
+  | Pound
   | Eof
 
 let display_token_kind = function
@@ -120,6 +121,7 @@ let display_token_kind = function
   | Dot3 -> "..."
   | At -> "@"
   | Underscore -> "_"
+  | Pound -> "#"
   | Eof -> "eof"
 ;;
 

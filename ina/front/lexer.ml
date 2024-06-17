@@ -63,6 +63,7 @@ let of_char = function
   | '|' -> Pipe
   | '.' -> Dot
   | '_' -> Underscore
+  | '#' -> Pound
   | '\000' -> Eof
   | c ->
       Format.printf "invalid char `%c`\n" c;
