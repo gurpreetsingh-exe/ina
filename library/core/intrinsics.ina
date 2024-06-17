@@ -2,5 +2,6 @@ extern "intrinsic" {
     fn len[T](str: [T]) -> usize;
     fn offset(ptr: *u8, off: usize) -> *u8;
     fn transmute[Src, Dst](src: Src) -> Dst;
+    fn discriminant[T](v: T) -> usize;
     fn sizeof[T]() -> usize;
 }

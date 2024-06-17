@@ -280,6 +280,17 @@ let gen cx =
     gen_terminator bb.terminator
   and gen_intrinsic value args =
     match get_value value with
+    | "discriminant" ->
+        let open Errors in
+        let v = args#get 0 in
+        let ty = get_ty cx.tcx v in
+        (match !ty with
+         | Adt _ -> out ^ sprintf "(%s).discriminant;\n" (get_value v)
+         | _ ->
+             let msg =
+               sprintf "expected an adt, found `%s`" (cx.tcx#render_ty ty)
+             in
+             Diagnostic.create msg |> cx.tcx#emit)
     | "transmute" ->
         let open Errors in
         let src = args#get 0 in
