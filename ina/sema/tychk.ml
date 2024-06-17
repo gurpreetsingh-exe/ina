@@ -264,7 +264,7 @@ let tychk_fn cx fn =
     (Generics.to_subst (tcx#generics_of did) tcx)#inner
     |> Array.map (function Middle.Ty.Ty ty ->
            !ty |> (function Param p -> p | _ -> assert false));
-  let holes = Hashtbl.create 0 in
+  let holes = new vec in
   let define id ty =
     let did = local_def_id id in
     tcx#create_def did ty;
@@ -1115,14 +1115,14 @@ let tychk_fn cx fn =
          | ExpectTy expected ->
              (match equate expected ty with
               | Ok ({ contents = Infer _ } as ty) ->
-                  Hashtbl.add holes ty expr.expr_span;
+                  holes#push (ty, expr.expr_span);
                   ty
               | Ok ty ->
                   type_hole_found tcx ty expr.expr_span;
                   ty
               | Error _ -> assert false)
          | NoExpectation ->
-             Hashtbl.add holes ty expr.expr_span;
+             holes#push (ty, expr.expr_span);
              ty)
   in
   let ty = tcx#get_def did in
@@ -1185,7 +1185,7 @@ let tychk_fn cx fn =
                 tcx#types.err
           in
           tcx#invalidate !v ty);
-  Hashtbl.iter (fun ty span -> type_hole_found tcx ty span) holes
+  holes#iter (fun (ty, span) -> type_hole_found tcx ty span)
 ;;
 
 let rec tychk cx (modd : modd) =
