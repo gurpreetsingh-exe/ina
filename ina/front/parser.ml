@@ -582,7 +582,7 @@ class parser pcx file lx =
     method should_continue_as_prec_expr expr =
       let is_block =
         match expr.expr_kind with
-        | If _ | Block _ | Match _ -> true
+        | If _ | Block _ | Match _ | Loop _ -> true
         | _ -> false
       in
       match is_block, token.kind, (Option.get prev_token).kind with
@@ -620,6 +620,18 @@ class parser pcx file lx =
         | If ->
             let* iff = self#parse_if in
             Ok (Ast.If iff)
+        | Loop ->
+            self#bump;
+            let* label =
+              match token.kind with
+              | Colon ->
+                  self#bump;
+                  let* label = self#parse_ident in
+                  Ok (Some label)
+              | _ -> Ok None
+            in
+            let* block = self#parse_block in
+            Ok (Ast.Loop (label, block))
         | LBrace ->
             let* block = self#parse_block in
             Ok (Block block)

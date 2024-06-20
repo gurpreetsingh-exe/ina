@@ -915,7 +915,8 @@ let tychk_fn cx fn =
               | opt -> go infcx_new_float_var opt)
          | LitStr _ -> tcx#types.str
          | LitBool _ -> tcx#types.bool)
-    | Block block -> check_block_with_expected block expected
+    | Block block | Loop (_, block) ->
+        check_block_with_expected block expected
     | Deref expr ->
         let ty = check_expr expr NoExpectation in
         (match !ty with

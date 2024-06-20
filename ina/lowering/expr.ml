@@ -421,6 +421,16 @@ let rec lower_block (lcx : lcx) block =
              branches#push (Label !last_else_bb, Option.get !false');
              lcx#bx#phi ty branches e.expr_span)
     | Block block -> lower_block lcx block
+    | Loop (_, block) ->
+        let open Ir in
+        let loop = Basicblock.create () in
+        let join = Basicblock.create () in
+        lcx#bx#jmp (Label loop);
+        lcx#append_block_with_builder loop;
+        let v = lower_block lcx block in
+        lcx#bx#jmp (Label loop);
+        lcx#append_block_with_builder join;
+        v
     | StructExpr { fields; _ } ->
         let f = map fields (fun (_, expr) -> lower expr) in
         Const { kind = Struct f; ty }

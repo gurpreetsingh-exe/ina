@@ -266,6 +266,7 @@ and expr_kind =
   | Call of expr * expr vec
   | Binary of binary_kind * expr * expr
   | If of iff
+  | Loop of (ident option * block)
   | Block of block
   | Deref of expr
   | Ref of (mutability * expr)

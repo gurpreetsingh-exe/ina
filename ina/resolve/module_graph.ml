@@ -114,7 +114,7 @@ class visitor resolver (modd : Ast.modd) parent dir_ownership =
       | Binary (_, left, right) ->
           self#visit_expr left;
           self#visit_expr right
-      | Block block -> self#visit_block block
+      | Block block | Loop (_, block) -> self#visit_block block
       | If { cond; then_block; else_block; _ } ->
           self#visit_expr cond;
           self#visit_block then_block;

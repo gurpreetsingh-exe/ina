@@ -30,6 +30,7 @@ type token_kind =
   | Using
   | If
   | Else
+  | Loop
   | Assert
   | As
   | Impl
@@ -81,6 +82,7 @@ let display_token_kind = function
   | Using -> "using"
   | If -> "if"
   | Else -> "else"
+  | Loop -> "loop"
   | Assert -> "assert"
   | As -> "as"
   | Impl -> "impl"

@@ -115,7 +115,7 @@ let analyze (tcx : tcx) fn =
           |> Option.value ~default:(Ok ())
         in
         Ok ()
-    | Block block -> visit_block_with_exp block ~e
+    | Block block | Loop (_, block) -> visit_block_with_exp block ~e
     | Ref (m, expr') ->
         let m = tcx#ast_mut_to_mut m in
         (match visit_expr expr' ~e:(`Ref m) with
