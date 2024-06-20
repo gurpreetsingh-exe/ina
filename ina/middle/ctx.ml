@@ -120,6 +120,7 @@ module SubstFolder = struct
         tcx#fn_ptr args ret is_variadic abi
     | Fn (did, Subst subst') -> tcx#fn did (fold_subst tcx subst' subst)
     | Adt (did, Subst subst') -> tcx#adt did (fold_subst tcx subst' subst)
+    | Tuple tys -> tcx#tuple (map tys (fun ty -> fold_ty tcx ty subst))
     | _ -> ty
 
   and fold_fnsig tcx { args; ret; is_variadic; abi } subst =
