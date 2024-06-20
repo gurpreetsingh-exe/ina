@@ -3,7 +3,7 @@ error: mismatch types
    │
  4 │     let _: i32 = [1, 2, 3];
    │                  ────┬────
-   │                      ╰───── expected `i32`, found `[integer]`
+   │                      ╰───── expected `i32`, found `[integer; 3]`
    ∙
 ───╯
 error: mismatch types
@@ -11,6 +11,6 @@ error: mismatch types
    │
  6 │     let y: &i32 = x;
    │                   ┬
-   │                   ╰─ expected `&i32`, found `[integer]`
+   │                   ╰─ expected `&i32`, found `[integer; 3]`
    ∙
 ───╯

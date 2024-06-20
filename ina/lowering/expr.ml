@@ -17,7 +17,7 @@ let rec lower_block (lcx : lcx) block =
           let did = local_def_id binding_id in
           let decision = tcx#get_decision_tree did in
           let v = lower binding_expr in
-          let ty = expr_ty binding_expr in
+          let ty = tcx#get_def (local_def_id binding_id) in
           let exprs = new vec in
           exprs#push binding_expr;
           ignore @@ lower_match ~lett:true ty v decision exprs span
@@ -113,6 +113,20 @@ let rec lower_block (lcx : lcx) block =
     args'#append @@ map args (fun arg -> lower arg);
     lcx#bx#call method' fn args' e.expr_span
   and lower_lvalue e =
+    let v = lower_lvalue' e in
+    tcx#get_adjustment e.expr_id
+    |> Option.map (fun adjust ->
+           let open Adjustment in
+           let ArrayToSlice = adjust.kind in
+           let ptr = lcx#bx#alloca adjust.target e.expr_span in
+           let v = lcx#bx#move v e.expr_span in
+           let v =
+             lcx#bx#coercion ArrayToSlice v adjust.target e.expr_span
+           in
+           lcx#bx#store v ptr e.expr_span;
+           ptr)
+    |> Option.value ~default:v
+  and lower_lvalue' e =
     let ty = expr_ty e in
     match e.expr_kind with
     | Lit lit ->
@@ -304,6 +318,14 @@ let rec lower_block (lcx : lcx) block =
     in
     go ~first:true decision
   and lower e =
+    let v = lower' e in
+    tcx#get_adjustment e.expr_id
+    |> Option.map (fun adjust ->
+           let open Adjustment in
+           let ArrayToSlice = adjust.kind in
+           lcx#bx#coercion ArrayToSlice v adjust.target e.expr_span)
+    |> Option.value ~default:v
+  and lower' e =
     let ty = expr_ty e in
     match e.expr_kind with
     | Binary (kind, left, right) ->
@@ -433,9 +455,12 @@ let rec lower_block (lcx : lcx) block =
         lower_match ty v decision exprs e.expr_span
     | Slice exprs ->
         let values = map exprs lower in
-        lcx#bx#aggregate (Slice ty) values e.expr_span
+        lcx#bx#aggregate
+          (if tcx#is_slice ty then Slice ty else Array ty)
+          values
+          e.expr_span
     | Index (expr, idx) ->
-        let slice_ty = expr_ty expr in
+        let ty = expr_ty expr in
         let value = lower expr in
         let ispan = idx.expr_span in
         let idx = lower idx in
@@ -451,7 +476,7 @@ let rec lower_block (lcx : lcx) block =
         lcx#bx#trap msg e.expr_span;
         lcx#bx#jmp (Label bf);
         lcx#append_block_with_builder bf;
-        lcx#bx#index slice_ty value idx e.expr_span
+        lcx#bx#index ty value idx e.expr_span
     | Hole -> lcx#bx#nop
   in
   lower_block' ()

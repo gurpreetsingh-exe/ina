@@ -1,3 +1,4 @@
+mod array;
 mod adt_simple;
 mod assign_fn_to_local;
 mod block_ret;

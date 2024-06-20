@@ -29,12 +29,17 @@ type ty_kind =
   | Pty_ptr of (mutability * ty)
   | Pty_ref of (mutability * ty)
   | Pty_slice of ty
+  | Pty_array of (ty * size)
   | Pty_fnptr of ty vec * ty * bool
   | Pty_path of path
   | Pty_implicitself
   | Pty_unit
   | Pty_cvarargs
   | Pty_err
+
+and size =
+  | Parr_int of int
+  | Parr_ident of path_segment
 
 and mutability =
   | Mut

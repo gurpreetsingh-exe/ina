@@ -5,7 +5,6 @@ open Structures.Hashmap
 open Middle.Ctx
 open Middle.Def_id
 open Utils.Printer
-open Utils.Panic
 open Errors
 open Diagnostic
 
@@ -609,7 +608,9 @@ class resolver tcx modd =
             args#iter (fun ty -> resolve_ty ty);
             resolve_ty ty
         | Pty_path path -> visit_path path mdl (Some Type)
-        | Pty_ref (_, ty) | Pty_ptr (_, ty) | Pty_slice ty -> resolve_ty ty
+        | Pty_ref (_, ty) | Pty_ptr (_, ty) | Pty_slice ty | Pty_array (ty, _)
+          ->
+            resolve_ty ty
         | Pty_int _ | Pty_float _ | Pty_bool | Pty_str | Pty_unit
         | Pty_cvarargs ->
             ()

@@ -365,7 +365,13 @@ let tychk_fn cx fn =
       | Ptr (Imm, t0), Ptr (_, t1) ->
           let* ty = equate t0 t1 in
           Ok (tcx#ptr Imm ty)
-      | Slice t0, Slice t1 ->
+      | ( Array (t0, (CValue (st0, VInt n0) as c))
+        , Array (t1, CValue (st1, VInt n1)) )
+        when n0 = n1 ->
+          let* ty = equate t0 t1 in
+          let* _ = equate st0 st1 in
+          Ok (tcx#array ty c)
+      | Slice t0, (Slice t1 | Array (t1, _)) ->
           let* ty = equate t0 t1 in
           Ok (tcx#slice ty)
       | FnPtr t0', Fn (def_id, _) | Fn (def_id, _), FnPtr t0' ->
@@ -420,6 +426,7 @@ let tychk_fn cx fn =
     | Ptr (m, ty) -> tcx#ptr m (fold_ty ty)
     | Ref (m, ty) -> tcx#ref m (fold_ty ty)
     | Slice ty -> tcx#slice (fold_ty ty)
+    | Array (ty, c) -> tcx#array (fold_ty ty) c
     | Adt (did, Subst subst) ->
         let subst =
           map subst (fun (Ty ty : generic_arg) : generic_arg ->
@@ -478,7 +485,15 @@ let tychk_fn cx fn =
         ()
         (* if ty <> Unit && ty <> Err *)
         (* then tcx#emit (unused_value expr.expr_span) *)
-    | Binding { binding_pat; binding_ty; binding_expr; binding_span; _ } ->
+    | Binding
+        {
+          binding_pat
+        ; binding_ty
+        ; binding_expr
+        ; binding_span
+        ; binding_id
+        ; _
+        } ->
         let ty =
           match binding_ty with
           | Some expected ->
@@ -491,11 +506,23 @@ let tychk_fn cx fn =
                    expected)
           | None -> check_expr binding_expr NoExpectation
         in
+        write_ty binding_id ty;
         check_pattern (new hashmap) ty binding_span binding_pat
     | Assert (cond, _) -> ignore (check_expr cond (ExpectTy tcx#types.bool))
+  and coerce expr expected found =
+    let open Adjustment in
+    let open Adjust in
+    match !expected, !found with
+    | Slice _, Array _ ->
+        let adjust = { kind = ArrayToSlice; target = expected } in
+        tcx#adjust expr.expr_id adjust
+    | _ -> ()
   and check_expr expr expected =
     let ty = check_expr_kind expr expected in
     let ty = resolve_vars cx.infcx ty in
+    (match expected with
+     | ExpectTy expected -> coerce expr expected ty
+     | _ -> ());
     write_ty expr.expr_id ty;
     ty
   and check_generic_args ty args span f =
@@ -808,7 +835,11 @@ let tychk_fn cx fn =
       ignore @@ args'#pop_front;
       let args = args' in
       (match equate first ty with
-       | Ok _ -> ()
+       | Ok _ ->
+           let[@warning "-partial-match"] (MethodCall (expr, _, _)) =
+             pexpr.expr_kind
+           in
+           coerce expr first ty
        | Error _ ->
            ty_err_emit tcx (AssocFnAsMethod (ty, name)) pexpr.expr_span);
       if exprs#len <> args#len
@@ -1075,20 +1106,38 @@ let tychk_fn cx fn =
           | 0 ->
               let ty = infcx_new_ty_var cx.infcx in
               Hashtbl.replace cx.slice_tyvars ty expr.expr_span;
-              ty
-          | 1 -> check_expr (exprs#get 0) NoExpectation
+              resolve_expected expected
+              |> Option.map tcx#inner_ty
+              |> Option.join
+              |> (function
+              | Some expect ->
+                  ignore @@ equate expect ty;
+                  ty
+              | None -> ty)
+          | 1 ->
+              resolve_expected expected
+              |> Option.map tcx#inner_ty
+              |> Option.join
+              |> (function Some ty -> ExpectTy ty | None -> NoExpectation)
+              |> check_expr (exprs#get 0)
           | n ->
-              let ty = check_expr (exprs#get 0) NoExpectation in
+              let expect =
+                resolve_expected expected
+                |> Option.map tcx#inner_ty
+                |> Option.join
+                |> function Some ty -> ExpectTy ty | None -> NoExpectation
+              in
+              let ty = check_expr (exprs#get 0) expect in
               for i = 1 to n - 1 do
                 let expr = exprs#get i in
                 let found = check_expr expr NoExpectation in
                 match equate ty found with
-                | Ok _ -> ()
+                | Ok _ -> coerce expr ty found
                 | Error e -> ty_err_emit tcx e expr.expr_span
               done;
               ty
         in
-        let ty' = tcx#slice ty in
+        let ty' = tcx#array ty (CValue (tcx#types.usize, VInt exprs#len)) in
         (match expected with
          | NoExpectation -> ty'
          | ExpectTy ty ->
@@ -1140,7 +1189,7 @@ let tychk_fn cx fn =
        let span =
          last_stmt_span block |> Option.value ~default:block.block_span
        in
-       (match equate ty ret with
+       (match equate ret ty with
         | Ok _ -> ()
         | Error e -> ty_err_emit tcx e span)
    | None -> ());

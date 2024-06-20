@@ -239,7 +239,7 @@ let analyze (tcx : tcx) fn =
     | Stmt expr | Expr expr -> visit_expr expr ~e
     | Binding { binding_pat; binding_span; binding_expr; binding_id; _ } ->
         let* _ = visit_expr binding_expr in
-        let ty = tcx#get_def (local_def_id binding_expr.expr_id) in
+        let ty = tcx#get_def (local_def_id binding_id) in
         visit_pattern binding_span binding_pat;
         let decision =
           Exhaustiveness.check_let tcx ty binding_pat binding_span

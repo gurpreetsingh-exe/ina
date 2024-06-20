@@ -1,3 +1,4 @@
+mod coercion;
 mod copy;
 mod evec_slice;
 mod index;

@@ -62,7 +62,11 @@ class builder tcx blocks block =
       | Adt (did, _, Subst subst) ->
           let ty = SubstFolder.fold_ty tcx (tcx#get_def did) subst in
           self#add_inst_with_ty ty (Aggregate (adt, args))
-      | Slice ty -> self#add_inst_with_ty ty (Aggregate (adt, args))
+      | Slice ty | Array ty ->
+          self#add_inst_with_ty ty (Aggregate (adt, args))
+
+    method coercion kind value ty =
+      self#add_inst_with_ty ty (Coercion (kind, value, ty))
 
     method copy ptr =
       let ty = get_ty tcx ptr in

@@ -1,0 +1,26 @@
+#[test]
+fn from_array() {
+    let a = [1, 2, 3];
+    let b: [i32] = a;
+    assert b[0] == a[0];
+    assert b[1] == a[1];
+    assert b[2] == a[2];
+}
+
+fn f[T](xs: [T; 2], ys: [T], i: usize) -> bool {
+    xs[i] == ys[i]
+}
+
+#[test]
+fn generic() {
+    let a = [20, 50];
+    assert f(a, a, 0);
+    assert f(a, a, 1);
+}
+
+#[test]
+fn recursive() {
+    let a: [[i32]] = [[50, 60], [20, 40]];
+    let b = a[0];
+    assert b[0] == 50;
+}

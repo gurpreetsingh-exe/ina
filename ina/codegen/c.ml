@@ -33,99 +33,100 @@ type cx = {
 }
 
 let rec backend_ty cx ty =
-  !ty
-  |> function
-  | Middle.Ty.Int intty ->
-      (match intty with
-       | I8 -> "int8_t"
-       | I16 -> "int16_t"
-       | I32 -> "int32_t"
-       | I64 -> "int64_t"
-       | Isize -> "ssize_t"
-       | U8 -> "uint8_t"
-       | U16 -> "uint16_t"
-       | U32 -> "uint32_t"
-       | U64 -> "uint64_t"
-       | Usize -> "size_t")
-  | Float floatty -> (match floatty with F32 -> "float" | F64 -> "double")
-  | Bool -> "bool"
-  | Ptr (_, ty) | Ref (_, ty) -> sprintf "%s*" (backend_ty cx ty)
-  | Unit -> "void"
-  | Str as ty ->
-      (match TypeMap.find_opt cx.types ty with
-       | Some ty -> ty
-       | None ->
-           let name = "__ina_string" in
-           prelude
-           ^ sprintf
-               "typedef struct %s {\n\
-               \  void* ptr;\n\
-               \  size_t length;\n\
-                } %s;\n\n"
-               name
-               name;
-           TypeMap.add cx.types ty name;
-           name)
-  | Adt _ as ty' ->
-      (match TypeMap.find_opt cx.types ty' with
-       | Some ty -> ty
-       | None ->
-           let name = Mangle.mangle_ty cx.tcx ty in
-           prelude ^ sprintf "// %s\n" (cx.tcx#render_ty ty);
-           prelude ^ sprintf "typedef struct %s %s;\n" name name;
-           TypeMap.add cx.types ty' name;
-           define cx name ty;
-           name)
-  | FnPtr { args; ret; is_variadic; _ } as ty ->
-      (match TypeMap.find_opt cx.types ty with
-       | Some ty -> ty
-       | None ->
-           let name = sprintf "__fn_%d" (TypeMap.length cx.types) in
-           prelude
-           ^ sprintf
-               "typedef %s (*%s)(%s%s);\n\n"
-               (backend_ty cx ret)
-               name
-               (args#join ", " (cx |> backend_ty))
-               (match is_variadic, args#empty with
-                | true, true -> "..."
-                | true, false -> ", ..."
-                | _ -> "");
-           TypeMap.add cx.types ty name;
-           name)
-  | Fn _ as ty -> fn cx ty
-  | Tuple tys as ty' ->
-      (match TypeMap.find_opt cx.types ty' with
-       | Some ty -> ty
-       | None ->
-           let name = sprintf "__tuple_%d" (TypeMap.length cx.types) in
-           prelude ^ sprintf "// %s\n" (cx.tcx#render_ty ty);
-           let tys =
-             mapi tys (fun i ty -> sprintf "%s _%d;" (backend_ty cx ty) i)
-           in
-           let body = tys#join ";" Fun.id in
-           prelude
-           ^ sprintf "typedef struct %s { %s } %s;\n\n" name body name;
-           TypeMap.add cx.types ty' name;
-           name)
-  | Slice ty as ty' ->
-      (match TypeMap.find_opt cx.types ty' with
-       | Some ty -> ty
-       | None ->
-           let ty = backend_ty cx ty in
-           let name = sprintf "__slice_%d" (TypeMap.length cx.types) in
-           prelude ^ sprintf "// %s\n" (cx.tcx#render_ty (ref ty'));
-           prelude
-           ^ sprintf
-               "typedef struct %s { %s* ptr; size_t length; } %s;\n\n"
-               name
-               ty
-               name;
-           TypeMap.add cx.types ty' name;
-           name)
-  | _ ->
-      print_endline @@ Middle.Ty.render_ty2 ty;
-      assert false
+  match TypeMap.find_opt cx.types !ty with
+  | Some ty -> ty
+  | None ->
+      !ty
+      |> (function
+      | Middle.Ty.Int intty ->
+          (match intty with
+           | I8 -> "int8_t"
+           | I16 -> "int16_t"
+           | I32 -> "int32_t"
+           | I64 -> "int64_t"
+           | Isize -> "ssize_t"
+           | U8 -> "uint8_t"
+           | U16 -> "uint16_t"
+           | U32 -> "uint32_t"
+           | U64 -> "uint64_t"
+           | Usize -> "size_t")
+      | Float floatty ->
+          (match floatty with F32 -> "float" | F64 -> "double")
+      | Bool -> "bool"
+      | Ptr (_, ty) | Ref (_, ty) -> sprintf "%s*" (backend_ty cx ty)
+      | Unit -> "void"
+      | Str as ty ->
+          let name = "__ina_string" in
+          prelude
+          ^ sprintf
+              "typedef struct %s {\n\
+              \  void* ptr;\n\
+              \  size_t length;\n\
+               } %s;\n\n"
+              name
+              name;
+          TypeMap.add cx.types ty name;
+          name
+      | Adt _ as ty' ->
+          let name = Mangle.mangle_ty cx.tcx ty in
+          prelude ^ sprintf "// %s\n" (cx.tcx#render_ty ty);
+          prelude ^ sprintf "typedef struct %s %s;\n" name name;
+          TypeMap.add cx.types ty' name;
+          define cx name ty;
+          name
+      | FnPtr { args; ret; is_variadic; _ } as ty ->
+          let name = sprintf "__fn_%d" (TypeMap.length cx.types) in
+          prelude
+          ^ sprintf
+              "typedef %s (*%s)(%s%s);\n\n"
+              (backend_ty cx ret)
+              name
+              (args#join ", " (cx |> backend_ty))
+              (match is_variadic, args#empty with
+               | true, true -> "..."
+               | true, false -> ", ..."
+               | _ -> "");
+          TypeMap.add cx.types ty name;
+          name
+      | Fn _ as ty -> fn cx ty
+      | Tuple tys as ty' ->
+          let name = sprintf "__tuple_%d" (TypeMap.length cx.types) in
+          prelude ^ sprintf "// %s\n" (cx.tcx#render_ty ty);
+          let tys =
+            mapi tys (fun i ty -> sprintf "%s _%d;" (backend_ty cx ty) i)
+          in
+          let body = tys#join ";" Fun.id in
+          prelude ^ sprintf "typedef struct %s { %s } %s;\n\n" name body name;
+          TypeMap.add cx.types ty' name;
+          name
+      | Slice ty as ty' ->
+          let ty = backend_ty cx ty in
+          let name = sprintf "__slice_%d" (TypeMap.length cx.types) in
+          prelude ^ sprintf "// %s\n" (cx.tcx#render_ty (ref ty'));
+          prelude
+          ^ sprintf
+              "typedef struct %s { %s* ptr; size_t length; } %s;\n\n"
+              name
+              ty
+              name;
+          TypeMap.add cx.types ty' name;
+          name
+      | Array (ty, CValue (_, VInt i)) as ty' ->
+          let ty = backend_ty cx ty in
+          let name = sprintf "__array_%d" (TypeMap.length cx.types) in
+          prelude ^ sprintf "// %s\n" (cx.tcx#render_ty @@ ref ty');
+          prelude
+          ^ sprintf
+              "typedef struct %s { %s inner[%d] } %s;\n\n"
+              name
+              ty
+              i
+              name;
+          TypeMap.add cx.types ty' name;
+          name
+      | _ ->
+          print_endline @@ Middle.Ty.render_ty2 ty;
+          assert false)
 
 and fn cx ty =
   match TypeMap.find_opt cx.types ty with
@@ -358,6 +359,15 @@ let gen cx =
           else "{}"
         in
         out ^ sprintf "{ .discriminant = %d, .data = %s };\n" vidx data
+    | Aggregate (Array _, args) ->
+        let data =
+          if args#empty
+          then "{}"
+          else
+            let args = args#join ", " get_value in
+            sprintf "{ .inner = { %s } }" args
+        in
+        out ^ sprintf "%s;\n" data
     | Aggregate (Slice ty, args) ->
         let ty = cx.tcx#inner_ty ty |> Option.get in
         let length = args#len in
@@ -414,15 +424,31 @@ let gen cx =
              out ^ sprintf "&%s->%s;\n" (get_value ptr) name
          | Tuple _ -> out ^ sprintf "&%s->_%d;\n" (get_value ptr) index
          | _ -> assert false)
-    | Index (_, value, index) ->
-        out ^ sprintf "%s.ptr[%s];\n" (get_value value) (get_value index)
-    | Len value -> out ^ sprintf "%s.length;\n" (get_value value)
+    | Index (ty, value, index) ->
+        if cx.tcx#is_slice ty
+        then
+          out ^ sprintf "%s.ptr[%s];\n" (get_value value) (get_value index)
+        else
+          out ^ sprintf "%s.inner[%s];\n" (get_value value) (get_value index)
+    | Len value ->
+        let ty = get_ty cx.tcx value in
+        if cx.tcx#is_slice ty
+        then out ^ sprintf "%s.length;\n" (get_value value)
+        else out ^ sprintf "%d;\n" (cx.tcx#array_length ty)
     | BitCast (value, ty)
     | IntToPtr (value, ty)
     | PtrToInt (value, ty)
     | Trunc (value, ty)
     | Zext (value, ty) ->
         out ^ sprintf "(%s)%s;\n" (backend_ty cx ty) (get_value value)
+    | Coercion (ArrayToSlice, value, _) ->
+        let ty = get_ty cx.tcx value in
+        let length = cx.tcx#array_length ty in
+        out
+        ^ sprintf
+            "{ .ptr = %s.inner, .length = %d };\n"
+            (get_value value)
+            length
     | Trap value when !is_test ->
         out ^ sprintf "__builtin_printf(\"%s\");\n" (String.escaped value);
         out ^ sprintf "  longjmp(%s, 1);\n" jmpbuf

@@ -57,6 +57,10 @@ fn main() {
     let f: fn(*i8) = ty::f5();
     f(a as *i8);
 
+    let a = [2, 4, 6, 8];
+    ty::a::f1(a);
+    ty::a::f2(a);
+
     let a: struct::Unit = struct::Unit::new();
     struct::f1(a, 0);
     struct::Unit::f2(a);

@@ -353,8 +353,24 @@ class parser pcx file lx =
       | LBracket ->
           self#bump;
           let* ty = self#parse_ty in
-          let* _ = self#expect RBracket in
-          Ok (mk_ty (Pty_slice ty) (self#mk_span s) self#id)
+          (match token.kind, self#npeek 2 with
+           | Semi, Lit Int :: _ ->
+               self#bump;
+               let buf = get_token_str token file#src in
+               self#bump;
+               let size = Parr_int (int_of_string buf) in
+               let* _ = self#expect RBracket in
+               Ok (mk_ty (Pty_array (ty, size)) (self#mk_span s) self#id)
+           | Semi, Ident :: _ ->
+               self#bump;
+               let* name = self#parse_path_segment Type in
+               let size = Parr_ident name in
+               let* _ = self#expect RBracket in
+               Ok (mk_ty (Pty_array (ty, size)) (self#mk_span s) self#id)
+           | RBracket, _ ->
+               let* _ = self#expect RBracket in
+               Ok (mk_ty (Pty_slice ty) (self#mk_span s) self#id)
+           | t, _ -> Error (self#unexpected_token t))
       | t -> Error (self#unexpected_token t)
 
     method parse_fn_args =

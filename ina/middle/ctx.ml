@@ -114,6 +114,7 @@ module SubstFolder = struct
     | Ptr (m, ty) -> tcx#ptr m (fold_ty tcx ty subst)
     | Ref (m, ty) -> tcx#ref m (fold_ty tcx ty subst)
     | Slice ty -> tcx#slice (fold_ty tcx ty subst)
+    | Array (ty, c) -> tcx#array (fold_ty tcx ty subst) c
     | FnPtr fnsig ->
         let { args; ret; is_variadic; abi } = fold_fnsig tcx fnsig subst in
         tcx#fn_ptr args ret is_variadic abi
@@ -192,6 +193,17 @@ let render_path tcx path =
   |> print_endline
 ;;
 
+module Adjust = struct
+  type t = ArrayToSlice
+end
+
+module Adjustment = struct
+  type t = {
+      kind: Adjust.t
+    ; target: ty ref
+  }
+end
+
 type types = {
     i8: ty ref
   ; i16: ty ref
@@ -254,6 +266,7 @@ class tcx sess =
     val locals : (def_id, ty ref) hashmap = new hashmap
     val decoders : decoder vec = new vec
     val decision_trees : (def_id, Decision.t) hashmap = new hashmap
+    val adjustments : Adjustment.t nodemap = new hashmap
     val diagnostics : Errors.Diagnostic.t vec = new vec
     val mutable impl_id = 0
 
@@ -519,7 +532,7 @@ class tcx sess =
           |> Option.map (fun map -> map#get name)
           |> Option.join
           |> Option.map (fun a -> a, true)
-      | Slice _ ->
+      | Slice _ | Array _ ->
           prim_ty_assoc_fn#get ty
           |> Option.map (fun map -> map#get name)
           |> Option.join
@@ -594,9 +607,10 @@ class tcx sess =
     method ref mut ty = self#intern (Ref (mut, ty))
     method tuple tys = self#intern (Tuple tys)
     method slice ty = self#intern (Slice ty)
+    method array ty size = self#intern (Array (ty, size))
 
     method slice_inner ty =
-      match !ty with Slice ty -> ty | _ -> assert false
+      match !ty with Slice ty | Array (ty, _) -> ty | _ -> assert false
 
     method is_mut_ptr ty =
       match !ty with
@@ -606,6 +620,15 @@ class tcx sess =
 
     method is_ref ty = match !ty with Ref _ -> true | _ -> false
     method is_copy ty = match !ty with Ty.Adt _ -> false | _ -> true
+    method is_slice ty = match !ty with Ty.Slice _ -> true | _ -> false
+    method is_array ty = match !ty with Ty.Array _ -> true | _ -> false
+    method adjust id adjustment = ignore @@ adjustments#insert id adjustment
+    method get_adjustment id = adjustments#get id
+
+    method array_length ty =
+      match !ty with
+      | Ty.Array (_, CValue (_, VInt n)) -> n
+      | _ -> assert false
 
     method describe_pointer ty =
       match !ty with
@@ -649,7 +672,7 @@ class tcx sess =
       let open Ty in
       match !ty with
       | Adt (_, Subst subst) | Fn (_, Subst subst) -> Some subst
-      | Slice ty ->
+      | Slice ty | Array (ty, _) ->
           let subst = new vec in
           subst#push (Ty ty);
           Some subst
@@ -687,14 +710,16 @@ class tcx sess =
       match !ty with
       | Ty.Adt (_, Subst subst) | Fn (_, Subst subst) -> not subst#empty
       | Param _ -> true
-      | Ptr (_, ty) | Ref (_, ty) | Slice ty -> self#is_generic ty
+      | Ptr (_, ty) | Ref (_, ty) | Slice ty | Array (ty, _) ->
+          self#is_generic ty
       | _ -> false
 
     method get_ty_params ty =
       (* TODO: check if there are multiple parameters *)
       match !ty with
       | Param param -> [param]
-      | Ref (_, ty) | Ptr (_, ty) | Slice ty -> self#get_ty_params ty
+      | Ref (_, ty) | Ptr (_, ty) | Slice ty | Array (ty, _) ->
+          self#get_ty_params ty
       | Fn (_, Subst subst) | Adt (_, Subst subst) ->
           fold_left
             (fun params (Ty ty : generic_arg) ->
@@ -702,26 +727,6 @@ class tcx sess =
             []
             subst
       | _ -> []
-
-    method unfold_ty_param typaram ty =
-      assert (self#get_ty_params typaram <> []);
-      match !typaram, !ty with
-      | Ptr (_, ty), Ptr (_, ty')
-      | Ref (_, ty), Ref (_, ty')
-      | Slice ty, Slice ty' ->
-          self#unfold_ty_param ty ty'
-      | Adt (did, _), Adt (did', _) when did <> did' -> Error self#types.err
-      | Adt (_, Subst subst), Adt (_, Subst subst') ->
-          map2 subst subst' (fun (Ty ty) (Ty ty') -> ty, ty')
-          |> fold_left
-               (fun res (ty, ty') ->
-                 let* pair = res in
-                 let* res = self#unfold_ty_param ty ty' in
-                 Ok (pair @ res))
-               (Ok [])
-      | Param param, _ -> Ok [param, ty]
-      | _, (FnPtr _ | Fn _ | Adt _) -> assert false
-      | _ -> Error self#types.err
 
     method sizeof_int_ty =
       function
@@ -806,6 +811,16 @@ class tcx sess =
 
     method ast_mut_to_mut = function Ast.Mut -> Mut | Imm -> Imm
 
+    method ast_size_to_const =
+      function
+      | Parr_int i -> CValue (_types.usize, VInt i)
+      | Parr_ident _ ->
+          (* res_map#unsafe_get seg.id *)
+          (* |> (function *)
+          (* | Def (def_id, TyParam) -> CParam { index = 0; name = seg.ident } *)
+          (* | _ -> assert false) *)
+          assert false
+
     method ast_ty_to_ty ty =
       match ty.kind with
       | Pty_int i -> self#ast_int_ty_to_ty i
@@ -815,6 +830,8 @@ class tcx sess =
       | Pty_ref (m, ty) ->
           self#ref (self#ast_mut_to_mut m) (self#ast_ty_to_ty ty)
       | Pty_slice ty -> self#slice (self#ast_ty_to_ty ty)
+      | Pty_array (ty, size) ->
+          self#array (self#ast_ty_to_ty ty) (self#ast_size_to_const size)
       | Pty_str -> _types.str
       | Pty_bool -> _types.bool
       | Pty_unit -> _types.unit
@@ -872,7 +889,11 @@ class tcx sess =
 
     method inner_ty ty : ty ref option =
       match !ty with
-      | Ptr (_, ty) | Ref (_, ty) | FnPtr { ret = ty; _ } | Slice ty ->
+      | Ptr (_, ty)
+      | Ref (_, ty)
+      | FnPtr { ret = ty; _ }
+      | Slice ty
+      | Array (ty, _) ->
           Some ty
       | _ -> None
 
@@ -902,6 +923,10 @@ class tcx sess =
           "[%s]"
           (subst#join ", " (function Ty ty -> self#render_ty ty))
 
+    method render_const =
+      function
+      | CValue (_, VInt i) -> string_of_int i | CParam { name; _ } -> name
+
     method render_ty ty =
       match !ty with
       | Ty.Int i -> display_int_ty i
@@ -914,6 +939,8 @@ class tcx sess =
       | Ptr (m, ty) -> "*" ^ mut m ^ self#render_ty ty
       | Ref (m, ty) -> "&" ^ mut m ^ self#render_ty ty
       | Slice ty -> sprintf "[%s]" (self#render_ty ty)
+      | Array (ty, size) ->
+          sprintf "[%s; %s]" (self#render_ty ty) (self#render_const size)
       | Err -> "err"
       | Fn (def_id, Subst subst) ->
           let { args; ret; is_variadic; abi } = self#get_fn def_id in

@@ -68,6 +68,13 @@ let rec render_ty (ty : ty) =
   | Pty_ptr (m, ty) -> sprintf "*%s%s" (mut m) (render_ty ty)
   | Pty_ref (m, ty) -> sprintf "&%s%s" (mut m) (render_ty ty)
   | Pty_slice ty -> sprintf "[%s]" (render_ty ty)
+  | Pty_array (ty, size) ->
+      sprintf
+        "[%s; %s]"
+        (render_ty ty)
+        (match size with
+         | Parr_int i -> string_of_int i
+         | Parr_ident s -> s.ident)
   | Pty_unit -> "()"
   | Pty_fnptr (ty_list, ret_ty, _) ->
       sprintf

@@ -11,7 +11,7 @@ error: mismatch types
    │
  8 │     xs[xs];
    │        ╶╮
-   │         ╰── expected `usize`, found `[integer]`
+   │         ╰── expected `usize`, found `[integer; 3]`
    ∙
 ───╯
 error: mismatch types

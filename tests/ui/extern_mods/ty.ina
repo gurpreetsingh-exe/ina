@@ -24,6 +24,11 @@ mod p {
     fn f2(_: *i8) {}
 }
 
+mod a {
+    fn f1(_: [i32; 4]) {}
+    fn f2(_: [i32]) {}
+}
+
 fn f1(_: bool) {}
 fn f2(_: str) {}
 fn f3(_: fn(*i8)) {}

@@ -160,6 +160,7 @@ let rec fold_ty infcx ty =
   | Ptr (m, ty) -> infcx.tcx#ptr m (fold_ty infcx ty)
   | Ref (m, ty) -> infcx.tcx#ref m (fold_ty infcx ty)
   | Slice ty -> infcx.tcx#slice (fold_ty infcx ty)
+  | Array (ty, c) -> infcx.tcx#array (fold_ty infcx ty) c
   | Adt (did, Subst subst) ->
       let subst =
         map subst (fun (Ty ty : generic_arg) : generic_arg ->

@@ -64,6 +64,8 @@ let collect tcx mdl cached =
             Aggregate (Adt (did, i, subst), map values fold_value)
         | Aggregate (Slice ty, values) ->
             Aggregate (Slice (fold_ty ty), map values fold_value)
+        | Aggregate (Array ty, values) ->
+            Aggregate (Array (fold_ty ty), map values fold_value)
         | Store (src, dst) -> Store (fold_value src, fold_value dst)
         | Copy ptr -> Copy (fold_value ptr)
         | Move ptr -> Move (fold_value ptr)
@@ -90,6 +92,8 @@ let collect tcx mdl cached =
         | Trunc pair -> Trunc (fold_pair pair)
         | PtrToInt pair -> PtrToInt (fold_pair pair)
         | IntToPtr pair -> IntToPtr (fold_pair pair)
+        | Coercion (c, value, ty) ->
+            Coercion (c, fold_value value, fold_ty ty)
         | Nop -> Nop
       in
       { inst with kind; ty }

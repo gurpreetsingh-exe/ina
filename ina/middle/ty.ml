@@ -118,6 +118,12 @@ and mutability =
   | Mut
   | Imm
 
+and value = VInt of int
+
+and const =
+  | CParam of typaram
+  | CValue of (ty ref * value)
+
 and ty =
   | Int of int_ty
   | Float of float_ty
@@ -125,6 +131,7 @@ and ty =
   | Str
   | Ptr of (mutability * ty ref)
   | Ref of (mutability * ty ref)
+  | Array of (ty ref * const)
   | Slice of ty ref
   | Adt of (def_id * subst)
   | Tuple of ty ref vec
@@ -153,6 +160,7 @@ let discriminator = function
   | Err -> 13L
   | Tuple _ -> 14L
   | Slice _ -> 15L
+  | Array _ -> 16L
 ;;
 
 type fxhasher = { mutable hash: int }
@@ -303,8 +311,23 @@ let rec encode enc ty =
   | Float f ->
       enc#emit_with disc (fun e -> float_ty_to_enum f |> e#emit_usize)
   | Bool | Str | Unit -> enc#emit_with disc (fun _ -> ())
-  | Ptr (m, ty) | Ref (m, ty) -> enc#emit_with disc (fun e -> encode e ty)
+  | Ptr (m, ty) | Ref (m, ty) ->
+      enc#emit_with disc (fun e ->
+          e#emit_usize (match m with Mut -> 1 | Imm -> 2);
+          encode e ty)
   | Slice ty -> enc#emit_with disc (fun e -> encode e ty)
+  | Array (ty, size) ->
+      enc#emit_with disc (fun e ->
+          encode e ty;
+          match size with
+          | CParam { name; index } ->
+              e#emit_usize 1;
+              e#emit_str name;
+              e#emit_usize index
+          | CValue (ty, VInt v) ->
+              e#emit_usize 2;
+              encode e ty;
+              e#emit_usize v)
   | Adt (id, subst) | Fn (id, subst) ->
       enc#emit_with disc (fun e ->
           Def_id.encode e id;
@@ -330,14 +353,22 @@ Fn.__encode_fn :=
     enc#emit_bool is_variadic;
     abi_to_enum abi |> enc#emit_usize
 
+let decode_mut dec =
+  match dec#read_usize with 1 -> Mut | 2 -> Imm | _ -> assert false
+;;
+
 let rec decode tcx dec =
   (match dec#read_usize with
    | 1 -> Int (dec#read_usize |> int_ty_of_enum |> Option.get)
    | 2 -> Float (dec#read_usize |> float_ty_of_enum |> Option.get)
    | 3 -> Bool
    | 4 -> Str
-   | 5 -> Ptr (Imm, decode tcx dec)
-   | 6 -> Ref (Imm, decode tcx dec)
+   | 5 ->
+       let mut = decode_mut dec in
+       Ptr (mut, decode tcx dec)
+   | 6 ->
+       let mut = decode_mut dec in
+       Ref (mut, decode tcx dec)
    | 7 ->
        let did = Def_id.decode dec in
        let subst = decode_subst tcx dec in
@@ -362,6 +393,21 @@ let rec decode tcx dec =
        let subst = decode_subst tcx dec in
        Fn (did, subst)
    | 15 -> Slice (decode tcx dec)
+   | 16 ->
+       let ty = decode tcx dec in
+       let const =
+         match dec#read_usize with
+         | 1 ->
+             let name = dec#read_str
+             and index = dec#read_usize in
+             CParam { name; index }
+         | 2 ->
+             let ty = decode tcx dec in
+             let v = dec#read_usize in
+             CValue (ty, VInt v)
+         | _ -> assert false
+       in
+       Array (ty, const)
    | i ->
        printf "%d\n" i;
        assert false)
@@ -422,6 +468,20 @@ let rec hash hasher ty =
       g (m |> function Mut -> 1 | Imm -> 2);
       f !ty
   | Slice ty -> f !ty
+  | Array (ty, size) ->
+      f !ty;
+      (match size with
+       | CParam { name; index } ->
+           g 1;
+           g (String.hash name);
+           g index
+       | CValue (ty, value) ->
+           g 2;
+           f !ty;
+           (match value with
+            | VInt i ->
+                g 1;
+                g i))
   | Adt ({ inner; mod_id }, Subst subst) ->
       g inner;
       g mod_id;
@@ -493,10 +553,16 @@ let rec render_ty2 ty =
   | Ptr (m, ty) -> "*" ^ mut m ^ render_ty2 ty
   | Ref (m, ty) -> "&" ^ mut m ^ render_ty2 ty
   | Slice ty -> sprintf "[%s]" (render_ty2 ty)
+  | Array (ty, size) ->
+      sprintf "[%s; %s]" (render_ty2 ty) (render_const size)
   | Adt (def_id, _) -> sprintf "adt(%s)" (print_def_id def_id)
   | Tuple tys -> tys#join ", " render_ty2
   | Fn (def_id, _) -> sprintf "fn(%s)" (print_def_id def_id)
   | Param { index; name } -> sprintf "%s%d" name index
+
+and render_const = function
+  | CParam { index; name } -> sprintf "%s%d" name index
+  | CValue (_, VInt i) -> string_of_int i
 ;;
 
 _render_ty2 := render_ty2

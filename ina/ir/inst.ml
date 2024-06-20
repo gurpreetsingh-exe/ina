@@ -109,6 +109,8 @@ type t = {
   ; span: Span.t
 }
 
+and coercion = ArrayToSlice
+
 and inst_kind =
   | Alloca of ty ref
   | Binary of binary_kind * value * value
@@ -134,6 +136,7 @@ and inst_kind =
   (* Fptrunc of ty * value *)
   | PtrToInt of (value * ty ref)
   | IntToPtr of (value * ty ref)
+  | Coercion of (coercion * value * ty ref)
   | Nop
 
 and terminator =
@@ -146,6 +149,7 @@ and terminator =
 and aggregate =
   | Adt of (def_id * int * subst)
   | Slice of ty ref
+  | Array of ty ref
 
 and value =
   | Const of {
@@ -197,6 +201,7 @@ let inst_kind_to_enum = function
   | Nop -> 18L
   | Index _ -> 19L
   | Len _ -> 20L
+  | Coercion _ -> 21L
 ;;
 
 let binary_kind_to_inst = function
@@ -313,7 +318,7 @@ let render_inst tcx inst : string =
       let path, _ = tcx#into_segments variant.def_id in
       let name = String.concat "::" path in
       sprintf "%s { %s }" name (values#join ", " (render_value tcx))
-  | Aggregate (Slice ty, values) ->
+  | Aggregate ((Slice ty | Array ty), values) ->
       let name = tcx#render_ty ty in
       sprintf "%s { %s }" name (values#join ", " (render_value tcx))
   | Discriminant value -> sprintf "discriminant %s" (render_value tcx value)
@@ -385,6 +390,11 @@ let render_inst tcx inst : string =
       sprintf "ptrtoint %s to %s" (render_value tcx value) (tcx#render_ty ty)
   | IntToPtr (value, ty) ->
       sprintf "inttoptr %s to %s" (render_value tcx value) (tcx#render_ty ty)
+  | Coercion (ArrayToSlice, value, ty) ->
+      sprintf
+        "coercion[array => slice], %s to %s"
+        (render_value tcx value)
+        (tcx#render_ty ty)
   | Trap _ -> "trap"
   | Nop -> "nop"
 ;;
@@ -423,6 +433,11 @@ and encode_inst_kind enc kind =
   | Aggregate (Slice ty, values) ->
       enc#emit_with disc (fun _ ->
           enc#emit_usize 1;
+          Ty.encode enc ty;
+          encode_vec enc values encode_value)
+  | Aggregate (Array ty, values) ->
+      enc#emit_with disc (fun _ ->
+          enc#emit_usize 2;
           Ty.encode enc ty;
           encode_vec enc values encode_value)
   | Discriminant value | Copy value | Move value | Len value ->
@@ -464,6 +479,11 @@ and encode_inst_kind enc kind =
           Ty.encode enc ty;
           encode_value enc v;
           encode_value enc idx)
+  | Coercion (ArrayToSlice, v, ty) ->
+      enc#emit_with disc (fun _ ->
+          enc#emit_usize 0;
+          encode_value enc v;
+          Ty.encode enc ty)
 
 and encode_terminator enc = function
   | Switch (d, br, default) ->
@@ -603,6 +623,12 @@ and decode_inst_kind tcx dec =
       let idx = decode_value tcx dec in
       Index (ty, v, idx)
   | 20 -> Len (decode_value tcx dec)
+  | 21 ->
+      let i = dec#read_usize in
+      assert (i = 0);
+      let v = decode_value tcx dec in
+      let ty = Ty.decode tcx dec in
+      Coercion (ArrayToSlice, v, ty)
   | _ -> assert false
 
 and decode_terminator tcx dec =
