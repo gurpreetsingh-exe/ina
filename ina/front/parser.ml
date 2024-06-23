@@ -610,6 +610,21 @@ class parser pcx file lx =
                  assert false)
       | _ -> assert false
 
+    method parse_label =
+      match token.kind with
+      | Colon ->
+          self#bump;
+          let* label = self#parse_ident in
+          Ok (Some label)
+      | _ -> Ok None
+
+    method parse_expr_opt =
+      if Token.can_begin_expr token.kind
+      then
+        let* expr = self#parse_expr in
+        Ok (Some expr)
+      else Ok None
+
     method parse_primary =
       let s = token.span.lo in
       let* expr_kind =
@@ -622,16 +637,14 @@ class parser pcx file lx =
             Ok (Ast.If iff)
         | Loop ->
             self#bump;
-            let* label =
-              match token.kind with
-              | Colon ->
-                  self#bump;
-                  let* label = self#parse_ident in
-                  Ok (Some label)
-              | _ -> Ok None
-            in
+            let* label = self#parse_label in
             let* block = self#parse_block in
             Ok (Ast.Loop (label, block))
+        | Break ->
+            self#bump;
+            let* label = self#parse_label in
+            let* expr = self#parse_expr_opt in
+            Ok (Ast.Break (label, expr))
         | LBrace ->
             let* block = self#parse_block in
             Ok (Block block)

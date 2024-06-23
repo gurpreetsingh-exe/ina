@@ -1,0 +1,14 @@
+// COMPILE_FAIL
+
+fn main() {
+    let a = break;
+    if true {
+        break
+    }
+    match true {
+        _ => break,
+    }
+    { break }
+    // OK
+    loop { break; }
+}

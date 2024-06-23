@@ -25,6 +25,7 @@ class type_lowering resolver modd =
           self#visit_expr left;
           self#visit_expr right
       | Block block | Loop (_, block) -> self#visit_block block
+      | Break (_, opt_expr) -> Option.iter self#visit_expr opt_expr
       | If { cond; then_block; else_block; _ } ->
           self#visit_expr cond;
           self#visit_block then_block;

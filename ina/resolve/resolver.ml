@@ -662,6 +662,8 @@ class resolver tcx modd =
              | None -> ())
         | Ref (_, expr) | Deref expr -> visit_expr expr mdl
         | Block block | Loop (_, block) -> visit_block block
+        | Break (_, opt_expr) ->
+            Option.iter (fun expr -> visit_expr expr mdl) opt_expr
         | Lit _ -> ()
         | StructExpr { struct_name; fields; _ } ->
             visit_path struct_name mdl (Some Type);

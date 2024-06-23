@@ -175,6 +175,7 @@ and basic_block = {
   ; mutable insts: t vec
   ; mutable terminator: terminator
   ; mutable bid: int
+  ; mutable name: string option
   ; mutable is_entry: bool
 }
 (* [@@deriving show] *)
@@ -238,6 +239,11 @@ let render_binary = function
 
 let has_value inst = !(inst.ty) <> Unit
 
+let label bb : string =
+  let s = string_of_int bb.bid in
+  Option.value bb.name ~default:"bb" ^ s
+;;
+
 let rec render_const tcx = function
   | Int value -> sprintf "%d" value
   | Float value -> sprintf "%f" value
@@ -251,7 +257,8 @@ and render_value tcx = function
   | Const const ->
       sprintf "%s %s" (tcx#render_ty const.ty) (render_const tcx const.kind)
   | VReg inst -> sprintf "%s %%%i" (tcx#render_ty inst.ty) inst.id
-  | Label bb -> sprintf "label %%bb%d" bb.bid
+  | Label bb ->
+      sprintf "label %%%s" (label bb) (* (sprintf "label %%bb%d" bb.bid) *)
   | Param (ty, name, _) -> sprintf "%s %%%s" (tcx#render_ty ty) name
   | Global (Fn instance) -> render_instance tcx instance
 ;;

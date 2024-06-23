@@ -1,0 +1,8 @@
+error: mismatch types
+   ╭─[tests/ui/mismatch_types_in_break.ina:6:15]
+   │
+ 6 │         break 20.;
+   │               ─┬─
+   │                ╰── expected `integer`, found `float`
+   ∙
+───╯

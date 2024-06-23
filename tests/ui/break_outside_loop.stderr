@@ -1,0 +1,32 @@
+error: break outside of a loop
+   ╭─[tests/ui/break_outside_loop.ina:4:13]
+   │
+ 4 │     let a = break;
+   │             ──┬──
+   │               ╰─── cannot `break` outside of a loop
+   ∙
+───╯
+error: break outside of a loop
+   ╭─[tests/ui/break_outside_loop.ina:6:9]
+   │
+ 6 │         break
+   │         ──┬──
+   │           ╰─── cannot `break` outside of a loop
+   ∙
+───╯
+error: break outside of a loop
+   ╭─[tests/ui/break_outside_loop.ina:9:14]
+   │
+ 9 │         _ => break,
+   │              ──┬──
+   │                ╰─── cannot `break` outside of a loop
+   ∙
+───╯
+error: break outside of a loop
+    ╭─[tests/ui/break_outside_loop.ina:11:7]
+    │
+ 11 │     { break }
+    │       ──┬──
+    │         ╰─── cannot `break` outside of a loop
+    ∙
+────╯

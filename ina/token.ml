@@ -31,6 +31,7 @@ type token_kind =
   | If
   | Else
   | Loop
+  | Break
   | Assert
   | As
   | Impl
@@ -83,6 +84,7 @@ let display_token_kind = function
   | If -> "if"
   | Else -> "else"
   | Loop -> "loop"
+  | Break -> "break"
   | Assert -> "assert"
   | As -> "as"
   | Impl -> "impl"
@@ -131,6 +133,13 @@ type token = {
     kind: token_kind
   ; span: Span.t
 }
+
+let can_begin_expr = function
+  | Ident | If | Loop | Break | Match | Underscore | LBrace | LBracket
+  | LParen | Lit _ | Ampersand | Ampersand2 | Star | Pound ->
+      true
+  | _ -> false
+;;
 
 let display_token t s =
   let { kind; span = { lo; hi } } = t in

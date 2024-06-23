@@ -15,7 +15,10 @@ class builder tcx blocks block =
       let inst = { kind; ty = tcx#types.unit; id = -1; span } in
       block.insts#push inst
 
-    method private add_terminator term = block.terminator <- term
+    method private add_terminator term =
+      match block.terminator with
+      | RetUnit -> block.terminator <- term
+      | _ -> ()
 
     method private add_inst_with_ty ty kind span =
       let inst = { kind; ty; id = -1; span } in

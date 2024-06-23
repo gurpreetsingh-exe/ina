@@ -219,6 +219,8 @@ let analyze (tcx : tcx) fn =
         let* _ = visit_expr expr ~e in
         let* _ = visit_expr idx ~e in
         Ok ()
+    | Break (_, Some expr) -> visit_expr expr ~e
+    | Break (_, None) -> Ok ()
     | Hole -> Ok ()
   and visit_pattern span = function
     | PIdent (_, _, id) -> Hashtbl.add locals !id span

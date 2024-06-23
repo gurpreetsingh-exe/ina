@@ -16,9 +16,13 @@ class lcx tcx =
     val mdl : Module.t = { items = new vec }
     val mutable builder = dummy_builder ()
     val locals : Inst.value nodemap = new hashmap
+    val break_bb : Inst.basic_block nodemap = new hashmap
+    val loop_args : (Inst.value * Inst.value) vec nodemap = new hashmap
     method tcx = tcx
     method bx = builder
     method set_active_fn f = fn <- Some f
+    method break_bb = break_bb
+    method loop_args = loop_args
 
     method is_test_func =
       match (Option.get fn).instance.def with Test _ -> true | _ -> false

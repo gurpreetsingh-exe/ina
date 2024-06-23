@@ -1,0 +1,8 @@
+// COMPILE_FAIL
+
+fn main() {
+    loop {
+        break 20;
+        break 20.;
+    };
+}

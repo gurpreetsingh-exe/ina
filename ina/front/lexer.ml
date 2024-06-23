@@ -18,6 +18,7 @@ let keywords =
    ; "if", If
    ; "else", Else
    ; "loop", Loop
+   ; "break", Break
    ; "assert", Assert
    ; "as", As
    ; "impl", Impl

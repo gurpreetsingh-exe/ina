@@ -268,6 +268,7 @@ class tcx sess =
     val decoders : decoder vec = new vec
     val decision_trees : (def_id, Decision.t) hashmap = new hashmap
     val adjustments : Adjustment.t nodemap = new hashmap
+    val breaks : (node_id, node_id) hashmap = new hashmap
     val diagnostics : Errors.Diagnostic.t vec = new vec
     val mutable impl_id = 0
 
@@ -308,6 +309,7 @@ class tcx sess =
     method set_main id = main <- Some id
     method decoders = decoders
     method main = main
+    method breaks = breaks
 
     method record_decision_tree did decision =
       assert (decision_trees#insert did decision = None)

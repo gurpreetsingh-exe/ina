@@ -3,7 +3,7 @@ open Structures.Vec
 open Inst
 open Metadata
 
-let create () : basic_block =
+let create ?name () : basic_block =
   Inst.
     {
       pred = new vec
@@ -11,11 +11,10 @@ let create () : basic_block =
     ; insts = new vec
     ; terminator = RetUnit
     ; bid = -1
+    ; name
     ; is_entry = false
     }
 ;;
-
-let label bb : string = "bb" ^ string_of_int bb.bid
 
 let is_phi bb =
   fold_left

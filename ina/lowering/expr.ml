@@ -427,10 +427,30 @@ let rec lower_block (lcx : lcx) block =
         let join = Basicblock.create () in
         lcx#bx#jmp (Label loop);
         lcx#append_block_with_builder loop;
-        let v = lower_block lcx block in
+        ignore @@ lcx#break_bb#insert e.expr_id join;
+        let phi_args = new vec in
+        ignore @@ lcx#loop_args#insert e.expr_id phi_args;
+        let _ = lower_block lcx block in
+        ignore @@ lcx#break_bb#remove e.expr_id;
         lcx#bx#jmp (Label loop);
         lcx#append_block_with_builder join;
-        v
+        if phi_args#empty
+        then lcx#bx#nop
+        else
+          let ty = get_ty tcx @@ snd @@ phi_args#get 0 in
+          lcx#bx#phi ty phi_args e.expr_span
+    | Break (_, opt_expr) ->
+        let loop_id = tcx#breaks#unsafe_get e.expr_id in
+        let v = Option.map lower opt_expr in
+        let go = function
+          | Some v ->
+              (lcx#loop_args#unsafe_get loop_id)#push (Label lcx#bx#block, v);
+              v
+          | None -> lcx#bx#nop
+        in
+        let join = lcx#break_bb#unsafe_get loop_id in
+        lcx#bx#jmp (Label join);
+        go v
     | StructExpr { fields; _ } ->
         let f = map fields (fun (_, expr) -> lower expr) in
         Const { kind = Struct f; ty }

@@ -27,6 +27,8 @@ type cx = {
   ; mutable generics: typaram array
   ; tyvar_origin: (ty ref, tyvar_origin) Hashtbl.t
   ; slice_tyvars: (ty ref, Span.t) Hashtbl.t
+  ; mutable loop_id: node_id option
+  ; break_tys: (node_id, ty ref) hashmap
 }
 
 let create infcx =
@@ -35,6 +37,8 @@ let create infcx =
   ; generics = [||]
   ; tyvar_origin = Hashtbl.create 0
   ; slice_tyvars = Hashtbl.create 0
+  ; loop_id = None
+  ; break_tys = new hashmap
   }
 ;;
 
@@ -442,6 +446,15 @@ let tychk_fn cx fn =
     | FnPtr { args; ret; is_variadic; abi } ->
         tcx#fn_ptr (map args fold_ty) (fold_ty ret) is_variadic abi
     | _ -> ty
+  and with_expected id expected f =
+    let tmp = cx.loop_id in
+    cx.loop_id <- Some id;
+    (match expected with
+     | ExpectTy ty -> ignore @@ cx.break_tys#insert id ty
+     | _ -> ());
+    let _ = f () in
+    cx.loop_id <- tmp;
+    cx.break_tys#unsafe_get id
   in
   let last_stmt_span block =
     Option.map (fun e -> e.expr_span) block.last_expr
@@ -900,7 +913,9 @@ let tychk_fn cx fn =
               ty
           | Some ty ->
               let found = new_var cx.infcx in
-              ty_err_emit tcx (MismatchTy (ty, found)) expr.expr_span;
+              (match equate ty found with
+               | Ok _ -> ()
+               | Error e -> ty_err_emit tcx e expr.expr_span);
               ty
           | None -> new_var cx.infcx
         in
@@ -915,8 +930,18 @@ let tychk_fn cx fn =
               | opt -> go infcx_new_float_var opt)
          | LitStr _ -> tcx#types.str
          | LitBool _ -> tcx#types.bool)
-    | Block block | Loop (_, block) ->
-        check_block_with_expected block expected
+    | Block block -> check_block_with_expected block expected
+    | Loop (_, block) ->
+        with_expected expr.expr_id expected (fun () ->
+            let found = check_block_with_expected block NoExpectation in
+            match expected with
+            | ExpectTy ty ->
+                (match equate ty found with
+                 | Ok ty -> ty
+                 | Error e ->
+                     ty_err_emit tcx e expr.expr_span;
+                     found)
+            | _ -> tcx#types.unit)
     | Deref expr ->
         let ty = check_expr expr NoExpectation in
         (match !ty with
@@ -924,6 +949,47 @@ let tychk_fn cx fn =
          | _ ->
              ty_err_emit tcx (InvalidDeref ty) expr.expr_span;
              tcx#types.err)
+    | Break (_, opt_expr) ->
+        cx.loop_id
+        |> (function
+        | Some id ->
+            ignore @@ tcx#breaks#insert expr.expr_id id;
+            let check_break expected =
+              opt_expr
+              |> function
+              | Some expr -> check_expr expr expected
+              | None ->
+                  resolve_expected expected
+                  |> Option.map (function
+                         | ty when ty = tcx#types.unit -> tcx#types.unit
+                         | ty ->
+                             ty_err_emit
+                               tcx
+                               (MismatchTy (ty, tcx#types.unit))
+                               expr.expr_span;
+                             tcx#types.unit)
+                  |> Option.value ~default:tcx#types.unit
+            in
+            (match cx.break_tys#get id with
+             | Some ty ->
+                 let found = check_break (ExpectTy ty) in
+                 ignore @@ equate ty found;
+                 tcx#types.unit
+             | None ->
+                 let ty = check_break NoExpectation in
+                 ignore @@ cx.break_tys#insert id ty;
+                 tcx#types.unit)
+        | None ->
+            Diagnostic.create
+              "break outside of a loop"
+              ~labels:
+                [
+                  Label.primary
+                    "cannot `break` outside of a loop"
+                    expr.expr_span
+                ]
+            |> tcx#emit;
+            tcx#types.err)
     | Ref (m, expr') ->
         let m = tcx#ast_mut_to_mut m in
         (match resolve_expected expected with
