@@ -7,6 +7,7 @@ open Resolve
 open Middle.Ctx
 open Sema
 open Lowering
+open Monomorphize
 
 let () =
   let start = Sys.time () in
@@ -117,6 +118,7 @@ let () =
                Transform.run_passes tcx fn.basic_blocks);
            if sess.options.output_type = ExtMod
            then Ir.Module.encode tcx#sess.enc mdl;
+           let mdl = Monomorphize.Collect.monomorphize tcx mdl in
            if sess.options.print_ir
            then (
              Ir.Module.render tcx mdl;

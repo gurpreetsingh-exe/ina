@@ -148,3 +148,22 @@ let collect tcx mdl cached =
   instantiated_items#iter instantiate;
   mono_items
 ;;
+
+let monomorphize tcx mdl =
+  let pending_decoders = tcx#decoders in
+  let items = new vec in
+  let cached = InstanceMap.create 0 in
+  pending_decoders#iter (fun dec ->
+      let mdl = Module.decode tcx dec in
+      items#append mdl.items;
+      let c = new hashmap in
+      Metadata.Decoder.decode_hashmap
+        dec
+        c
+        (Inst.decode_instance tcx)
+        (fun _ -> ());
+      c#iter (fun k _ -> InstanceMap.replace cached k ()));
+  mdl.items#append items;
+  let items = collect tcx mdl cached in
+  Module.{ items }
+;;

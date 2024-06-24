@@ -3,7 +3,6 @@ open Middle.Ctx
 open Utils.Path
 open Structures.Hashmap
 open Structures.Vec
-open Monomorphize
 
 module type CodegenBackend = sig
   type cx
@@ -23,23 +22,6 @@ module MakeCodegenBackend (T : CodegenBackend) = struct
 end
 
 let codegen (tcx : tcx) (mdl : Module.t) =
-  let pending_decoders = tcx#decoders in
-  let open Inst in
-  let items = new vec in
-  let cached = InstanceMap.create 0 in
-  pending_decoders#iter (fun dec ->
-      let mdl = Ir.Module.decode tcx dec in
-      items#append mdl.items;
-      let c = new hashmap in
-      Metadata.Decoder.decode_hashmap
-        dec
-        c
-        (Inst.decode_instance tcx)
-        (fun _ -> ());
-      c#iter (fun k _ -> InstanceMap.replace cached k ()));
-  mdl.items#append items;
-  let items = Collect.collect tcx mdl cached in
-  let mdl = Ir.Module.{ items } in
   let opt = tcx#sess.options in
   match opt.backend with
   | C ->
