@@ -111,17 +111,8 @@ let rec backend_ty cx ty =
               name;
           TypeMap.add cx.types ty' name;
           name
-      | Array (ty, CValue (_, VInt i)) as ty' ->
-          let ty = backend_ty cx ty in
-          let name = sprintf "__array_%d" (TypeMap.length cx.types) in
-          prelude ^ sprintf "// %s\n" (cx.tcx#render_ty @@ ref ty');
-          prelude
-          ^ sprintf
-              "typedef struct %s { %s inner[%d] } %s;\n\n"
-              name
-              ty
-              i
-              name;
+      | Array (ty, CValue (_, VInt _)) as ty' ->
+          let name = String.cat (backend_ty cx ty) "*" in
           TypeMap.add cx.types ty' name;
           name
       | _ ->
@@ -359,13 +350,15 @@ let gen cx =
           else "{}"
         in
         out ^ sprintf "{ .discriminant = %d, .data = %s };\n" vidx data
-    | Aggregate (Array _, args) ->
+    | Aggregate (Array ty, args) ->
+        let ty = cx.tcx#inner_ty ty |> Option.get in
+        let name = backend_ty cx ty in
         let data =
           if args#empty
-          then "{}"
+          then sprintf "(%s[]){}" name
           else
             let args = args#join ", " get_value in
-            sprintf "{ .inner = { %s } }" args
+            sprintf "(%s[]){ %s }" name args
         in
         out ^ sprintf "%s;\n" data
     | Aggregate (Slice ty, args) ->
@@ -428,8 +421,7 @@ let gen cx =
         if cx.tcx#is_slice ty
         then
           out ^ sprintf "%s.ptr[%s];\n" (get_value value) (get_value index)
-        else
-          out ^ sprintf "%s.inner[%s];\n" (get_value value) (get_value index)
+        else out ^ sprintf "%s[%s];\n" (get_value value) (get_value index)
     | Len value ->
         let ty = get_ty cx.tcx value in
         if cx.tcx#is_slice ty
@@ -445,10 +437,7 @@ let gen cx =
         let ty = get_ty cx.tcx value in
         let length = cx.tcx#array_length ty in
         out
-        ^ sprintf
-            "{ .ptr = %s.inner, .length = %d };\n"
-            (get_value value)
-            length
+        ^ sprintf "{ .ptr = %s, .length = %d };\n" (get_value value) length
     | Trap value when !is_test ->
         out ^ sprintf "__builtin_printf(\"%s\");\n" (String.escaped value);
         out ^ sprintf "  longjmp(%s, 1);\n" jmpbuf

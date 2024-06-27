@@ -1,0 +1,10 @@
+fn write[T](arr: *mut T, v: T) {
+    *arr = v;
+}
+
+#[test]
+fn as_ptr() {
+    let arr = [0];
+    write(arr.as_ptr() as *mut i32, 50);
+    assert arr[0] == 50;
+}
