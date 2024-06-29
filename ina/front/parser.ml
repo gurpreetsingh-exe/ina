@@ -686,11 +686,37 @@ class parser pcx file lx =
             in
             Ok (Ast.Match (e, arms))
         | LBracket ->
-            let* exprs =
-              parse_spanned_with_sep self LBracket RBracket Comma (fun _ ->
-                  self#parse_expr)
-            in
-            Ok (Slice exprs)
+            self#bump;
+            let exprs = new vec in
+            (match token.kind with
+             | RBracket ->
+                 self#bump;
+                 Ok (Slice exprs)
+             | _ ->
+                 let* expr = self#parse_expr in
+                 exprs#push expr;
+                 (match token.kind with
+                  | RBracket ->
+                      self#bump;
+                      Ok (Slice exprs)
+                  | Comma ->
+                      self#bump;
+                      while
+                        not (token.kind = RBracket || token.kind = Eof)
+                      do
+                        (match self#parse_expr with
+                         | Error e -> self#emit_err e
+                         | Ok expr -> exprs#push expr);
+                        self#eat_if_present Comma
+                      done;
+                      let* _ = self#expect RBracket in
+                      Ok (Slice exprs)
+                  | Semi ->
+                      self#bump;
+                      let* repeat = self#parse_expr in
+                      let* _ = self#expect RBracket in
+                      Ok (Repeat (expr, repeat))
+                  | _ -> assert false))
         | Underscore ->
             self#bump;
             Ok Hole

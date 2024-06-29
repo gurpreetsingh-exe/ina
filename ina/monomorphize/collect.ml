@@ -66,6 +66,8 @@ let collect tcx mdl cached =
             Aggregate (Slice (fold_ty ty), map values fold_value)
         | Aggregate (Array ty, values) ->
             Aggregate (Array (fold_ty ty), map values fold_value)
+        | Aggregate (Repeat (ty, size), values) ->
+            Aggregate (Repeat (fold_ty ty, size), map values fold_value)
         | Store (src, dst) -> Store (fold_value src, fold_value dst)
         | Copy ptr -> Copy (fold_value ptr)
         | Move ptr -> Move (fold_value ptr)

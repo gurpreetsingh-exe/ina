@@ -1213,6 +1213,28 @@ let tychk_fn cx fn =
               | Error e ->
                   ty_err_emit tcx e expr.expr_span;
                   ty))
+    | Repeat (expr, size) ->
+        let ty = check_expr size (ExpectTy tcx#types.usize) in
+        Result.iter_error
+          (fun e -> ty_err_emit tcx e size.expr_span)
+          (equate tcx#types.usize ty);
+        let ty = check_expr expr expected in
+        let size =
+          match size.expr_kind with
+          | Lit (LitInt i) -> i
+          | _ ->
+              Diagnostic.create
+                "invalid value"
+                ~labels:
+                  [
+                    Label.primary
+                      "only int literals are supported"
+                      size.expr_span
+                  ]
+              |> tcx#emit;
+              0
+        in
+        tcx#array ty (CValue (tcx#types.usize, VInt size))
     | Index (expr, index) ->
         let ty = check_expr index (ExpectTy tcx#types.usize) in
         Result.iter_error

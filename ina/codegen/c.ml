@@ -361,6 +361,12 @@ let gen cx =
             sprintf "(%s[]){ %s }" name args
         in
         out ^ sprintf "%s;\n" data
+    | Aggregate (Repeat (ty, size), args) ->
+        let v = args#get 0 |> get_value in
+        out
+        ^ (List.init size (fun _ -> v)
+           |> String.concat ", "
+           |> sprintf "(%s[]){ %s };\n" (backend_ty cx ty))
     | Aggregate (Slice ty, args) ->
         let ty = cx.tcx#inner_ty ty |> Option.get in
         let length = args#len in

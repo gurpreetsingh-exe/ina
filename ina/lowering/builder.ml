@@ -67,6 +67,9 @@ class builder tcx blocks block =
           self#add_inst_with_ty ty (Aggregate (adt, args))
       | Slice ty | Array ty ->
           self#add_inst_with_ty ty (Aggregate (adt, args))
+      | Repeat (ty, size) ->
+          let ty = tcx#array ty (CValue (tcx#types.usize, VInt size)) in
+          self#add_inst_with_ty ty (Aggregate (adt, args))
 
     method coercion kind value ty =
       self#add_inst_with_ty ty (Coercion (kind, value, ty))

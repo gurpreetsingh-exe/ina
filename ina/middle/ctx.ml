@@ -877,6 +877,22 @@ class tcx sess =
                 |> self#emit;
               self#adt def_id (Subst subst)
           | Def (def_id, TyParam) -> self#ty_param_from_def_id def_id
+          | Def (did, kind) ->
+              let name = print_def_kind kind in
+              Errors.Diagnostic.(
+                create
+                  (sprintf "expected type, found %s" name)
+                  ~labels:
+                    [
+                      Label.primary
+                        (sprintf
+                           "`%s` is a %s"
+                           (self#into_last_segment did)
+                           name)
+                        ty.span
+                    ])
+              |> self#emit;
+              _types.err
           | _ -> _types.err)
       | Pty_implicitself ->
           let res = res_map#unsafe_get ty.ty_id in

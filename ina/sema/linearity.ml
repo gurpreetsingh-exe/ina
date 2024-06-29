@@ -215,6 +215,10 @@ let analyze (tcx : tcx) fn =
     | Slice exprs ->
         exprs#iter (fun expr -> ignore (visit_expr expr));
         Ok ()
+    | Repeat (expr1, expr2) ->
+        let* _ = visit_expr expr1 ~e in
+        let* _ = visit_expr expr2 ~e in
+        Ok ()
     | Index (expr, idx) ->
         let* _ = visit_expr expr ~e in
         let* _ = visit_expr idx ~e in

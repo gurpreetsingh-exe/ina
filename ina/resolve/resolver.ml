@@ -688,9 +688,9 @@ class resolver tcx modd =
                     visit_expr expr mdl
                 | _ -> assert false)
         | Slice exprs -> exprs#iter (fun expr -> visit_expr expr mdl)
-        | Index (expr, idx) ->
+        | Index (expr, e2) | Repeat (expr, e2) ->
             visit_expr expr mdl;
-            visit_expr idx mdl
+            visit_expr e2 mdl
         | Hole -> ()
       and visit_pat ?(env = new hashmap) pat mdl =
         match pat with

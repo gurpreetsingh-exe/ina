@@ -489,6 +489,12 @@ let rec lower_block (lcx : lcx) block =
           (if tcx#is_slice ty then Slice ty else Array ty)
           values
           e.expr_span
+    | Repeat (expr, _) ->
+        let v = lower expr in
+        let vals = new vec in
+        vals#push v;
+        let size = tcx#array_length ty in
+        lcx#bx#aggregate (Repeat (expr_ty expr, size)) vals e.expr_span
     | Index (expr, idx) ->
         let ty = expr_ty expr in
         let value = lower expr in

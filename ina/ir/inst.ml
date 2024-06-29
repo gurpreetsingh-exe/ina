@@ -150,6 +150,7 @@ and aggregate =
   | Adt of (def_id * int * subst)
   | Slice of ty ref
   | Array of ty ref
+  | Repeat of (ty ref * int)
 
 and value =
   | Const of {
@@ -325,7 +326,7 @@ let render_inst tcx inst : string =
       let path, _ = tcx#into_segments variant.def_id in
       let name = String.concat "::" path in
       sprintf "%s { %s }" name (values#join ", " (render_value tcx))
-  | Aggregate ((Slice ty | Array ty), values) ->
+  | Aggregate ((Slice ty | Array ty | Repeat (ty, _)), values) ->
       let name = tcx#render_ty ty in
       sprintf "%s { %s }" name (values#join ", " (render_value tcx))
   | Discriminant value -> sprintf "discriminant %s" (render_value tcx value)
@@ -446,6 +447,12 @@ and encode_inst_kind enc kind =
       enc#emit_with disc (fun _ ->
           enc#emit_usize 2;
           Ty.encode enc ty;
+          encode_vec enc values encode_value)
+  | Aggregate (Repeat (ty, size), values) ->
+      enc#emit_with disc (fun _ ->
+          enc#emit_usize 3;
+          Ty.encode enc ty;
+          enc#emit_usize size;
           encode_vec enc values encode_value)
   | Discriminant value | Copy value | Move value | Len value ->
       enc#emit_with disc (fun _ -> encode_value enc value)

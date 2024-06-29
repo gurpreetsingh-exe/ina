@@ -277,6 +277,7 @@ and expr_kind =
   | MethodCall of expr * path_segment * expr vec
   | Match of expr * arm vec
   | Slice of expr vec
+  | Repeat of (expr * expr)
   | Index of (expr * expr)
   | Hole
 
