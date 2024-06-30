@@ -143,8 +143,18 @@ let collect tcx mdl cached =
           fn.basic_blocks.bbs#iter (fun bb ->
               bb.insts#iter (fun inst ->
                   match inst.kind with
-                  | Call (ty, _, _) when Fn.is_generic ty ->
-                      instantiated_items#push ty
+                  | Call (ty, _, values) when Fn.is_generic ty ->
+                      instantiated_items#push ty;
+                      values#iter (function
+                          | Global (Fn instance) ->
+                              let ty =
+                                tcx#get_def (instance_def_id instance)
+                              in
+                              let (Subst s) = instance.subst in
+                              let ty = SubstFolder.fold_ty tcx ty s in
+                              if Fn.is_generic ty
+                              then instantiated_items#push ty
+                          | _ -> ())
                   | _ -> ()));
           mono_items#push fn);
   instantiated_items#iter instantiate;

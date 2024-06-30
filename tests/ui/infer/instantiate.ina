@@ -1,0 +1,14 @@
+// COMPILE_FAIL
+
+fn app[T, U](x: T, f: fn(T) -> U) -> U {
+    f(x)
+}
+
+fn id[T](x: T) -> T { x }
+
+fn main() {
+    // OK
+    app(3, id);
+    // ERROR
+    app![i32, i64](3, id);
+}

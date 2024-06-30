@@ -378,11 +378,23 @@ let tychk_fn cx fn =
       | Slice t0, (Slice t1 | Array (t1, _)) ->
           let* ty = equate t0 t1 in
           Ok (tcx#slice ty)
-      | FnPtr t0', Fn (def_id, _) | Fn (def_id, _), FnPtr t0' ->
+      | FnPtr t0', Fn (def_id, s) | Fn (def_id, s), FnPtr t0' ->
           let t1' = tcx#get_fn def_id in
-          if fnhash t0' = fnhash t1'
-          then Ok t0
-          else Error (MismatchTy (t0, t1))
+          let t1' = tcx#subst t1' s in
+          if t0'.args#len <> t1'.args#len
+          then Error (MismatchTy (t0, t1))
+          else
+            let res = map2 t0'.args t1'.args equate in
+            let err =
+              find (function Error e -> Some e | Ok _ -> None) res
+            in
+            (match err with
+             | Some err -> Error err
+             | None ->
+                 let args = map res (fun ty -> Result.get_ok ty) in
+                 let* ret = equate t0'.ret t1'.ret in
+                 let ty = tcx#fn_ptr args ret t0'.is_variadic t0'.abi in
+                 Ok ty)
       | Fn (did0, Subst s0), Fn (did1, Subst s1) ->
           unify_adt_or_fn did0 did1 s0 s1 t0 t1 tcx#fn
       | Adt (did0, Subst s0), Adt (did1, Subst s1) ->

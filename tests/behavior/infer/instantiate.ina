@@ -1,0 +1,11 @@
+fn app[T, U](x: T, f: fn(T) -> U) -> U {
+    f(x)
+}
+
+fn id[T](x: T) -> T { x }
+
+#[test]
+fn test() {
+    assert app(3, id) == 3;
+    assert app![i64, i64](5, id) == 5;
+}
